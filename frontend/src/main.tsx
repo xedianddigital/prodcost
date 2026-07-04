@@ -4152,9 +4152,9 @@ function App() {
               <div className="oeeEquation">
                 <div>
                   <h3>Machine hourly rate</h3>
-                  <p>Machine EUR/h is fixed machine cost divided by productive machine hours, plus variable cost. Productive hours are planned available hours multiplied by Utilization (is there an order loaded at all?) multiplied by OEE (how well does it run once loaded?).</p>
+                  <p>Machine EUR/h is fixed machine cost divided by productive machine hours, plus variable cost. Productive hours are planned available hours multiplied by Utilization (is there an order loaded at all?) multiplied by Availability (is it up and running once loaded?). OEE is still tracked as a diagnostic gauge, but only Availability scales the rate -- performance losses already live in cycle/setup minutes and quality losses in the scrap allowance.</p>
                 </div>
-                <div className="equationBox">Machine EUR/h = fixed machine cost / (planned hours x Utilization x OEE) + variable cost</div>
+                <div className="equationBox">Machine EUR/h = fixed machine cost / (planned hours x Utilization x Availability) + variable cost</div>
                 <div>
                   <h3>Why low Utilization hurts price</h3>
                   <p>If the machine is modern and runs well but has too few orders, the same fixed cost is divided over fewer productive hours. The hourly rate rises — not because the machine performs worse, but because it sits idle waiting for work.</p>
