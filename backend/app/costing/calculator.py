@@ -112,14 +112,17 @@ def _started_quantities(operations: list[OperationInput], quantity: int) -> list
 
 def _operation_cost(
     operation: OperationInput, quantity: int, started_quantity: float
-) -> tuple[float, float, float, CostLine]:
-    """Returns (total_cost, conversion_cost, pass_through_cost, line).
+) -> tuple[float, float, float, float, CostLine]:
+    """Returns (total_cost, conversion_cost, pass_through_cost, missing_tool_cost, line).
 
     conversion_cost is setup + run machine/labor cost plus its share of the scrap
     allowance -- the base for percent-of-cost overhead (item 6c). pass_through_cost is
     tooling/consumables/outsourced-per-part plus outsourced batch cost plus their share
     of scrap -- risk/margin still apply to it, but overhead does not, and it feeds the
-    pass-through visibility warning (item 6d).
+    pass-through visibility warning (item 6d). missing_tool_cost (item 9) is tracked
+    separately from real outsourced batch cost -- it is included in pass_through_cost/total
+    like outsourced_batch_cost_eur, but reported as its own line item and top-level total
+    so it stays distinguishable from real outsourcing in exports.
     """
     label = operation.name or operation.operation_type.replace("_", " ").title()
     scrap_percent = _effective_scrap_percent(operation)
@@ -150,7 +153,9 @@ def _operation_cost(
     scrap_allowance = scrap_on_run + scrap_on_variable
 
     conversion_cost = setup_machine_cost + setup_labor_cost + run_machine_cost + run_labor_cost + scrap_on_run
-    pass_through_cost = variable_cost + scrap_on_variable + operation.outsourced_batch_cost_eur
+    pass_through_cost = (
+        variable_cost + scrap_on_variable + operation.outsourced_batch_cost_eur + operation.missing_tool_batch_cost_eur
+    )
     total = conversion_cost + pass_through_cost
 
     line = CostLine(
@@ -166,11 +171,12 @@ def _operation_cost(
             "run_labor_cost_eur": _round_money(run_labor_cost),
             "variable_cost_eur": _round_money(variable_cost),
             "outsourced_batch_cost_eur": operation.outsourced_batch_cost_eur,
+            "missing_tool_batch_cost_eur": operation.missing_tool_batch_cost_eur,
             "scrap_allowance_eur": _round_money(scrap_allowance),
             "assumption_quality": operation.assumption_quality,
         },
     )
-    return total, conversion_cost, pass_through_cost, line
+    return total, conversion_cost, pass_through_cost, operation.missing_tool_batch_cost_eur, line
 
 
 def calculate_quote(quote: QuoteInput) -> QuoteResult:
@@ -213,13 +219,15 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
     operation_cost = 0.0
     conversion_cost = engineering_cost
     pass_through_cost = 0.0
+    missing_tool_cost = 0.0
     for operation, started_quantity in zip(quote.operations, started_quantities):
-        cost, op_conversion, op_pass_through, line = _operation_cost(
+        cost, op_conversion, op_pass_through, op_missing_tool_cost, line = _operation_cost(
             operation, quote.quantity, started_quantity
         )
         operation_cost += cost
         conversion_cost += op_conversion
         pass_through_cost += op_pass_through
+        missing_tool_cost += op_missing_tool_cost
         lines.append(line)
 
         if operation.scrap_allowance_percent >= _MAX_SCRAP_ALLOWANCE_PERCENT:
@@ -282,6 +290,7 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
         material_cost_eur=_round_money(material_cost),
         engineering_cost_eur=_round_money(engineering_cost),
         operation_cost_eur=_round_money(operation_cost),
+        missing_tool_cost_eur=_round_money(missing_tool_cost),
         overhead_cost_eur=_round_money(overhead_cost),
         risk_allowance_eur=_round_money(risk_allowance),
         minimum_order_admin_cost_eur=_round_money(minimum_order_admin_cost),

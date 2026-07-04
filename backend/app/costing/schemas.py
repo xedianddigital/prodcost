@@ -76,6 +76,7 @@ class OperationInput(BaseModel):
     consumables_cost_per_part_eur: float = Field(default=0, ge=0)
     outsourced_cost_per_part_eur: float = Field(default=0, ge=0)
     outsourced_batch_cost_eur: float = Field(default=0, ge=0)
+    missing_tool_batch_cost_eur: float = Field(default=0, ge=0)
     scrap_allowance_percent: float = Field(default=0, ge=0, le=1)
     rate_drivers: RateDriversInput | None = None
     assumption_quality: str = "company_estimate"
@@ -125,6 +126,7 @@ class QuoteResult(BaseModel):
     material_cost_eur: float
     engineering_cost_eur: float
     operation_cost_eur: float
+    missing_tool_cost_eur: float
     overhead_cost_eur: float
     risk_allowance_eur: float
     minimum_order_admin_cost_eur: float

@@ -166,6 +166,8 @@ def export_quote_draft_csv(draft_id: str) -> Response:
     writer.writerow(["section", "label", "total_eur", "unit_eur"] )
     writer.writerow(["summary", "Target sell price", target.get("sell_price_eur", ""), target.get("unit_sell_price_eur", "")])
     writer.writerow(["summary", "Accounting sell price", accounting.get("sell_price_eur", ""), accounting.get("unit_sell_price_eur", "")])
+    writer.writerow(["summary", "Target missing-tool cost", target.get("missing_tool_cost_eur", ""), ""])
+    writer.writerow(["summary", "Accounting missing-tool cost", accounting.get("missing_tool_cost_eur", ""), ""])
 
     for item in draft.get("quantity_break_results", []) or []:
         target_break = item.get("target", {}) if isinstance(item, dict) else {}

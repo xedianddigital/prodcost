@@ -623,6 +623,7 @@
     "source_url": "https://www.vid.gov.lv/lv/valsts-socialas-apdrosinasanas-obligatas-iemaksas",
     "quality": "public_proxy"
   },
+  "tool_match_tolerance_mm": 0.05,
   "tool_inventory": [
     {
       "id": "tool_em_10_r1_al",

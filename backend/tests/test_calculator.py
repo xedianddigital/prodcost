@@ -316,3 +316,27 @@ def test_unit_material_cost_differs_across_quantity_breaks_when_stock_pieces_rec
     # cheaper, wrong unit cost -- confirm the recomputed 250-pc figure is not that number.
     frozen_stock_unit_cost = (13 * 55) / 250
     assert large_unit_material_cost != frozen_stock_unit_cost
+
+
+def test_missing_tool_cost_is_reported_separately_from_outsourced_batch_cost() -> None:
+    op = OperationInput(
+        operation_type="milling_3_axis",
+        machine_hour_rate_eur=50,
+        run_machine_minutes_per_part=5,
+        outsourced_batch_cost_eur=30,
+        missing_tool_batch_cost_eur=64,
+    )
+    quote = QuoteInput(
+        part_name="Missing tool check",
+        quantity=10,
+        material=MaterialInput(name="blank", stock_piece_cost_eur=10, stock_pieces_required=1),
+        operations=[op],
+    )
+    result = calculate_quote(quote)
+    details = result.lines[-1].details
+
+    assert result.missing_tool_cost_eur == 64
+    assert details["missing_tool_batch_cost_eur"] == 64
+    assert details["outsourced_batch_cost_eur"] == 30
+    # Missing-tool cost still lands in total cost (it's a real cost), just distinguishable.
+    assert result.total_cost_eur > result.missing_tool_cost_eur

@@ -145,6 +145,7 @@ type QuoteResult = {
   material_cost_eur: number;
   engineering_cost_eur: number;
   operation_cost_eur: number;
+  missing_tool_cost_eur: number;
   risk_allowance_eur: number;
   total_cost_eur: number;
   unit_cost_eur: number;
@@ -355,6 +356,7 @@ type Assumptions = {
   operation_templates: OperationTemplate[];
   material_examples: MaterialExample[];
   tool_inventory?: ToolInventoryItem[];
+  tool_match_tolerance_mm?: number;
   overhead?: OverheadAllocation;
   client_portal?: {
     range_low_factor: number;
@@ -937,6 +939,7 @@ function PrintableQuote({
         <div><span>Target unit price</span><strong>{targetResult ? money.format(targetResult.unit_sell_price_eur) : "Not calculated"}</strong></div>
         {!isCustomerOffer ? <div><span>Accounting sell price</span><strong>{accountingResult ? money.format(accountingResult.sell_price_eur) : "Not calculated"}</strong></div> : null}
         {!isCustomerOffer ? <div><span>Accounting unit price</span><strong>{accountingResult ? money.format(accountingResult.unit_sell_price_eur) : "Not calculated"}</strong></div> : null}
+        {!isCustomerOffer ? <div><span>Missing-tool cost (target, separate from outsourced)</span><strong>{targetResult ? money.format(targetResult.missing_tool_cost_eur) : "Not calculated"}</strong></div> : null}
       </section>
 
       <section className="printSection">
@@ -1291,9 +1294,10 @@ function App() {
   }
 
   function toolMatchesRequirement(tool: ToolInventoryItem, requirement: ToolRequirement) {
+    const tolerance = assumptions?.tool_match_tolerance_mm ?? 0.05;
     const typeMatches = tool.type === requirement.toolType;
-    const diameterMatches = requirement.diameterMm === 0 || Math.abs(tool.diameter_mm - requirement.diameterMm) <= 0.01;
-    const radiusMatches = requirement.cornerRadiusMm === 0 || Math.abs(tool.corner_radius_mm - requirement.cornerRadiusMm) <= 0.01;
+    const diameterMatches = requirement.diameterMm === 0 || Math.abs(tool.diameter_mm - requirement.diameterMm) <= tolerance;
+    const radiusMatches = requirement.cornerRadiusMm === 0 || Math.abs(tool.corner_radius_mm - requirement.cornerRadiusMm) <= tolerance;
     const materialMatches = tool.material_groups.includes(requirement.materialGroup) || tool.material_groups.includes("general") || requirement.materialGroup === "general";
     return typeMatches && diameterMatches && radiusMatches && materialMatches;
   }
@@ -1373,12 +1377,15 @@ function App() {
     const setup = (setupMachineMinutes / 60) * machineHourly + (setupLaborMinutes / 60) * laborHourly;
     const run = quantity * ((runMachineMinutes / 60) * machineHourly + (runLaborMinutes / 60) * laborHourly);
     const perPartVariable = quantity * (operation.toolingCostPerPart + operation.consumablesCostPerPart + operation.outsourcedCostPerPart);
-    const outsourcedBatch = operation.outsourcedBatchCost + missingToolBatchCostForOperation(operation);
+    // Missing-tool cost is tracked separately from real outsourced batch cost (item 9) -- it is
+    // its own distinguishable cost driver, not folded into "outsourced", even in this quick
+    // quoted-vs-actual comparison total.
+    const missingToolCost = missingToolBatchCostForOperation(operation);
     // Scrap allowance only covers run cost and per-part variable cost -- setup and the
     // outsourced batch cost are one-off per-batch costs scrap doesn't multiply (mirrors
     // backend/app/costing/calculator.py).
     const scrapAllowance = (run + perPartVariable) * scrapPercent;
-    return setup + run + perPartVariable + outsourcedBatch + scrapAllowance;
+    return setup + run + perPartVariable + operation.outsourcedBatchCost + missingToolCost + scrapAllowance;
   }
 
   // Quantity breaks must not reuse the main quantity's frozen material quantity -- a 250-pc
@@ -1444,7 +1451,8 @@ function App() {
         tooling_cost_per_part_eur: operation.toolingCostPerPart,
         consumables_cost_per_part_eur: operation.consumablesCostPerPart,
         outsourced_cost_per_part_eur: operation.outsourcedCostPerPart,
-        outsourced_batch_cost_eur: operation.outsourcedBatchCost + missingToolBatchCostForOperation(operation),
+        outsourced_batch_cost_eur: operation.outsourcedBatchCost,
+        missing_tool_batch_cost_eur: missingToolBatchCostForOperation(operation),
         scrap_allowance_percent: operation.scrapAllowancePercent,
         rate_drivers: rateDriversForOperation(operation.machineClassId, mode),
         assumption_quality: "industry_estimate"
@@ -1563,9 +1571,8 @@ function App() {
           tooling_cost_per_part_eur: template.default_tooling_cost_per_part_eur ?? 0,
           consumables_cost_per_part_eur: template.default_consumables_cost_per_part_eur ?? 0,
           outsourced_cost_per_part_eur: 0,
-          outsourced_batch_cost_eur:
-            (part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat") ? 45 : 0)
-            + missingToolBatchCost(toolRequirements),
+          outsourced_batch_cost_eur: part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat") ? 45 : 0,
+          missing_tool_batch_cost_eur: missingToolBatchCost(toolRequirements),
           scrap_allowance_percent: Math.min(0.14, (template.default_scrap_allowance_percent ?? 0) + (part.toleranceRequirement === "custom" ? 0.03 : part.toleranceRequirement === "drawing" ? 0.015 : 0)),
           assumption_quality: "portal_preliminary"
         };
@@ -3525,6 +3532,16 @@ function App() {
                   <h2>Tool Inventory</h2>
                   <p className="sectionHelp">Simple cutter/tool library used by quote tool checks. Quantity zero is useful for missing-tool demo cases.</p>
                 </div>
+                <label className="toolToleranceField">
+                  Diameter/radius match tolerance, mm
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={assumptions.tool_match_tolerance_mm ?? 0.05}
+                    onChange={(event) => updateAssumptions({ ...assumptions, tool_match_tolerance_mm: Math.max(0, numericValue(event.target.value, 0.05)) })}
+                  />
+                </label>
                 <button className="primaryButton" onClick={addTool}><Plus size={16} /> Add Tool</button>
               </div>
               <div className="resourceTable toolInventoryTable">
@@ -3598,9 +3615,9 @@ function App() {
             <article className="panel explanationCard"><h2>Labor Classes</h2><p>Labor classes define the company cost of one hour of human work. Direct hourly cost is useful when accounting already has a loaded rate. Gross salary mode estimates hourly employer cost from monthly gross salary, employer VSAOI, and paid hours per month.</p><p>For Latvia, the default employer VSAOI is 23.59% for a standard employee insured for all social insurance types. The employee part is not added again because gross salary already represents the employee taxable pay base.</p></article>
             <article className="panel explanationCard"><h2>Material Library</h2><p>Material library entries represent purchasable stock pieces used for quoting. Use supplier stock dimensions and purchase cost, not theoretical net part material. Scrap recovery is optional and should be based on actual resale/reuse value where known.</p></article>
             <article className="panel explanationCard"><h2>Cutoff Calculator</h2><p>Stock comes in fixed dimensions (a 3m bar, a 6m tube, a 1500x3000mm plate), and a part rarely divides evenly into it. The Cutoff Calculator turns a required cut length (and cut width for plate) into how many whole stock units must actually be purchased, so unusable cutoff waste is priced in rather than assumed away. For linear stock (round/hex/square bar, tube), it divides stock length by cut length plus saw kerf. For plate, it is a rough area estimate (order area divided by usable sheet area at a fixed packing efficiency) -- not true 2D nesting with rotation and rectangle packing, so treat plate estimates as a rough band, not an exact cutting plan. Available in the Quote Builder RFQ panel and the Client Portal, both driven by the same Material Library stock dimensions.</p></article>
-            <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals -- complexity no longer uses uploaded file size in bytes as a signal, since that reflects export settings rather than part complexity; its weight was redistributed across the remaining signals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested, and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
+            <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals -- complexity no longer uses uploaded file size in bytes as a signal, since that reflects export settings rather than part complexity; its weight was redistributed across the remaining signals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested (tool dimensions come from the template-seeded, operator-editable requirement list, not parsed part geometry, until STEP parsing lands), and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
             <article className="panel explanationCard"><h2>Operation Templates</h2><p>Operation templates hold default setup time, cycle time, variable costs, and scrap assumptions used when adding quote operations. The Actuals Feedback action applies measured production actuals as a running weighted mean (old value weighted by its sample count, capped at 20), not a flat overwrite, and shows an old-&gt;new review with a required confirmation checkbox when any field would jump 3x or more. Calibration is per operation type across whatever parts used it, not per part family -- normalizing by part family is future work. Assumptions still need to be saved in Resources to persist.</p></article>
-            <article className="panel explanationCard"><h2>Tool Inventory</h2><p>Tool inventory describes cutters, drills, taps, inserts, fixtures, and gauges that must exist before the part can be produced. If a required tool is missing, the quote should either charge the purchase cost, amortize it over expected future use, or explicitly show that management chose to ignore the cost.</p></article>
+            <article className="panel explanationCard"><h2>Tool Inventory</h2><p>Tool inventory describes cutters, drills, taps, inserts, fixtures, and gauges that must exist before the part can be produced. Each quote operation gets an editable Required Tools list (type, diameter/radius, material suitability) seeded from the operation template, matched against inventory within a tolerance (default +-0.05mm, editable in Resources). Honesty note: these dimensions come from the operator editing the requirement list, not from parsed part geometry -- STEP parsing that could infer tool requirements from the model has not landed yet. If a required tool is missing, the quote charges the purchase cost, amortizes it over expected future use, or explicitly shows that management chose to ignore the cost, tracked separately from real outsourced-batch cost in exports.</p></article>
             <article className="panel explanationCard"><h2>Machine Classes</h2><p>Machine Rate Calculator shows how machine EUR/h is built. Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability, target Utilization (95% by default), and optional target discount. The formula is fixed monthly machine cost divided by productive hours (planned hours x Utilization x Availability) plus variable hourly cost, plus overhead EUR/h if that allocation method is selected. OEE is shown alongside as a diagnostic gauge only — it does not enter this formula, because performance losses already live in cycle/setup minutes and quality losses in the scrap allowance; multiplying by full OEE here would double-charge both.</p></article>
             <article className="panel explanationCard"><h2>Actual Availability % vs Actual Utilization %</h2><p>These answer two different questions. Actual Availability is the share of scheduled time the machine is actually up and running (not broken down, changed over, or blocked) during the time it is scheduled to work. Actual Utilization is how much of the available planned time actually gets loaded with orders at all. A machine can have good Availability and still sit idle most of the month if Utilization is low — that is a sales/load problem, not a machine problem. Both should describe a defined recent measurement window, normally the last 3 to 12 months. Actual OEE (availability x performance x quality) is still shown as a diagnostic gauge, but only Availability feeds the rate.</p></article>
             <article className="panel explanationCard"><h2>Target Availability % vs Target Utilization %</h2><p>Target Availability (seed: 90%) is the uptime level management believes is achievable with reduced unplanned downtime — a real availability improvement, not a performance or quality assumption (those live in cycle/setup times and scrap allowance). Target Utilization defaults to 95%: a near-fully-booked commercial ambition with a small buffer below theoretical capacity. Together they model a healthy, competitively loaded machine, not today's reality.</p></article>
