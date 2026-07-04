@@ -68,7 +68,7 @@ Inputs:
 Output:
 
 - accounting full-cost rate (actual OEE x actual Utilization)
-- target competitive rate (target OEE x target Utilization, default 100%)
+- target competitive rate (target OEE x target Utilization, default 95%)
 - sensitivity by OEE, Utilization, batch size, and margin
 - standalone shop-wide profitability estimate (Profitability Calculator), independent of any single quote
 

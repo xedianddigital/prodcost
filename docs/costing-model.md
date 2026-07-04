@@ -142,9 +142,9 @@ machine_eur_per_hour =
 The model supports at least two rates per machine:
 
 - `accounting_full_cost_rate`: uses actual OEE and actual (typically low) Utilization.
-- `target_competitive_rate`: uses target OEE (an achievable performance improvement from optimized batch/setup, ~80-85%) and target Utilization, defaulted to 70% and editable per machine, and should be compared with market pricing.
+- `target_competitive_rate`: uses target OEE (an achievable performance improvement from optimized batch/setup, ~80-85%) and target Utilization, defaulted to 95% and editable per machine, and should be compared with market pricing.
 
-Target Utilization defaults to 70%, not 100%. Standard cost accounting (e.g. IAS 2 / ASC 330 "normal capacity" rules for overhead absorption) deliberately avoids pricing off theoretical full capacity, because it creates a mirror-image risk to the death spiral: if the company prices as though it will be fully booked and only reaches a lower real Utilization, fixed cost is under-recovered at the quoted price. 70% is a starting point, not a ceiling — it should be raised as the company's real order book improves, and is always editable, never hardcoded to a single value.
+Target Utilization defaults to 95%, not 100%. Standard cost accounting (e.g. IAS 2 / ASC 330 "normal capacity" rules for overhead absorption) deliberately avoids pricing off theoretical full capacity, because it creates a mirror-image risk to the death spiral: if the company prices as though it will be fully booked and only reaches a lower real Utilization, fixed cost is under-recovered at the quoted price. 95% is a near-fully-booked commercial ambition with a small buffer below theoretical capacity — not a ceiling, always editable per machine, never hardcoded to a single value.
 
 This distinction matters because pricing off low actual Utilization as if it were permanent creates a death spiral: high price -> fewer orders -> Utilization drops further -> price rises again. The accounting rate is shown for transparency, not as a growth-safe price floor.
 
