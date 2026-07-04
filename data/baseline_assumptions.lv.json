@@ -3,7 +3,7 @@
   "name": "Latvia metalworking starter assumptions 2026",
   "currency": "EUR",
   "country": "LV",
-  "formula_version": "costing.v0.1",
+  "formula_version": "costing.v0.2",
   "data_quality_default": "industry_estimate",
   "source_notes": [
     {
@@ -45,6 +45,11 @@
     "default_margin_percent": 0.25,
     "risk_allowance_percent": 0.05,
     "minimum_order_admin_cost_eur": 40
+  },
+  "client_portal": {
+    "range_low_factor": 0.85,
+    "range_high_factor": 1.35,
+    "annual_volume_relief_percent": 0.92
   },
   "overhead": {
     "allocation_method": "per_machine_hour",

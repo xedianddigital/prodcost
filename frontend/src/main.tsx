@@ -348,6 +348,11 @@ type Assumptions = {
   material_examples: MaterialExample[];
   tool_inventory?: ToolInventoryItem[];
   overhead?: OverheadAllocation;
+  client_portal?: {
+    range_low_factor: number;
+    range_high_factor: number;
+    annual_volume_relief_percent: number;
+  };
   [key: string]: unknown;
 };
 
@@ -914,7 +919,7 @@ function PrintableQuote({
           <span>Delivery {deliveryEstimate || "not set"}</span>
           <span>{paymentTerms || "Payment terms not set"}</span>
           <span>{isCustomerOffer ? "Customer Offer" : "Internal Cost Sheet"}</span>
-          <span>Formula {assumptions?.formula_version ?? "costing.v0.1"}</span>
+          <span>Formula {assumptions?.formula_version ?? "costing.v0.2"}</span>
         </div>
       </header>
 
@@ -1467,17 +1472,21 @@ function App() {
     return issues;
   }
 
+  // File-size-in-bytes was dropped as a complexity signal: a STEP file's byte count reflects
+  // export settings and tessellation density, not part complexity, so it was noise rather than
+  // signal. Its removed weight (1.0 of the old 9.0-point scale) is redistributed proportionally
+  // (x1.125) across the remaining signals so the same seed inputs land in the same complexity
+  // class as before wherever the classification didn't depend on file size specifically.
   function inferredPortalComplexity(part: PortalPart): "simple" | "medium" | "complex" {
     let score = 0;
-    if (part.fileSizeBytes > 2_000_000) score += 1;
-    if (part.drawingFileName) score += 0.5;
-    if (part.toleranceRequirement === "custom") score += 2;
-    if (part.toleranceRequirement === "drawing") score += 1;
-    if (part.documentationRequirement === "full_fai") score += 1.5;
-    if (part.documentationRequirement === "dimensional_report") score += 0.75;
-    if (part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat")) score += 0.75;
-    if (part.threadOrInsertRequirement === "yes") score += 0.75;
-    if (part.deliveryRequirement !== "standard") score += 0.75;
+    if (part.drawingFileName) score += 0.56;
+    if (part.toleranceRequirement === "custom") score += 2.25;
+    if (part.toleranceRequirement === "drawing") score += 1.13;
+    if (part.documentationRequirement === "full_fai") score += 1.69;
+    if (part.documentationRequirement === "dimensional_report") score += 0.84;
+    if (part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat")) score += 0.84;
+    if (part.threadOrInsertRequirement === "yes") score += 0.84;
+    if (part.deliveryRequirement !== "standard") score += 0.84;
     if (score >= 3.25) return "complex";
     if (score >= 1.25) return "medium";
     return "simple";
@@ -1493,7 +1502,8 @@ function App() {
   }
 
   function portalMaterialCost(part: PortalPart) {
-    const annualRelief = part.annualVolume >= part.quantity * 4 && part.quantity > 0 ? 0.92 : 1;
+    const reliefFactor = assumptions?.client_portal?.annual_volume_relief_percent ?? 0.92;
+    const annualRelief = part.annualVolume >= part.quantity * 4 && part.quantity > 0 ? reliefFactor : 1;
     return roundMoney(part.stockCost * annualRelief);
   }
 
@@ -1594,11 +1604,16 @@ function App() {
     };
   }
 
+  // Range is deliberately widened asymmetrically (low factor closer to 1 than high factor is
+  // far from it): pending calibration against actuals, an underquote is cheaper to fix than an
+  // overquote that loses the order, so the client-facing band leans toward showing headroom
+  // upward rather than downward. Both factors are editable assumptions, not hardcoded.
   function portalEstimateFromResult(part: PortalPart, result: QuoteResult, accountingResult: QuoteResult): PortalEstimate {
     const issues = portalReadinessIssues(part);
-    const uncertainty = Math.min(0.35, 0.1 + issues.length * 0.06 + (part.toleranceRequirement === "custom" ? 0.05 : 0));
-    const lowTotal = roundMoney(result.sell_price_eur * (1 - uncertainty * 0.35));
-    const highTotal = roundMoney(result.sell_price_eur * (1 + uncertainty));
+    const rangeLowFactor = assumptions?.client_portal?.range_low_factor ?? 0.85;
+    const rangeHighFactor = assumptions?.client_portal?.range_high_factor ?? 1.35;
+    const lowTotal = roundMoney(result.sell_price_eur * rangeLowFactor);
+    const highTotal = roundMoney(result.sell_price_eur * rangeHighFactor);
     return {
       result,
       accountingSellPriceEur: accountingResult.sell_price_eur,
@@ -1887,6 +1902,15 @@ function App() {
     updateAssumptions({
       ...assumptions,
       commercial_policy: { ...assumptions.commercial_policy, [field]: value }
+    });
+  }
+
+  function updateClientPortalField(field: keyof NonNullable<Assumptions["client_portal"]>, value: number) {
+    if (!assumptions) return;
+    const current = assumptions.client_portal ?? { range_low_factor: 0.85, range_high_factor: 1.35, annual_volume_relief_percent: 0.92 };
+    updateAssumptions({
+      ...assumptions,
+      client_portal: { ...current, [field]: value }
     });
   }
 
@@ -3113,7 +3137,7 @@ function App() {
                               ) : null}
                               <div>
                                 <strong>Adjustment factors applied</strong>
-                                <span>Complexity ({factors.complexity}) x{factors.complexityFactor.toFixed(2)}, Tolerance x{factors.toleranceFactor.toFixed(2)}, QC x{factors.qcFactor.toFixed(2)}, Delivery x{factors.deliveryFactor.toFixed(2)} -- combined x{factors.combined.toFixed(2)}. These are heuristic placeholders, not calibrated against actuals.</span>
+                                <span>Complexity ({factors.complexity}) x{factors.complexityFactor.toFixed(2)}, Tolerance x{factors.toleranceFactor.toFixed(2)}, QC x{factors.qcFactor.toFixed(2)}, Delivery x{factors.deliveryFactor.toFixed(2)} -- combined x{factors.combined.toFixed(2)} (QC x{factors.qcFactor.toFixed(2)} applies to inspection operations only, not included in "combined"). These are heuristic placeholders, not calibrated against actuals.</span>
                               </div>
                               <div>
                                 <strong>Tool check: {missingTools.length === 0 ? "all required tools available" : `${missingTools.length} missing`}</strong>
@@ -3137,6 +3161,7 @@ function App() {
                         <span>Estimated order total</span>
                         <strong>{estimate ? `${money.format(estimate.lowTotalEur)} - ${money.format(estimate.highTotalEur)}` : "..."}</strong>
                         <small>{estimate ? estimate.confidence : "Not calculated"}</small>
+                        <small className="portalDisclaimer">Preliminary estimate only, subject to engineering confirmation. The confirmed price may differ materially from this range once drawing, material, tolerance, tooling, and capacity are reviewed.</small>
                         <button type="button" className="secondaryButton" onClick={() => sendPortalPartToQuoteBuilder(part)}>Send to Quote Builder</button>
                       </div>
                       <button className="iconButton" title="Remove part" onClick={() => removePortalPart(part.id)}><Trash2 size={18} /></button>
@@ -3175,6 +3200,15 @@ function App() {
                   <label>Margin %<input type="number" min="0" max="99" value={formatPercent(assumptions.commercial_policy.default_margin_percent)} onChange={(event) => updateCommercialField("default_margin_percent", numericValue(event.target.value) / 100)} /></label>
                   <label>Risk allowance %<input type="number" min="0" value={formatPercent(assumptions.commercial_policy.risk_allowance_percent)} onChange={(event) => updateCommercialField("risk_allowance_percent", numericValue(event.target.value) / 100)} /></label>
                   <label>Minimum admin cost<input type="number" min="0" value={assumptions.commercial_policy.minimum_order_admin_cost_eur} onChange={(event) => updateCommercialField("minimum_order_admin_cost_eur", numericValue(event.target.value))} /></label>
+                </div>
+              </div>
+              <div className="panel">
+                <div className="sectionHeader"><h2>Client Portal Range</h2></div>
+                <p className="sectionHelp">Editable, not hardcoded -- widened asymmetrically pending calibration against actuals.</p>
+                <div className="fieldGrid">
+                  <label>Low factor (x sell price)<input type="number" min="0.01" max="1" step="0.01" value={assumptions.client_portal?.range_low_factor ?? 0.85} onChange={(event) => updateClientPortalField("range_low_factor", Math.max(0.01, numericValue(event.target.value, 0.85)))} /></label>
+                  <label>High factor (x sell price)<input type="number" min="1" step="0.01" value={assumptions.client_portal?.range_high_factor ?? 1.35} onChange={(event) => updateClientPortalField("range_high_factor", Math.max(1, numericValue(event.target.value, 1.35)))} /></label>
+                  <label>Annual-volume relief %<input type="number" min="0" max="100" value={formatPercent(assumptions.client_portal?.annual_volume_relief_percent ?? 0.92)} onChange={(event) => updateClientPortalField("annual_volume_relief_percent", numericValue(event.target.value, 92) / 100)} /></label>
                 </div>
               </div>
               <div className="panel">
@@ -3464,7 +3498,7 @@ function App() {
             <article className="panel explanationCard"><h2>Labor Classes</h2><p>Labor classes define the company cost of one hour of human work. Direct hourly cost is useful when accounting already has a loaded rate. Gross salary mode estimates hourly employer cost from monthly gross salary, employer VSAOI, and paid hours per month.</p><p>For Latvia, the default employer VSAOI is 23.59% for a standard employee insured for all social insurance types. The employee part is not added again because gross salary already represents the employee taxable pay base.</p></article>
             <article className="panel explanationCard"><h2>Material Library</h2><p>Material library entries represent purchasable stock pieces used for quoting. Use supplier stock dimensions and purchase cost, not theoretical net part material. Scrap recovery is optional and should be based on actual resale/reuse value where known.</p></article>
             <article className="panel explanationCard"><h2>Cutoff Calculator</h2><p>Stock comes in fixed dimensions (a 3m bar, a 6m tube, a 1500x3000mm plate), and a part rarely divides evenly into it. The Cutoff Calculator turns a required cut length (and cut width for plate) into how many whole stock units must actually be purchased, so unusable cutoff waste is priced in rather than assumed away. For linear stock (round/hex/square bar, tube), it divides stock length by cut length plus saw kerf. For plate, it is a rough area estimate (order area divided by usable sheet area at a fixed packing efficiency) -- not true 2D nesting with rotation and rectangle packing, so treat plate estimates as a rough band, not an exact cutting plan. Available in the Quote Builder RFQ panel and the Client Portal, both driven by the same Material Library stock dimensions.</p></article>
-            <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested, and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
+            <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals -- complexity no longer uses uploaded file size in bytes as a signal, since that reflects export settings rather than part complexity; its weight was redistributed across the remaining signals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested, and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
             <article className="panel explanationCard"><h2>Operation Templates</h2><p>Operation templates hold default setup time, cycle time, variable costs, and scrap assumptions used when adding quote operations. The Actuals Feedback action can copy measured production actuals into these defaults, but assumptions still need to be saved in Resources to persist.</p></article>
             <article className="panel explanationCard"><h2>Tool Inventory</h2><p>Tool inventory describes cutters, drills, taps, inserts, fixtures, and gauges that must exist before the part can be produced. If a required tool is missing, the quote should either charge the purchase cost, amortize it over expected future use, or explicitly show that management chose to ignore the cost.</p></article>
             <article className="panel explanationCard"><h2>Machine Classes</h2><p>Machine Rate Calculator shows how machine EUR/h is built. Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability, target Utilization (95% by default), and optional target discount. The formula is fixed monthly machine cost divided by productive hours (planned hours x Utilization x Availability) plus variable hourly cost, plus overhead EUR/h if that allocation method is selected. OEE is shown alongside as a diagnostic gauge only — it does not enter this formula, because performance losses already live in cycle/setup minutes and quality losses in the scrap allowance; multiplying by full OEE here would double-charge both.</p></article>
