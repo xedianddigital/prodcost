@@ -9,6 +9,8 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from app.persistence import atomic_write_json, locked_store
+
 router = APIRouter(tags=["quote drafts"])
 
 DRAFTS_PATH = Path(__file__).resolve().parents[3] / "data" / "quote_drafts.json"
@@ -46,8 +48,7 @@ def _read_store() -> list[dict[str, Any]]:
 
 
 def _write_store(drafts: list[dict[str, Any]]) -> None:
-    DRAFTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DRAFTS_PATH.write_text(json.dumps(drafts, indent=2, ensure_ascii=False) + "\n")
+    atomic_write_json(DRAFTS_PATH, drafts)
 
 
 @router.get("/quote-drafts", response_model=list[QuoteDraft])
@@ -66,49 +67,51 @@ def get_quote_draft(draft_id: str) -> dict[str, Any]:
 
 @router.post("/quote-drafts", response_model=QuoteDraft)
 def save_quote_draft(payload: QuoteDraftInput) -> dict[str, Any]:
-    drafts = _read_store()
-    state_id = payload.quote_state.get("draftId") if isinstance(payload.quote_state, dict) else None
-    existing_index = next(
-        (index for index, draft in enumerate(drafts) if draft.get("id") == state_id),
-        None,
-    )
-    timestamp = _now()
+    with locked_store(DRAFTS_PATH):
+        drafts = _read_store()
+        state_id = payload.quote_state.get("draftId") if isinstance(payload.quote_state, dict) else None
+        existing_index = next(
+            (index for index, draft in enumerate(drafts) if draft.get("id") == state_id),
+            None,
+        )
+        timestamp = _now()
 
-    if existing_index is None:
-        draft = {
-            "id": str(uuid4()),
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            **payload.model_dump(),
-        }
-        if isinstance(draft["quote_state"], dict):
-            draft["quote_state"]["draftId"] = draft["id"]
-        drafts.append(draft)
-    else:
-        existing = drafts[existing_index]
-        draft = {
-            **existing,
-            **payload.model_dump(),
-            "id": existing["id"],
-            "created_at": existing.get("created_at", timestamp),
-            "updated_at": timestamp,
-        }
-        if isinstance(draft["quote_state"], dict):
-            draft["quote_state"]["draftId"] = draft["id"]
-        drafts[existing_index] = draft
+        if existing_index is None:
+            draft = {
+                "id": str(uuid4()),
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                **payload.model_dump(),
+            }
+            if isinstance(draft["quote_state"], dict):
+                draft["quote_state"]["draftId"] = draft["id"]
+            drafts.append(draft)
+        else:
+            existing = drafts[existing_index]
+            draft = {
+                **existing,
+                **payload.model_dump(),
+                "id": existing["id"],
+                "created_at": existing.get("created_at", timestamp),
+                "updated_at": timestamp,
+            }
+            if isinstance(draft["quote_state"], dict):
+                draft["quote_state"]["draftId"] = draft["id"]
+            drafts[existing_index] = draft
 
-    _write_store(drafts)
-    return draft
+        _write_store(drafts)
+        return draft
 
 
 @router.delete("/quote-drafts/{draft_id}")
 def delete_quote_draft(draft_id: str) -> dict[str, str]:
-    drafts = _read_store()
-    remaining = [draft for draft in drafts if draft.get("id") != draft_id]
-    if len(remaining) == len(drafts):
-        raise HTTPException(status_code=404, detail="Quote draft not found")
-    _write_store(remaining)
-    return {"status": "deleted"}
+    with locked_store(DRAFTS_PATH):
+        drafts = _read_store()
+        remaining = [draft for draft in drafts if draft.get("id") != draft_id]
+        if len(remaining) == len(drafts):
+            raise HTTPException(status_code=404, detail="Quote draft not found")
+        _write_store(remaining)
+        return {"status": "deleted"}
 
 
 def _quote_export_payload(draft: dict[str, Any]) -> dict[str, Any]:

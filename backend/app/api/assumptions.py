@@ -4,6 +4,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from app.persistence import atomic_write_json, locked_store
+
 router = APIRouter(tags=["assumptions"])
 
 ASSUMPTIONS_PATH = Path(__file__).resolve().parents[3] / "data" / "baseline_assumptions.lv.json"
@@ -30,15 +32,17 @@ def _write_assumptions(payload: dict[str, Any]) -> dict[str, Any]:
     if missing:
         raise HTTPException(status_code=422, detail=f"Missing assumption sections: {', '.join(missing)}")
 
-    ASSUMPTIONS_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    atomic_write_json(ASSUMPTIONS_PATH, payload)
     return payload
 
 
 @router.get("/assumptions")
 def get_assumptions() -> dict[str, Any]:
-    return _read_assumptions()
+    with locked_store(ASSUMPTIONS_PATH):
+        return _read_assumptions()
 
 
 @router.put("/assumptions")
 def update_assumptions(payload: dict[str, Any]) -> dict[str, Any]:
-    return _write_assumptions(payload)
+    with locked_store(ASSUMPTIONS_PATH):
+        return _write_assumptions(payload)

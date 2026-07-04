@@ -7,6 +7,8 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.persistence import atomic_write_json, locked_store
+
 router = APIRouter(tags=["erp mock"])
 
 MOCK_ERP_PATH = Path(__file__).resolve().parents[3] / "data" / "mock_erp"
@@ -43,8 +45,7 @@ def _read_json(filename: str) -> Any:
 
 
 def _write_offer_payloads(payloads: list[dict[str, Any]]) -> None:
-    MOCK_ERP_PATH.mkdir(parents=True, exist_ok=True)
-    CUSTOMER_OFFER_PAYLOADS_PATH.write_text(json.dumps(payloads, indent=2, ensure_ascii=False) + "\n")
+    atomic_write_json(CUSTOMER_OFFER_PAYLOADS_PATH, payloads)
 
 
 def _read_offer_payloads() -> list[dict[str, Any]]:
@@ -136,16 +137,17 @@ def import_erp_rfq(payload: dict[str, str]) -> dict[str, Any]:
 
 @router.post("/erp/customer-offer")
 def create_customer_offer(payload: ErpCustomerOfferInput) -> dict[str, Any]:
-    offers = _read_offer_payloads()
-    saved = {
-        "id": f"co-mock-{uuid4()}",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "status": "mock_sent_to_erp",
-        **payload.model_dump(),
-    }
-    offers.append(saved)
-    _write_offer_payloads(offers)
-    return saved
+    with locked_store(CUSTOMER_OFFER_PAYLOADS_PATH):
+        offers = _read_offer_payloads()
+        saved = {
+            "id": f"co-mock-{uuid4()}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "mock_sent_to_erp",
+            **payload.model_dump(),
+        }
+        offers.append(saved)
+        _write_offer_payloads(offers)
+        return saved
 
 
 @router.get("/erp/customer-offers")
