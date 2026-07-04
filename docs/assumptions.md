@@ -64,7 +64,7 @@ monthly_fixed_cost_eur = depreciation_eur_per_month + other_monthly_fixed_cost_e
 
 - Material starts from purchasable stock, not net part geometry.
 - CAM-level machining physics are out of scope.
-- OEE and Utilization are used for rate scenarios, not live machine monitoring. They are kept as separate drivers: OEE is performance when a machine has work loaded; Utilization is whether it has work loaded at all. Idleness is derived from Utilization, not OEE.
+- Availability and Utilization are used for rate scenarios, not live machine monitoring. They are kept as separate drivers: Availability is uptime when a machine has work loaded; Utilization is whether it has work loaded at all. Idleness is derived from Utilization, not Availability or OEE. OEE (availability x performance x quality) is still shown as a diagnostic gauge but does not enter the rate formula, since performance losses already live in cycle/setup times and quality losses in the scrap allowance — folding OEE into the rate as well would double-count both.
 - Overhead (admin, sales, quality management, facility) is a single editable monthly total, not a departmental cost allocation system; it can be spread per machine hour or expressed as a percent-of-cost coefficient.
 - Tooling is initially entered as cost per part or per batch.
 - Outsourced work is entered manually per part or per batch.

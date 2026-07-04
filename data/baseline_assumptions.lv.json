@@ -49,10 +49,30 @@
   "overhead": {
     "allocation_method": "per_machine_hour",
     "monthly_items": [
-      { "id": "admin_management", "name": "Admin & general management salaries", "monthly_cost_eur": 7000, "quality": "industry_estimate" },
-      { "id": "sales_quoting", "name": "Sales & quoting", "monthly_cost_eur": 4500, "quality": "industry_estimate" },
-      { "id": "quality_management", "name": "Quality/QC management (non-shopfloor)", "monthly_cost_eur": 3000, "quality": "industry_estimate" },
-      { "id": "facility_other", "name": "Facility, utilities, insurance (non-machine)", "monthly_cost_eur": 3500, "quality": "industry_estimate" }
+      {
+        "id": "admin_management",
+        "name": "Admin & general management salaries",
+        "monthly_cost_eur": 7000,
+        "quality": "industry_estimate"
+      },
+      {
+        "id": "sales_quoting",
+        "name": "Sales & quoting",
+        "monthly_cost_eur": 4500,
+        "quality": "industry_estimate"
+      },
+      {
+        "id": "quality_management",
+        "name": "Quality/QC management (non-shopfloor)",
+        "monthly_cost_eur": 3000,
+        "quality": "industry_estimate"
+      },
+      {
+        "id": "facility_other",
+        "name": "Facility, utilities, insurance (non-machine)",
+        "monthly_cost_eur": 3500,
+        "quality": "industry_estimate"
+      }
     ]
   },
   "factory_calendar": {
@@ -122,8 +142,8 @@
     {
       "id": "saw_cutting",
       "name": "Band saw / cutting station",
-      "accounting_full_cost_rate_eur_per_hour": 9.11,
-      "target_competitive_rate_eur_per_hour": 5.88,
+      "accounting_full_cost_rate_eur_per_hour": 60.25,
+      "target_competitive_rate_eur_per_hour": 23.8,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_utilization_percent": 0.35,
@@ -137,13 +157,15 @@
       "purchase_price_eur": 35000,
       "useful_life_years": 12,
       "salvage_percent": 0.1,
-      "other_monthly_fixed_cost_eur": 55.0
+      "other_monthly_fixed_cost_eur": 55.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "cnc_turning",
       "name": "CNC turning center",
-      "accounting_full_cost_rate_eur_per_hour": 43.39,
-      "target_competitive_rate_eur_per_hour": 23.07,
+      "accounting_full_cost_rate_eur_per_hour": 94.53,
+      "target_competitive_rate_eur_per_hour": 36.37,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_utilization_percent": 0.35,
@@ -157,13 +179,15 @@
       "purchase_price_eur": 220000,
       "useful_life_years": 12,
       "salvage_percent": 0.1,
-      "other_monthly_fixed_cost_eur": 345.0
+      "other_monthly_fixed_cost_eur": 345.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "cnc_milling_3_axis",
       "name": "CNC milling center, 3-axis",
-      "accounting_full_cost_rate_eur_per_hour": 39.93,
-      "target_competitive_rate_eur_per_hour": 21.44,
+      "accounting_full_cost_rate_eur_per_hour": 91.07,
+      "target_competitive_rate_eur_per_hour": 35.24,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_utilization_percent": 0.35,
@@ -177,13 +201,15 @@
       "purchase_price_eur": 200000,
       "useful_life_years": 12,
       "salvage_percent": 0.1,
-      "other_monthly_fixed_cost_eur": 315.0
+      "other_monthly_fixed_cost_eur": 315.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "cnc_milling_5_axis",
       "name": "CNC milling center, 5-axis",
-      "accounting_full_cost_rate_eur_per_hour": 78.21,
-      "target_competitive_rate_eur_per_hour": 40.72,
+      "accounting_full_cost_rate_eur_per_hour": 129.35,
+      "target_competitive_rate_eur_per_hour": 47.78,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.82,
       "actual_utilization_percent": 0.35,
@@ -197,13 +223,15 @@
       "purchase_price_eur": 420000,
       "useful_life_years": 12,
       "salvage_percent": 0.1,
-      "other_monthly_fixed_cost_eur": 655.0
+      "other_monthly_fixed_cost_eur": 655.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "manual_bending",
       "name": "Bending / forming station",
-      "accounting_full_cost_rate_eur_per_hour": 14.04,
-      "target_competitive_rate_eur_per_hour": 8.93,
+      "accounting_full_cost_rate_eur_per_hour": 65.18,
+      "target_competitive_rate_eur_per_hour": 25.93,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_utilization_percent": 0.4,
@@ -217,13 +245,15 @@
       "purchase_price_eur": 90000,
       "useful_life_years": 15,
       "salvage_percent": 0.1,
-      "other_monthly_fixed_cost_eur": 115.0
+      "other_monthly_fixed_cost_eur": 115.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "welding_station",
       "name": "Welding station",
-      "accounting_full_cost_rate_eur_per_hour": 7.31,
-      "target_competitive_rate_eur_per_hour": 5.6,
+      "accounting_full_cost_rate_eur_per_hour": 58.44,
+      "target_competitive_rate_eur_per_hour": 23.61,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_utilization_percent": 0.45,
@@ -237,13 +267,15 @@
       "purchase_price_eur": 25000,
       "useful_life_years": 10,
       "salvage_percent": 0.05,
-      "other_monthly_fixed_cost_eur": 50.0
+      "other_monthly_fixed_cost_eur": 50.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     },
     {
       "id": "inspection_station",
       "name": "Manual inspection / metrology station",
-      "accounting_full_cost_rate_eur_per_hour": 11.75,
-      "target_competitive_rate_eur_per_hour": 8.9,
+      "accounting_full_cost_rate_eur_per_hour": 63.44,
+      "target_competitive_rate_eur_per_hour": 26.15,
       "actual_oee_percent": 0.85,
       "target_oee_percent": 0.9,
       "actual_utilization_percent": 0.5,
@@ -257,7 +289,9 @@
       "purchase_price_eur": 60000,
       "useful_life_years": 10,
       "salvage_percent": 0.05,
-      "other_monthly_fixed_cost_eur": 120.0
+      "other_monthly_fixed_cost_eur": 120.0,
+      "actual_availability_percent": 0.8,
+      "target_availability_percent": 0.9
     }
   ],
   "operation_templates": [

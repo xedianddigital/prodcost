@@ -209,6 +209,8 @@ type MachineClass = {
   target_competitive_rate_eur_per_hour: number;
   actual_oee_percent: number;
   target_oee_percent: number;
+  actual_availability_percent?: number;
+  target_availability_percent?: number;
   actual_utilization_percent?: number;
   target_utilization_percent?: number;
   loaded_power_kw: number;
@@ -393,11 +395,15 @@ function idlenessPercent(utilization: number) {
   return Math.max(0, 1 - utilization);
 }
 
-function machineRateFromDrivers(machine: MachineClass, oee: number, utilization: number, overheadPerHour = 0) {
+// Only availability belongs in the rate denominator. Cycle/setup times already carry
+// performance losses, and scrap allowance already covers quality losses -- multiplying by
+// full OEE (availability x performance x quality) here would double-charge both. OEE stays
+// a diagnostic display elsewhere and no longer enters this formula.
+function machineRateFromDrivers(machine: MachineClass, availability: number, utilization: number, overheadPerHour = 0) {
   const fixedCost = machine.monthly_fixed_cost_eur ?? 0;
   const plannedHours = machine.planned_hours_per_month ?? 160;
   const variableCost = machine.variable_cost_eur_per_hour ?? 0;
-  const effectiveHours = plannedHours * Math.max(0.01, utilization) * Math.max(0.01, oee);
+  const effectiveHours = plannedHours * Math.max(0.01, utilization) * Math.max(0.01, availability);
   return roundMoney(fixedCost / Math.max(1, effectiveHours) + variableCost + overheadPerHour);
 }
 
@@ -409,33 +415,38 @@ function totalMonthlyOverheadEur(assumptions: Assumptions | null) {
 }
 
 type OeeField = "actual_oee_percent" | "target_oee_percent";
+type AvailabilityField = "actual_availability_percent" | "target_availability_percent";
 type UtilizationField = "actual_utilization_percent" | "target_utilization_percent";
+
+function availabilityValue(machine: MachineClass, availabilityField: AvailabilityField) {
+  return machine[availabilityField] ?? (availabilityField === "target_availability_percent" ? 0.9 : 0.8);
+}
 
 function totalPlannedProductiveHours(
   assumptions: Assumptions | null,
-  oeeField: OeeField,
+  availabilityField: AvailabilityField,
   utilizationField: UtilizationField
 ) {
   return (assumptions?.machine_classes ?? []).reduce((sum, machine) => {
     const plannedHours = machine.planned_hours_per_month ?? 160;
-    const oee = Math.max(0.01, machine[oeeField] ?? 1);
+    const availability = Math.max(0.01, availabilityValue(machine, availabilityField));
     const utilization = Math.max(0.01, machine[utilizationField] ?? 1);
-    return sum + plannedHours * oee * utilization;
+    return sum + plannedHours * availability * utilization;
   }, 0);
 }
 
 function overheadPerMachineHour(
   assumptions: Assumptions | null,
-  oeeField: OeeField,
+  availabilityField: AvailabilityField,
   utilizationField: UtilizationField
 ) {
-  const hours = totalPlannedProductiveHours(assumptions, oeeField, utilizationField);
+  const hours = totalPlannedProductiveHours(assumptions, availabilityField, utilizationField);
   return roundMoney(totalMonthlyOverheadEur(assumptions) / Math.max(1, hours));
 }
 
 function blendedDirectMachineRate(
   assumptions: Assumptions | null,
-  oeeField: OeeField,
+  availabilityField: AvailabilityField,
   utilizationField: UtilizationField
 ) {
   const machines = assumptions?.machine_classes ?? [];
@@ -443,9 +454,9 @@ function blendedDirectMachineRate(
   let totalHours = 0;
   machines.forEach((machine) => {
     const plannedHours = machine.planned_hours_per_month ?? 160;
-    const oee = Math.max(0.01, machine[oeeField] ?? 1);
+    const availability = Math.max(0.01, availabilityValue(machine, availabilityField));
     const utilization = Math.max(0.01, machine[utilizationField] ?? 1);
-    const hours = plannedHours * oee * utilization;
+    const hours = plannedHours * availability * utilization;
     const fixedCost = machine.monthly_fixed_cost_eur ?? 0;
     const variableCost = machine.variable_cost_eur_per_hour ?? 0;
     const directRate = fixedCost / Math.max(1, hours) + variableCost;
@@ -459,11 +470,11 @@ function blendedDirectMachineRate(
 // derived from the same total-overhead input, so the two allocation methods stay comparable.
 function overheadPercentEquivalent(
   assumptions: Assumptions | null,
-  oeeField: OeeField,
+  availabilityField: AvailabilityField,
   utilizationField: UtilizationField
 ) {
-  const perHour = overheadPerMachineHour(assumptions, oeeField, utilizationField);
-  const blendedRate = blendedDirectMachineRate(assumptions, oeeField, utilizationField);
+  const perHour = overheadPerMachineHour(assumptions, availabilityField, utilizationField);
+  const blendedRate = blendedDirectMachineRate(assumptions, availabilityField, utilizationField);
   return blendedRate > 0 ? perHour / blendedRate : 0;
 }
 
@@ -475,17 +486,18 @@ function overheadPercentForMode(assumptions: Assumptions | null, mode: RateMode)
     return 0;
   }
   return mode === "target_competitive"
-    ? overheadPercentEquivalent(assumptions, "target_oee_percent", "target_utilization_percent")
-    : overheadPercentEquivalent(assumptions, "actual_oee_percent", "actual_utilization_percent");
+    ? overheadPercentEquivalent(assumptions, "target_availability_percent", "target_utilization_percent")
+    : overheadPercentEquivalent(assumptions, "actual_availability_percent", "actual_utilization_percent");
 }
 
 function calculatedAccountingMachineRate(machine: MachineClass, assumptions?: Assumptions | null) {
   const utilization = machine.actual_utilization_percent ?? 1;
+  const availability = availabilityValue(machine, "actual_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? overheadPerMachineHour(assumptions, "actual_oee_percent", "actual_utilization_percent")
+      ? overheadPerMachineHour(assumptions, "actual_availability_percent", "actual_utilization_percent")
       : 0;
-  return machineRateFromDrivers(machine, machine.actual_oee_percent, utilization, overheadPerHour);
+  return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
 }
 
 // Default target Utilization is 95%, not 100%: pricing off a fully-booked assumption risks
@@ -497,12 +509,13 @@ const DEFAULT_TARGET_UTILIZATION_PERCENT = 0.95;
 function calculatedTargetMachineRate(machine: MachineClass, assumptions?: Assumptions | null) {
   const discount = machine.target_rate_discount_percent ?? 0;
   const utilization = machine.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT;
+  const availability = availabilityValue(machine, "target_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? overheadPerMachineHour(assumptions, "target_oee_percent", "target_utilization_percent")
+      ? overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent")
       : 0;
   return roundMoney(
-    machineRateFromDrivers(machine, machine.target_oee_percent, utilization, overheadPerHour) * (1 - discount)
+    machineRateFromDrivers(machine, availability, utilization, overheadPerHour) * (1 - discount)
   );
 }
 
@@ -535,12 +548,13 @@ function suggestedFixedCostFromPurchase(machine: MachineClass) {
 }
 
 // Profitability Calculator: "can we be profitable" independent of any single quote.
-// Always uses target OEE (achievable performance) with a stress-testable shop-wide
-// Utilization scenario, so the user can ask "what if Utilization reached X%?".
+// Always uses target availability (performance/quality losses live in cycle times and scrap,
+// not here) with a stress-testable shop-wide Utilization scenario, so the user can ask
+// "what if Utilization reached X%?".
 function profitabilityEffectiveHours(machine: MachineClass, utilizationScenario: number) {
   const plannedHours = machine.planned_hours_per_month ?? 160;
-  const oee = Math.max(0.01, machine.target_oee_percent ?? 1);
-  return plannedHours * oee * Math.max(0.01, utilizationScenario);
+  const availability = Math.max(0.01, availabilityValue(machine, "target_availability_percent"));
+  return plannedHours * availability * Math.max(0.01, utilizationScenario);
 }
 
 function profitabilityDirectCostMonth(assumptions: Assumptions | null, utilizationScenario: number) {
@@ -3111,11 +3125,11 @@ function App() {
                 </label>
                 <label>
                   Equivalent EUR/h at target
-                  <input readOnly value={money.format(overheadPerMachineHour(assumptions, "target_oee_percent", "target_utilization_percent"))} />
+                  <input readOnly value={money.format(overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent"))} />
                 </label>
                 <label>
                   Equivalent % of cost at target
-                  <input readOnly value={`${(overheadPercentEquivalent(assumptions, "target_oee_percent", "target_utilization_percent") * 100).toFixed(1)}%`} />
+                  <input readOnly value={`${(overheadPercentEquivalent(assumptions, "target_availability_percent", "target_utilization_percent") * 100).toFixed(1)}%`} />
                 </label>
               </div>
               <div className="resourceTable">
@@ -3162,13 +3176,14 @@ function App() {
               <div className="sectionHeader wide">
                 <div>
                   <h2>Machine Rate Calculator</h2>
-                  <p className="sectionHelp">OEE is performance when the machine has work loaded; Utilization is how much of available time actually gets loaded with orders. Idleness (1 - Utilization) is the empty-order gap. Formula: fixed cost / (planned hours x Utilization x OEE) + variable cost {assumptions.overhead?.allocation_method === "per_machine_hour" ? "+ overhead EUR/h" : ""}.</p>
+                  <p className="sectionHelp">Availability is the share of scheduled time the machine is actually up and running; Utilization is how much of available time actually gets loaded with orders. OEE (availability x performance x quality) is shown alongside as a diagnostic only -- performance losses already live in cycle/setup minutes and quality losses in the scrap allowance, so only Availability scales the rate, to avoid double-counting them. Idleness (1 - Utilization) is the empty-order gap. Formula: fixed cost / (planned hours x Utilization x Availability) + variable cost {assumptions.overhead?.allocation_method === "per_machine_hour" ? "+ overhead EUR/h" : ""}.</p>
                 </div>
               </div>
               <div className="resourceTable machineRateTable">
                 <div className="tableHead machineRateHead">
                   <span>Name</span><span>Fixed cost EUR/month</span><span>Planned h/month</span>
-                  <span>Actual OEE %</span><span>Target OEE %</span>
+                  <span>Actual Availability %</span><span>Target Availability %</span>
+                  <span>Actual OEE % (diagnostic)</span><span>Target OEE % (diagnostic)</span>
                   <span>Actual Utilization %</span><span>Target Utilization %</span>
                   <span>Variable EUR/h</span><span>Target discount %</span>
                   <span>Accounting EUR/h</span><span>Target EUR/h</span><span>Power kW</span>
@@ -3184,6 +3199,8 @@ function App() {
                       <input value={machine.name} onChange={(event) => updateMachine(index, "name", event.target.value)} />
                       <input type="number" min="0" value={machine.monthly_fixed_cost_eur ?? 0} onChange={(event) => updateMachine(index, "monthly_fixed_cost_eur", numericValue(event.target.value))} />
                       <input type="number" min="1" value={machine.planned_hours_per_month ?? 160} onChange={(event) => updateMachine(index, "planned_hours_per_month", Math.max(1, numericValue(event.target.value, 160)))} />
+                      <input type="number" min="1" max="100" value={formatPercent(availabilityValue(machine, "actual_availability_percent"))} onChange={(event) => updateMachine(index, "actual_availability_percent", Math.max(0.01, numericValue(event.target.value, 80) / 100))} />
+                      <input type="number" min="1" max="100" value={formatPercent(availabilityValue(machine, "target_availability_percent"))} onChange={(event) => updateMachine(index, "target_availability_percent", Math.max(0.01, numericValue(event.target.value, 90) / 100))} />
                       <input type="number" min="1" max="100" value={formatPercent(machine.actual_oee_percent)} onChange={(event) => updateMachine(index, "actual_oee_percent", Math.max(0.01, numericValue(event.target.value, 1) / 100))} />
                       <input type="number" min="1" max="100" value={formatPercent(machine.target_oee_percent)} onChange={(event) => updateMachine(index, "target_oee_percent", Math.max(0.01, numericValue(event.target.value, 1) / 100))} />
                       <div className="utilizationCell">
@@ -3358,9 +3375,9 @@ function App() {
             <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested, and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
             <article className="panel explanationCard"><h2>Operation Templates</h2><p>Operation templates hold default setup time, cycle time, variable costs, and scrap assumptions used when adding quote operations. The Actuals Feedback action can copy measured production actuals into these defaults, but assumptions still need to be saved in Resources to persist.</p></article>
             <article className="panel explanationCard"><h2>Tool Inventory</h2><p>Tool inventory describes cutters, drills, taps, inserts, fixtures, and gauges that must exist before the part can be produced. If a required tool is missing, the quote should either charge the purchase cost, amortize it over expected future use, or explicitly show that management chose to ignore the cost.</p></article>
-            <article className="panel explanationCard"><h2>Machine Classes</h2><p>Machine Rate Calculator shows how machine EUR/h is built. Accounting EUR/h uses actual OEE and actual Utilization. Target EUR/h uses target OEE, target Utilization (95% by default), and optional target discount. The formula is fixed monthly machine cost divided by productive hours (planned hours x Utilization x OEE) plus variable hourly cost, plus overhead EUR/h if that allocation method is selected.</p></article>
-            <article className="panel explanationCard"><h2>Actual OEE % vs Actual Utilization %</h2><p>These answer two different questions. Actual OEE is how well the machine performs during the time it is actually scheduled to run — availability, performance, and quality. Actual Utilization is how much of the available planned time actually gets loaded with orders at all. A machine can have good OEE and still sit idle most of the month if Utilization is low — that is a sales/load problem, not a machine problem. Both should describe a defined recent measurement window, normally the last 3 to 12 months.</p></article>
-            <article className="panel explanationCard"><h2>Target OEE % vs Target Utilization %</h2><p>Target OEE (roughly 80-85%) is the performance level management believes is achievable with optimized batch sizes and setup times — a real efficiency improvement. Target Utilization defaults to 95%: a near-fully-booked commercial ambition with a small buffer below theoretical capacity. Together they model a healthy, competitively loaded machine, not today's reality.</p></article>
+            <article className="panel explanationCard"><h2>Machine Classes</h2><p>Machine Rate Calculator shows how machine EUR/h is built. Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability, target Utilization (95% by default), and optional target discount. The formula is fixed monthly machine cost divided by productive hours (planned hours x Utilization x Availability) plus variable hourly cost, plus overhead EUR/h if that allocation method is selected. OEE is shown alongside as a diagnostic gauge only — it does not enter this formula, because performance losses already live in cycle/setup minutes and quality losses in the scrap allowance; multiplying by full OEE here would double-charge both.</p></article>
+            <article className="panel explanationCard"><h2>Actual Availability % vs Actual Utilization %</h2><p>These answer two different questions. Actual Availability is the share of scheduled time the machine is actually up and running (not broken down, changed over, or blocked) during the time it is scheduled to work. Actual Utilization is how much of the available planned time actually gets loaded with orders at all. A machine can have good Availability and still sit idle most of the month if Utilization is low — that is a sales/load problem, not a machine problem. Both should describe a defined recent measurement window, normally the last 3 to 12 months. Actual OEE (availability x performance x quality) is still shown as a diagnostic gauge, but only Availability feeds the rate.</p></article>
+            <article className="panel explanationCard"><h2>Target Availability % vs Target Utilization %</h2><p>Target Availability (seed: 90%) is the uptime level management believes is achievable with reduced unplanned downtime — a real availability improvement, not a performance or quality assumption (those live in cycle/setup times and scrap allowance). Target Utilization defaults to 95%: a near-fully-booked commercial ambition with a small buffer below theoretical capacity. Together they model a healthy, competitively loaded machine, not today's reality.</p></article>
             <article className="panel explanationCard"><h2>Idleness</h2><p>Idleness is <code>1 - Utilization</code> — the empty-order gap. It is not derived from OEE. A machine can be 0% idle (fully loaded with orders) and still have mediocre OEE if it runs poorly once loaded; conversely a machine can have excellent OEE and be 60% idle because there simply aren't enough orders. Keeping Idleness tied to Utilization, not OEE, prevents a real demand problem from being mistaken for a shop-floor performance problem.</p></article>
             <article className="panel explanationCard"><h2>Fixed Cost From Purchase Price</h2><p>The "Estimate fixed cost from purchase price" helper on each machine turns purchase price into a monthly figure using straight-line depreciation: <code>(purchase price x (1 - salvage %)) / (useful life years x 12)</code>, plus any other known monthly fixed cost (maintenance contract, floor/rent share, insurance, financing). This makes the previously opaque "Fixed cost EUR/month" box explainable and replaceable with a real number.</p></article>
             <article className="panel explanationCard"><h2>Overhead Allocation</h2><p>Overhead is admin, sales, quality management, and facility cost that sits outside any single machine or direct labor rate — real for a roughly 30-person company with 18-20 on the shop floor, and previously missing from this tool's formula entirely. Enter one total; choose how it reaches quotes: spread as EUR/h across total planned productive hours (folded into each machine's rate), or expressed as a % coefficient on production cost. Both readouts are derived from the same total, so switching methods stays comparable and nothing is double-counted.</p></article>
@@ -3579,27 +3596,27 @@ function App() {
             <section className="panel oeeGuide">
               <h2>OEE vs. Utilization — Two Different Gauges</h2>
               <p><strong>OEE</strong> is the share of scheduled machine time that becomes good productive output — availability, performance, and quality <em>while the machine has work loaded</em>. <strong>Utilization</strong> is a separate question: how much of the available planned time actually gets loaded with orders in the first place. A machine can run beautifully (high OEE) and still sit idle most of the month (low Utilization) because there is not enough demand.</p>
-              <p>The diagnosis for this company: OEE is broadly fine. Utilization is low. That means the fix is commercial — win more orders, or price to reflect real capacity — not a shop-floor performance fix. Idleness (<code>1 - Utilization</code>) is the empty-order gap, and it is tracked separately from OEE throughout this tool.</p>
+              <p>The diagnosis for this company: Availability is broadly fine. Utilization is low. That means the fix is commercial — win more orders, or price to reflect real capacity — not a shop-floor performance fix. Idleness (<code>1 - Utilization</code>) is the empty-order gap, and it is tracked separately from OEE throughout this tool. Only Availability (not full OEE) feeds the rate formula below — performance losses already live in cycle/setup minutes and quality losses in the scrap allowance, so folding OEE in here would double-charge both.</p>
               <div className="oeeExampleGrid">
                 <div><span>Fixed monthly machine cost</span><strong>8,000 EUR</strong></div>
                 <div><span>Planned monthly hours</span><strong>160 h</strong></div>
-                <div><span>At 80% OEE, 100% Utilization (target)</span><strong>128 productive h = 62.50 EUR/h</strong></div>
-                <div><span>At 80% OEE, 35% Utilization (actual)</span><strong>44.8 productive h = 178.57 EUR/h</strong></div>
+                <div><span>At 90% Availability, 95% Utilization (target)</span><strong>136.8 productive h = 58.48 EUR/h</strong></div>
+                <div><span>At 80% Availability, 35% Utilization (actual)</span><strong>44.8 productive h = 178.57 EUR/h</strong></div>
               </div>
-              <p>The machine did not get worse between these two rows — OEE is identical. The cost per productive hour roughly tripled because Utilization collapsed, not because performance did. Pricing off the second row as if it were permanent is the trap the Death Spiral panel on the Business Case page describes.</p>
+              <p>The machine did not get much worse between these two rows — Availability is close. The cost per productive hour roughly tripled because Utilization collapsed, not because performance did. Pricing off the second row as if it were permanent is the trap the Death Spiral panel on the Business Case page describes.</p>
             </section>
 
             <section className="panel guideCompare">
               <h2>Target Utilization Is The Strategy</h2>
-              <p>The Target scenario assumes <strong>100% Utilization</strong> — a fully booked shop, the aspirational commercial load — combined with an achievable <strong>Target OEE</strong> (roughly 80-85%, reflecting optimized batch sizes and setup times, a genuine performance improvement rather than a demand assumption). This is the anchor the company should price and negotiate around, because it reflects what a healthy, competitively loaded shop looks like, not today's empty order book.</p>
+              <p>The Target scenario assumes <strong>95% Utilization</strong> — a near-fully-booked shop, the aspirational commercial load with a small buffer below theoretical capacity — combined with an achievable <strong>Target Availability</strong> (seed: 90%, reflecting reduced unplanned downtime, a genuine uptime improvement rather than a demand assumption). This is the anchor the company should price and negotiate around, because it reflects what a healthy, competitively loaded shop looks like, not today's empty order book.</p>
               <div className="compareColumns">
                 <div>
                   <h3>Target Price</h3>
-                  <p>Uses target machine rates from Resources: target OEE, 100% target Utilization, and optional target discount. They answer: what price level do we need to compete once the shop is properly loaded?</p>
+                  <p>Uses target machine rates from Resources: target Availability, 95% target Utilization, and optional target discount. They answer: what price level do we need to compete once the shop is properly loaded?</p>
                 </div>
                 <div>
                   <h3>Accounting Price</h3>
-                  <p>Uses current full-cost machine rates: actual OEE and actual (low) Utilization. They answer: what price do we get if today's empty order book is charged to this one order?</p>
+                  <p>Uses current full-cost machine rates: actual Availability and actual (low) Utilization. They answer: what price do we get if today's empty order book is charged to this one order?</p>
                 </div>
                 <div>
                   <h3>Accounting Premium</h3>
@@ -3628,7 +3645,7 @@ function App() {
               <div className="diagnosticTable">
                 <div className="diagnosticHead"><span>Question</span><span>Relevant Area</span><span>What To Check</span></div>
                 <div><span>Why is the price high?</span><span>Quote Summary and Scenarios</span><span>Target vs accounting price, accounting premium, unit price by quantity.</span></div>
-                <div><span>Is the machine rate believable?</span><span>Resources, Machine Rate Calculator</span><span>Fixed monthly cost, planned hours, actual/target OEE, actual/target Utilization, Idleness, variable EUR/h, calculated Accounting EUR/h, calculated Target EUR/h.</span></div>
+                <div><span>Is the machine rate believable?</span><span>Resources, Machine Rate Calculator</span><span>Fixed monthly cost, planned hours, actual/target Availability, actual/target OEE (diagnostic), actual/target Utilization, Idleness, variable EUR/h, calculated Accounting EUR/h, calculated Target EUR/h.</span></div>
                 <div><span>Is overhead counted?</span><span>Resources, Overhead Allocation</span><span>Total monthly overhead, allocation method (per machine hour or percent of cost), equivalent EUR/h and % readouts.</span></div>
                 <div><span>Can the company be profitable at all?</span><span>Profitability</span><span>Department expenses, shop Utilization scenario, and monthly gross profit/loss after overhead.</span></div>
                 <div><span>Will the market actually pay this price?</span><span>Business Case, "Overhead Was Missing" panel</span><span>Not answered by this tool: Target price is a cost-side floor, not a market benchmark. Compare it against real competitor quotes manually.</span></div>

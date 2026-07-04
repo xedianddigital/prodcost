@@ -129,20 +129,22 @@ finish, or operator strategy without company-specific rules.
 
 Machine EUR/h is driven by two independent gauges, not one:
 
-- `OEE`: how well a machine performs *once it has work loaded* (availability x performance x quality).
-- `Utilization`: how much of the available planned time actually gets loaded with orders in the first place. `Idleness = 1 - Utilization` is the empty-order gap, and is tracked from Utilization, never from OEE.
+- `Availability`: the share of scheduled time the machine is actually up and running (not broken down, changed over, or otherwise blocked), *once it has work loaded*.
+- `Utilization`: how much of the available planned time actually gets loaded with orders in the first place. `Idleness = 1 - Utilization` is the empty-order gap, and is tracked from Utilization, never from Availability or OEE.
+
+Only Availability enters the rate formula below. `OEE` (availability x performance x quality) is still tracked and shown as a diagnostic gauge (per-machine dashboards, Case signals), but it does not scale EUR/h. Performance losses already live in each operation's cycle/setup minutes (measured actuals feed those, per the calibration loop), and quality losses already live in the per-part scrap allowance. Multiplying the rate by full OEE on top of that would charge both losses twice: once as slower minutes or scrapped parts, once again as a higher EUR/h.
 
 ```text
 machine_eur_per_hour =
-  fixed_cost_eur_per_month / (planned_hours_per_month x utilization x oee)
+  fixed_cost_eur_per_month / (planned_hours_per_month x utilization x availability)
   + variable_cost_eur_per_hour
   + overhead_eur_per_hour (if the per-machine-hour overhead allocation method is selected)
 ```
 
 The model supports at least two rates per machine:
 
-- `accounting_full_cost_rate`: uses actual OEE and actual (typically low) Utilization.
-- `target_competitive_rate`: uses target OEE (an achievable performance improvement from optimized batch/setup, ~80-85%) and target Utilization, defaulted to 95% and editable per machine, and should be compared with market pricing.
+- `accounting_full_cost_rate`: uses actual Availability and actual (typically low) Utilization.
+- `target_competitive_rate`: uses target Availability (an achievable uptime improvement from reduced unplanned downtime, seed 90%) and target Utilization, defaulted to 95% and editable per machine, and should be compared with market pricing.
 
 Target Utilization defaults to 95%, not 100%. Standard cost accounting (e.g. IAS 2 / ASC 330 "normal capacity" rules for overhead absorption) deliberately avoids pricing off theoretical full capacity, because it creates a mirror-image risk to the death spiral: if the company prices as though it will be fully booked and only reaches a lower real Utilization, fixed cost is under-recovered at the quoted price. 95% is a near-fully-booked commercial ambition with a small buffer below theoretical capacity — not a ceiling, always editable per machine, never hardcoded to a single value.
 
