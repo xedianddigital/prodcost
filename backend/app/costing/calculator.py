@@ -1,3 +1,4 @@
+from app.costing.rates import MachineRateDrivers, machine_rate_from_drivers
 from app.costing.schemas import (
     CamProgrammingInput,
     CostLine,
@@ -6,6 +7,32 @@ from app.costing.schemas import (
     QuoteInput,
     QuoteResult,
 )
+
+_RATE_MISMATCH_TOLERANCE_PERCENT = 0.01
+
+
+def _rate_driver_mismatch_warning(operation: OperationInput) -> str | None:
+    if operation.rate_drivers is None:
+        return None
+    drivers = MachineRateDrivers(
+        fixed_cost_eur_per_month=operation.rate_drivers.fixed_cost_eur_per_month,
+        planned_hours_per_month=operation.rate_drivers.planned_hours_per_month,
+        utilization_percent=operation.rate_drivers.utilization_percent,
+        availability_percent=operation.rate_drivers.availability_percent,
+        variable_cost_eur_per_hour=operation.rate_drivers.variable_cost_eur_per_hour,
+    )
+    computed_rate = machine_rate_from_drivers(drivers, operation.rate_drivers.overhead_eur_per_hour)
+    labeled_rate = operation.machine_hour_rate_eur
+    if labeled_rate <= 0:
+        return None
+    deviation = abs(computed_rate - labeled_rate) / labeled_rate
+    if deviation <= _RATE_MISMATCH_TOLERANCE_PERCENT:
+        return None
+    label = operation.name or operation.operation_type
+    return (
+        f"Operation '{label}': rate label may not match drivers "
+        f"(labeled {labeled_rate:.2f} EUR/h, drivers compute {computed_rate:.2f} EUR/h)."
+    )
 
 
 def _round_money(value: float) -> float:
@@ -201,6 +228,9 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
                 f"{operation.scrap_allowance_percent:.0%} is capped at "
                 f"{_MAX_SCRAP_ALLOWANCE_PERCENT:.0%} to avoid an unbounded started quantity."
             )
+        rate_mismatch = _rate_driver_mismatch_warning(operation)
+        if rate_mismatch is not None:
+            warnings.append(rate_mismatch)
         if operation.assumption_quality != "measured":
             assumptions_used.append(
                 f"Operation '{operation.operation_type}' uses {operation.assumption_quality} data."

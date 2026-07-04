@@ -1204,6 +1204,35 @@ function App() {
       : machine.target_competitive_rate_eur_per_hour;
   }
 
+  // Sends the rate math's own inputs alongside the resolved EUR/h so the backend can
+  // recompute and verify it (app/costing/rates.py is the authoritative contract, mirrored
+  // here) -- otherwise rate_mode is just a label the backend never checks.
+  function rateDriversForOperation(machineClassId: string | null, mode: RateMode) {
+    if (!machineClassId || !assumptions) {
+      return null;
+    }
+    const machine = machineById.get(machineClassId);
+    if (!machine) {
+      return null;
+    }
+    const utilizationField: UtilizationField = mode === "accounting_full_cost" ? "actual_utilization_percent" : "target_utilization_percent";
+    const availabilityField: AvailabilityField = mode === "accounting_full_cost" ? "actual_availability_percent" : "target_availability_percent";
+    const utilization = machine[utilizationField] ?? (mode === "accounting_full_cost" ? 1 : DEFAULT_TARGET_UTILIZATION_PERCENT);
+    const availability = availabilityValue(machine, availabilityField);
+    const overheadPerHour =
+      assumptions.overhead?.allocation_method === "per_machine_hour"
+        ? overheadPerMachineHour(assumptions, availabilityField, utilizationField)
+        : 0;
+    return {
+      fixed_cost_eur_per_month: machine.monthly_fixed_cost_eur ?? 0,
+      planned_hours_per_month: machine.planned_hours_per_month ?? 160,
+      utilization_percent: utilization,
+      availability_percent: availability,
+      variable_cost_eur_per_hour: machine.variable_cost_eur_per_hour ?? 0,
+      overhead_eur_per_hour: overheadPerHour
+    };
+  }
+
   function laborRate(laborClassId: string | null) {
     if (!laborClassId) {
       return 0;
@@ -1347,6 +1376,7 @@ function App() {
         outsourced_cost_per_part_eur: operation.outsourcedCostPerPart,
         outsourced_batch_cost_eur: operation.outsourcedBatchCost + missingToolBatchCostForOperation(operation),
         scrap_allowance_percent: operation.scrapAllowancePercent,
+        rate_drivers: rateDriversForOperation(operation.machineClassId, mode),
         assumption_quality: "industry_estimate"
       })),
       commercial_policy: {

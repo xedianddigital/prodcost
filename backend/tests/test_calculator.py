@@ -5,6 +5,7 @@ from app.costing.schemas import (
     MaterialInput,
     OperationInput,
     QuoteInput,
+    RateDriversInput,
 )
 
 
@@ -227,3 +228,53 @@ def test_commercial_multiplier_reflects_sell_price_over_subtotal() -> None:
 
     assert result.commercial_multiplier == round(result.sell_price_eur / subtotal, 3)
     assert result.commercial_multiplier > 1
+
+
+def test_rate_driver_mismatch_over_1_percent_produces_warning() -> None:
+    op = OperationInput(
+        operation_type="milling_3_axis",
+        machine_hour_rate_eur=100,  # deliberately far from what the drivers compute
+        run_machine_minutes_per_part=10,
+        rate_drivers=RateDriversInput(
+            fixed_cost_eur_per_month=1565,
+            planned_hours_per_month=160,
+            utilization_percent=0.95,
+            availability_percent=0.90,
+            variable_cost_eur_per_hour=5,
+            overhead_eur_per_hour=18.8,
+        ),
+    )
+    quote = QuoteInput(
+        part_name="Driver mismatch check",
+        quantity=10,
+        material=MaterialInput(name="blank", stock_piece_cost_eur=10, stock_pieces_required=1),
+        operations=[op],
+    )
+    result = calculate_quote(quote)
+
+    assert any("rate label may not match drivers" in warning for warning in result.warnings)
+
+
+def test_rate_driver_match_within_1_percent_produces_no_warning() -> None:
+    op = OperationInput(
+        operation_type="milling_3_axis",
+        machine_hour_rate_eur=35.24,  # matches the seed cnc_milling_3_axis target rate
+        run_machine_minutes_per_part=10,
+        rate_drivers=RateDriversInput(
+            fixed_cost_eur_per_month=1565,
+            planned_hours_per_month=160,
+            utilization_percent=0.95,
+            availability_percent=0.90,
+            variable_cost_eur_per_hour=5,
+            overhead_eur_per_hour=18.8,
+        ),
+    )
+    quote = QuoteInput(
+        part_name="Driver match check",
+        quantity=10,
+        material=MaterialInput(name="blank", stock_piece_cost_eur=10, stock_pieces_required=1),
+        operations=[op],
+    )
+    result = calculate_quote(quote)
+
+    assert not any("rate label may not match drivers" in warning for warning in result.warnings)

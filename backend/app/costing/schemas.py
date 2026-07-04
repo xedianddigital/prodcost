@@ -46,6 +46,23 @@ class CamProgrammingInput(BaseModel):
     assumption_quality: str = "industry_estimate"
 
 
+class RateDriversInput(BaseModel):
+    """Optional machine-rate inputs alongside an already-resolved machine_hour_rate_eur.
+
+    When present, the backend recomputes the rate from these drivers (see
+    app/costing/rates.py, the same formula as frontend/src/main.tsx) and warns if it
+    disagrees with the label by more than 1% -- rate_mode alone is decorative unless the
+    backend can verify the number it names.
+    """
+
+    fixed_cost_eur_per_month: float = Field(ge=0)
+    planned_hours_per_month: float = Field(gt=0)
+    utilization_percent: float = Field(gt=0, le=1)
+    availability_percent: float = Field(gt=0, le=1)
+    variable_cost_eur_per_hour: float = Field(default=0, ge=0)
+    overhead_eur_per_hour: float = Field(default=0, ge=0)
+
+
 class OperationInput(BaseModel):
     operation_type: str
     name: str | None = None
@@ -60,6 +77,7 @@ class OperationInput(BaseModel):
     outsourced_cost_per_part_eur: float = Field(default=0, ge=0)
     outsourced_batch_cost_eur: float = Field(default=0, ge=0)
     scrap_allowance_percent: float = Field(default=0, ge=0, le=1)
+    rate_drivers: RateDriversInput | None = None
     assumption_quality: str = "company_estimate"
 
 
