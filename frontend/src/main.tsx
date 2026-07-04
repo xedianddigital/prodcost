@@ -1076,6 +1076,10 @@ function App() {
   const [cutWidthMm, setCutWidthMm] = useState(100);
   const [scrapRecovery, setScrapRecovery] = useState(10);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [competitorUnitPriceEur, setCompetitorUnitPriceEur] = useState<number | null>(null);
+  const [gapWaterfall, setGapWaterfall] = useState<Array<{ step: string; price: number; deltaEur: number; deltaPercent: number }> | null>(null);
+  const [sensitivityTable, setSensitivityTable] = useState<Array<{ driver: string; minus25: number; minus10: number; base: number; plus10: number; plus25: number }> | null>(null);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState("");
   const [drafts, setDrafts] = useState<QuoteDraft[]>([]);
   const [draftStatus, setDraftStatus] = useState("No draft saved yet");
   const [erpParts, setErpParts] = useState<ErpPartSummary[]>([]);
@@ -1463,6 +1467,285 @@ function App() {
         risk_allowance_percent: commercialPolicy.risk_allowance_percent,
         minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur
       }
+    };
+  }
+
+  // Generalized version of quotePayloadForMode's rate math for the Scenarios tab (item 7):
+  // lets one driver move at a time (utilization, availability, overhead basis) or apply a
+  // multiplicative what-if factor (cycle times, material cost, margin), instead of only the
+  // two fixed accounting/target presets.
+  type ScenarioOverrides = {
+    utilizationField?: UtilizationField;
+    availabilityField?: AvailabilityField;
+    overheadUtilizationField?: UtilizationField;
+    overheadAvailabilityField?: AvailabilityField;
+    utilizationFactor?: number;
+    availabilityFactor?: number;
+    cycleTimeFactor?: number;
+    materialCostFactor?: number;
+    marginFactor?: number;
+  };
+
+  function quotePayloadForScenario(overrides: ScenarioOverrides, overrideQuantity = quantity) {
+    const utilizationField = overrides.utilizationField ?? "target_utilization_percent";
+    const availabilityField = overrides.availabilityField ?? "target_availability_percent";
+    const overheadUtilizationField = overrides.overheadUtilizationField ?? utilizationField;
+    const overheadAvailabilityField = overrides.overheadAvailabilityField ?? availabilityField;
+    const cycleTimeFactor = overrides.cycleTimeFactor ?? 1;
+    const materialCostFactor = overrides.materialCostFactor ?? 1;
+    const marginFactor = overrides.marginFactor ?? 1;
+    const materialForBreak = stockPiecesForQuantity(overrideQuantity);
+
+    function scenarioMachineRate(machineClassId: string | null) {
+      if (!machineClassId || !assumptions) {
+        return 0;
+      }
+      const machine = machineById.get(machineClassId);
+      if (!machine) {
+        return 0;
+      }
+      const baseUtilization = machine[utilizationField] ?? (utilizationField === "target_utilization_percent" ? DEFAULT_TARGET_UTILIZATION_PERCENT : 1);
+      const utilization = Math.max(0.01, baseUtilization * (overrides.utilizationFactor ?? 1));
+      const availability = Math.max(0.01, availabilityValue(machine, availabilityField) * (overrides.availabilityFactor ?? 1));
+      const overheadPerHour =
+        assumptions.overhead?.allocation_method === "per_machine_hour"
+          ? overheadPerMachineHour(assumptions, overheadAvailabilityField, overheadUtilizationField)
+          : 0;
+      return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
+    }
+
+    const overheadPercent =
+      !assumptions?.overhead || assumptions.overhead.allocation_method === "per_machine_hour"
+        ? 0
+        : overheadPercentEquivalent(assumptions, overheadAvailabilityField, overheadUtilizationField);
+
+    return {
+      part_name: partName,
+      quantity: overrideQuantity,
+      precision_level: "operation_based",
+      rate_mode: "target_competitive",
+      cad_file: cadFile
+        ? {
+            filename: cadFile.name,
+            file_size_bytes: cadFile.size,
+            file_type: cadFile.name.toLowerCase().endsWith(".stp") ? "stp" : "step",
+            geometry_confidence: "not_parsed"
+          }
+        : null,
+      cam_programming: {
+        required: true,
+        is_new_part: isNewPart,
+        complexity: camComplexity,
+        programming_labor_hour_rate_eur: programmingRate,
+        estimated_programming_minutes: programmingMinutes,
+        setup_proveout_minutes: proveoutMinutes,
+        reusable_program_percent: reusableProgramPercent,
+        assumption_quality: "industry_estimate"
+      },
+      material: {
+        name: stockName,
+        stock_piece_cost_eur: roundMoney(stockCost * materialCostFactor),
+        stock_pieces_required: materialForBreak.pieces,
+        scrap_recovery_eur: scrapRecovery,
+        assumption_quality: "company_estimate"
+      },
+      operations: quoteOperations.map((operation) => ({
+        operation_type: operation.operationType,
+        name: operation.name,
+        machine_hour_rate_eur: scenarioMachineRate(operation.machineClassId),
+        labor_hour_rate_eur: laborRate(operation.laborClassId),
+        setup_machine_minutes: operation.setupMachineMinutes,
+        setup_labor_minutes: operation.setupLaborMinutes,
+        run_machine_minutes_per_part: roundMoney(operation.runMachineMinutesPerPart * cycleTimeFactor),
+        run_labor_minutes_per_part: roundMoney(operation.runLaborMinutesPerPart * cycleTimeFactor),
+        tooling_cost_per_part_eur: operation.toolingCostPerPart,
+        consumables_cost_per_part_eur: operation.consumablesCostPerPart,
+        outsourced_cost_per_part_eur: operation.outsourcedCostPerPart,
+        outsourced_batch_cost_eur: operation.outsourcedBatchCost,
+        missing_tool_batch_cost_eur: missingToolBatchCostForOperation(operation),
+        scrap_allowance_percent: operation.scrapAllowancePercent,
+        assumption_quality: "industry_estimate"
+      })),
+      commercial_policy: {
+        margin_percent: Math.min(0.95, Math.max(0, commercialPolicy.default_margin_percent * marginFactor)),
+        overhead_percent: overheadPercent,
+        risk_allowance_percent: commercialPolicy.risk_allowance_percent,
+        minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur
+      }
+    };
+  }
+
+  async function callCalculate(payload: unknown): Promise<QuoteResult> {
+    const response = await fetch("/api/quotes/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error(`Calculator returned ${response.status}`);
+    }
+    return (await response.json()) as QuoteResult;
+  }
+
+  // Gap waterfall (item 7): decomposes accounting price - target price into named steps by
+  // recalculating with one driver switched at a time, in a fixed order (utilization ->
+  // availability -> overhead basis), so the biggest single lever is visible instead of only
+  // the two endpoint prices.
+  async function runGapWaterfall() {
+    if (!assumptions || !accountingResult || !targetResult) {
+      setDiagnosticsStatus("Calculate the quote (Target and Accounting) before running diagnostics.");
+      return;
+    }
+    setDiagnosticsStatus("Calculating gap waterfall...");
+    try {
+      const [afterUtilization, afterAvailability] = await Promise.all([
+        callCalculate(
+          quotePayloadForScenario({
+            utilizationField: "target_utilization_percent",
+            availabilityField: "actual_availability_percent",
+            overheadUtilizationField: "actual_utilization_percent",
+            overheadAvailabilityField: "actual_availability_percent"
+          })
+        ),
+        callCalculate(
+          quotePayloadForScenario({
+            utilizationField: "target_utilization_percent",
+            availabilityField: "target_availability_percent",
+            overheadUtilizationField: "actual_utilization_percent",
+            overheadAvailabilityField: "actual_availability_percent"
+          })
+        )
+      ]);
+      const baseline = accountingResult.unit_sell_price_eur;
+      const afterUtil = afterUtilization.unit_sell_price_eur;
+      const afterAvail = afterAvailability.unit_sell_price_eur;
+      const afterOverhead = targetResult.unit_sell_price_eur;
+      const totalGap = baseline - afterOverhead;
+      const percentOf = (delta: number) => (totalGap !== 0 ? roundMoney((delta / totalGap) * 100) : 0);
+      setGapWaterfall([
+        { step: "Accounting price (actual Utilization, actual Availability)", price: baseline, deltaEur: 0, deltaPercent: 0 },
+        { step: "Switch to target Utilization", price: afterUtil, deltaEur: roundMoney(afterUtil - baseline), deltaPercent: percentOf(afterUtil - baseline) },
+        { step: "+ switch to target Availability", price: afterAvail, deltaEur: roundMoney(afterAvail - afterUtil), deltaPercent: percentOf(afterAvail - afterUtil) },
+        { step: "+ switch overhead to target basis (= Target price)", price: afterOverhead, deltaEur: roundMoney(afterOverhead - afterAvail), deltaPercent: percentOf(afterOverhead - afterAvail) }
+      ]);
+      setDiagnosticsStatus("Gap waterfall calculated.");
+    } catch (error) {
+      setDiagnosticsStatus(error instanceof Error ? error.message : "Gap waterfall failed.");
+    }
+  }
+
+  // Sensitivity table (item 7): unit target price at +-10% and +-25% on utilization,
+  // availability, cycle times, material cost, and margin. Reuses the calculate API; the base
+  // (0%) column is the already-calculated Target unit price, so this is 4 extra calls per
+  // driver, run in parallel.
+  const SENSITIVITY_STEPS = [-0.25, -0.1, 0.1, 0.25];
+
+  async function runSensitivityAnalysis() {
+    if (!assumptions || !targetResult) {
+      setDiagnosticsStatus("Calculate the quote (Target) before running diagnostics.");
+      return;
+    }
+    setDiagnosticsStatus("Calculating sensitivity table...");
+    try {
+      const drivers: Array<{ key: string; label: string; overridesForFactor: (factor: number) => ScenarioOverrides }> = [
+        { key: "utilization", label: "Utilization", overridesForFactor: (factor) => ({ utilizationFactor: 1 + factor }) },
+        { key: "availability", label: "Availability", overridesForFactor: (factor) => ({ availabilityFactor: 1 + factor }) },
+        { key: "cycle_times", label: "Cycle times", overridesForFactor: (factor) => ({ cycleTimeFactor: 1 + factor }) },
+        { key: "material_cost", label: "Material cost", overridesForFactor: (factor) => ({ materialCostFactor: 1 + factor }) },
+        { key: "margin", label: "Margin", overridesForFactor: (factor) => ({ marginFactor: 1 + factor }) }
+      ];
+      const rows = await Promise.all(
+        drivers.map(async (driver) => {
+          const results = await Promise.all(
+            SENSITIVITY_STEPS.map((factor) => callCalculate(quotePayloadForScenario(driver.overridesForFactor(factor))))
+          );
+          return {
+            driver: driver.label,
+            minus25: results[0].unit_sell_price_eur,
+            minus10: results[1].unit_sell_price_eur,
+            base: targetResult.unit_sell_price_eur,
+            plus10: results[2].unit_sell_price_eur,
+            plus25: results[3].unit_sell_price_eur
+          };
+        })
+      );
+      setSensitivityTable(rows);
+      setDiagnosticsStatus("Sensitivity table calculated.");
+    } catch (error) {
+      setDiagnosticsStatus(error instanceof Error ? error.message : "Sensitivity analysis failed.");
+    }
+  }
+
+  // Competitor price gap (item 7): a purely closed-form back-solve from the already-calculated
+  // Target result, no extra API calls. Required margin is exact (holding cost fixed). Required
+  // blended EUR/h and required Utilization are approximations that split each operation's
+  // machine cost into its utilization-sensitive (fixed-cost-per-hour) and insensitive
+  // (variable + overhead-per-hour) components, then solve holding everything else -- including
+  // the commercial multiplier (item 6e) -- constant. Labelled clearly as single-driver what-ifs,
+  // not a full re-simulation.
+  function competitorGapAnalysis() {
+    if (!assumptions || !targetResult || competitorUnitPriceEur === null || competitorUnitPriceEur <= 0) {
+      return null;
+    }
+    const competitorTotalPrice = competitorUnitPriceEur * quantity;
+    const gapEur = roundMoney(targetResult.unit_sell_price_eur - competitorUnitPriceEur);
+    const gapPercent = competitorUnitPriceEur > 0 ? roundMoney((gapEur / competitorUnitPriceEur) * 100) : 0;
+
+    const requiredMarginPercent = targetResult.total_cost_eur > 0 ? 1 - targetResult.total_cost_eur / competitorTotalPrice : null;
+    const feasibleMargin = requiredMarginPercent !== null && requiredMarginPercent >= 0 && requiredMarginPercent < 0.95;
+
+    let machineCost = 0;
+    let machineHours = 0;
+    let fixedTerm = 0;
+    quoteOperations.forEach((operation) => {
+      if (!operation.machineClassId) {
+        return;
+      }
+      const machine = machineById.get(operation.machineClassId);
+      if (!machine) {
+        return;
+      }
+      const rate = machineRate(operation.machineClassId, "target_competitive");
+      const hours = operation.setupMachineMinutes / 60 + quantity * (operation.runMachineMinutesPerPart / 60);
+      machineCost += rate * hours;
+      machineHours += hours;
+      const utilization = Math.max(0.01, machine.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT);
+      const availability = Math.max(0.01, availabilityValue(machine, "target_availability_percent"));
+      const plannedHours = machine.planned_hours_per_month ?? 160;
+      const fixedComponentPerHour = (machine.monthly_fixed_cost_eur ?? 0) / Math.max(1, plannedHours * utilization * availability);
+      fixedTerm += fixedComponentPerHour * hours;
+    });
+    const nonFixedMachineTerm = machineCost - fixedTerm;
+    const subtotalBeforePolicy = targetResult.material_cost_eur + targetResult.engineering_cost_eur + targetResult.operation_cost_eur;
+    const nonMachineCost = subtotalBeforePolicy - machineCost;
+    const requiredSubtotal = targetResult.commercial_multiplier > 0 ? competitorTotalPrice / targetResult.commercial_multiplier : null;
+    const requiredMachineCost = requiredSubtotal !== null ? requiredSubtotal - nonMachineCost : null;
+
+    let requiredBlendedRateEurPerHour: number | null = null;
+    if (requiredMachineCost !== null && machineHours > 0 && machineCost > 0) {
+      requiredBlendedRateEurPerHour = roundMoney((machineCost / machineHours) * (requiredMachineCost / machineCost));
+    }
+    const feasibleRate = requiredBlendedRateEurPerHour !== null && requiredBlendedRateEurPerHour > 0;
+
+    let requiredAverageUtilizationPercent: number | null = null;
+    if (requiredMachineCost !== null && fixedTerm > 0) {
+      const denominator = requiredMachineCost - nonFixedMachineTerm;
+      if (denominator > 0) {
+        const scale = fixedTerm / denominator;
+        requiredAverageUtilizationPercent = Math.min(1, Math.max(0.01, averageTargetUtilization(assumptions) * scale));
+      }
+    }
+    const feasibleUtilization = requiredAverageUtilizationPercent !== null;
+
+    return {
+      gapEur,
+      gapPercent,
+      requiredMarginPercent,
+      feasibleMargin,
+      requiredBlendedRateEurPerHour,
+      feasibleRate,
+      requiredAverageUtilizationPercent,
+      feasibleUtilization
     };
   }
 
@@ -2430,7 +2713,8 @@ function App() {
       selectedTemplateType,
       quoteOperations,
       actualOperations,
-      erpSource
+      erpSource,
+      competitorUnitPriceEur
     };
   }
 
@@ -2469,6 +2753,7 @@ function App() {
     }
     if (Array.isArray(state.actualOperations)) setActualOperations(state.actualOperations as ActualOperation[]);
     setErpSource(state.erpSource && typeof state.erpSource === "object" ? state.erpSource as ErpSourceState : null);
+    setCompetitorUnitPriceEur(typeof state.competitorUnitPriceEur === "number" ? state.competitorUnitPriceEur : null);
   }
 
   async function refreshDrafts() {
@@ -3634,17 +3919,93 @@ function App() {
         {activeView === "resources" && resourceSubView === "values" && !assumptions ? <section className="panel"><p>{assumptionStatus}</p></section> : null}
 
         {activeView === "scenarios" ? (
-          <section className="explanationGrid">
-            <article className="panel explanationCard">
-              <h2>Scenario Comparison</h2>
-              <p>The quote screen now calculates target and accounting prices at the same time. The next persistence step will save these scenarios with the quote so old quote decisions remain explainable.</p>
-            </article>
-            <article className="panel explanationCard">
-              <h2>Current Quote</h2>
-              <p>Target: {targetResult ? money.format(targetResult.sell_price_eur) : "not calculated"}</p>
-              <p>Accounting: {accountingResult ? money.format(accountingResult.sell_price_eur) : "not calculated"}</p>
-              <p>Premium: {accountingResult && targetResult ? money.format(priceGap) : "not calculated"}</p>
-            </article>
+          <section className="scenariosPage">
+            <section className="explanationGrid">
+              <article className="panel explanationCard">
+                <h2>Scenario Comparison</h2>
+                <p>The quote screen calculates target and accounting prices at the same time. This tab exists to answer the tool's founding question: which driver makes quotes 3-4x too high? It isolates one driver at a time instead of only showing the two endpoint prices.</p>
+              </article>
+              <article className="panel explanationCard">
+                <h2>Current Quote</h2>
+                <p>Target: {targetResult ? money.format(targetResult.sell_price_eur) : "not calculated"}</p>
+                <p>Accounting: {accountingResult ? money.format(accountingResult.sell_price_eur) : "not calculated"}</p>
+                <p>Premium: {accountingResult && targetResult ? money.format(priceGap) : "not calculated"}</p>
+              </article>
+            </section>
+
+            <section className="panel">
+              <div className="sectionHeader wide">
+                <div>
+                  <h2>Gap Waterfall and Sensitivity</h2>
+                  <p className="sectionHelp">Recalculates the quote with one driver switched at a time, in a fixed order: Utilization -&gt; Availability -&gt; overhead basis. Sensitivity table adds +-10%/+-25% what-ifs on five drivers. Together this is 10+ extra calculate calls -- deliberate, not run automatically.</p>
+                </div>
+                <div className="buttonRow">
+                  <button className="secondaryButton" onClick={runGapWaterfall}>Run Gap Waterfall</button>
+                  <button className="secondaryButton" onClick={runSensitivityAnalysis}>Run Sensitivity Table</button>
+                </div>
+              </div>
+              {diagnosticsStatus ? <p className="statusText">{diagnosticsStatus}</p> : null}
+
+              {gapWaterfall ? (
+                <div className="operationTable">
+                  <div className="tableHead gapWaterfallHead"><span>Step</span><span>Unit price, EUR</span><span>Delta, EUR</span><span>Delta, % of gap</span></div>
+                  {gapWaterfall.map((row) => (
+                    <div className="tableRow gapWaterfallRow" key={row.step}>
+                      <span>{row.step}</span>
+                      <span>{money.format(row.price)}</span>
+                      <span>{row.deltaEur === 0 ? "-" : money.format(row.deltaEur)}</span>
+                      <span>{row.deltaEur === 0 ? "-" : `${row.deltaPercent.toFixed(0)}%`}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {sensitivityTable ? (
+                <div className="operationTable" style={{ marginTop: 16 }}>
+                  <div className="tableHead sensitivityHead"><span>Driver</span><span>-25%</span><span>-10%</span><span>Base</span><span>+10%</span><span>+25%</span></div>
+                  {sensitivityTable.map((row) => (
+                    <div className="tableRow sensitivityRow" key={row.driver}>
+                      <span>{row.driver}</span>
+                      <span>{money.format(row.minus25)}</span>
+                      <span>{money.format(row.minus10)}</span>
+                      <span><strong>{money.format(row.base)}</strong></span>
+                      <span>{money.format(row.plus10)}</span>
+                      <span>{money.format(row.plus25)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="panel">
+              <div className="sectionHeader"><h2>Competitor Price Gap</h2></div>
+              <p className="sectionHelp">Market comparison is a user-supplied input, not scraped or benchmarked automatically. Required margin is an exact back-solve holding cost fixed; required blended EUR/h and required Utilization are single-driver what-ifs, approximated from the quote's own cost structure -- not a full re-simulation.</p>
+              <div className="fieldGrid">
+                <label>
+                  Competitor/market unit price, EUR
+                  <input
+                    type="number"
+                    min="0"
+                    value={competitorUnitPriceEur ?? ""}
+                    onChange={(event) => setCompetitorUnitPriceEur(event.target.value === "" ? null : Math.max(0, numericValue(event.target.value)))}
+                  />
+                </label>
+              </div>
+              {(() => {
+                const gap = competitorGapAnalysis();
+                if (!gap) {
+                  return <p className="sectionHelp">Enter a competitor unit price (and calculate the Target quote) to see the gap.</p>;
+                }
+                return (
+                  <dl className="summary">
+                    <div><dt>Gap vs. Target unit price</dt><dd>{money.format(gap.gapEur)} ({gap.gapPercent.toFixed(0)}%)</dd></div>
+                    <div><dt>Required margin alone (single-driver what-if)</dt><dd>{gap.feasibleMargin && gap.requiredMarginPercent !== null ? `${formatPercent(gap.requiredMarginPercent)}%` : "Not achievable via margin alone"}</dd></div>
+                    <div><dt>Required blended EUR/h alone (single-driver what-if)</dt><dd>{gap.feasibleRate && gap.requiredBlendedRateEurPerHour !== null ? money.format(gap.requiredBlendedRateEurPerHour) : "Not achievable via rate alone"}</dd></div>
+                    <div><dt>Required Utilization alone (single-driver what-if)</dt><dd>{gap.feasibleUtilization && gap.requiredAverageUtilizationPercent !== null ? `${formatPercent(gap.requiredAverageUtilizationPercent)}%` : "Not achievable via Utilization alone"}</dd></div>
+                  </dl>
+                );
+              })()}
+            </section>
           </section>
         ) : null}
 

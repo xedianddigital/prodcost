@@ -69,7 +69,7 @@ Output:
 
 - accounting full-cost rate (actual OEE x actual Utilization)
 - target competitive rate (target OEE x target Utilization, default 95%)
-- sensitivity by OEE, Utilization, batch size, and margin
+- Scenarios tab: gap waterfall (decomposes accounting-vs-target price by Utilization, Availability, overhead basis), sensitivity table (+-10%/+-25% on Utilization, Availability, cycle times, material cost, margin), and a competitor-price input with closed-form single-driver what-ifs
 - standalone shop-wide profitability estimate (Profitability Calculator), independent of any single quote
 
 ### Level 4: Actuals Feedback

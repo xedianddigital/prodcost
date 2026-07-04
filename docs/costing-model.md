@@ -183,7 +183,7 @@ both methods are meant to be derived from the same total and stay comparable.
 
 ## What This Model Does Not Do
 
-Target price is a cost-side floor: what the company needs to charge to cover production cost, overhead, and margin at a chosen Utilization. It is not a market-side benchmark. The model has no feature for entering or comparing actual competitor prices or customer willingness-to-pay — that comparison remains a manual, external step for management. In a price-driven market, closing that gap matters as much as getting the cost side right.
+Target price is a cost-side floor: what the company needs to charge to cover production cost, overhead, and margin at a chosen Utilization. It is not a market-side benchmark. Market comparison is now a **user-supplied input** (Scenarios tab, "Competitor/market unit price"), not scraped or benchmarked automatically — the model still does not go out and find competitor prices itself. From that input the Scenarios tab shows the gap in EUR/%, plus closed-form single-driver what-ifs (required margin, required blended EUR/h, required Utilization) for what would close the gap through *one* lever alone, clearly labeled as approximations rather than a re-simulation. Getting the cost side right and knowing the market gap both matter; only the first is deep in this tool.
 
 ## Common Operations
 

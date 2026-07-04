@@ -886,6 +886,16 @@ input[readonly] {
   grid-template-columns: minmax(80px, 0.5fr) repeat(5, minmax(130px, 1fr));
 }
 
+.gapWaterfallHead,
+.gapWaterfallRow {
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(110px, 1fr));
+}
+
+.sensitivityHead,
+.sensitivityRow {
+  grid-template-columns: minmax(140px, 1fr) repeat(5, minmax(90px, 1fr));
+}
+
 
 .actualsTable {
   display: grid;
