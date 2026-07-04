@@ -1,0 +1,14 @@
+[
+  {
+    "id": "cust_baltic_robotics",
+    "name": "Baltic Robotics Group",
+    "payment_terms": "30% advance, 70% before delivery",
+    "default_currency": "EUR"
+  },
+  {
+    "id": "cust_internal_rd",
+    "name": "Group R&D Department",
+    "payment_terms": "Internal transfer, monthly settlement",
+    "default_currency": "EUR"
+  }
+]

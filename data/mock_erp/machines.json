@@ -1,0 +1,14 @@
+[
+  {
+    "id": "mx-310",
+    "name": "MX-310 3-axis milling center",
+    "machine_class_id": "cnc_milling_3_axis",
+    "erp_cost_center": "CC-CNC-MILL"
+  },
+  {
+    "id": "tx-210",
+    "name": "TX-210 turning center",
+    "machine_class_id": "cnc_turning",
+    "erp_cost_center": "CC-CNC-TURN"
+  }
+]

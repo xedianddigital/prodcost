@@ -1,0 +1,18 @@
+[
+  {
+    "id": "stock_al6082_flat_80x20",
+    "material_id": "mat_al6082_t6",
+    "description": "6082-T6 flat bar 80 x 20 x 3000 mm",
+    "cost_eur": 86,
+    "available_quantity": 14,
+    "availability_note": "In stock, enough for demo quantity"
+  },
+  {
+    "id": "stock_s355_plate_20",
+    "material_id": "mat_s355",
+    "description": "S355 plate 20 mm, plasma cut blank",
+    "cost_eur": 145,
+    "available_quantity": 2,
+    "availability_note": "Stock available for prototype only; production batch needs supplier confirmation"
+  }
+]

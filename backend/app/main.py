@@ -1,0 +1,19 @@
+from fastapi import FastAPI
+
+from app.api.assumptions import router as assumptions_router
+from app.api.erp import router as erp_router
+from app.api.quote_drafts import router as quote_drafts_router
+from app.api.quotes import router as quotes_router
+
+app = FastAPI(title="ProdCost API", version="0.1.0")
+
+app.include_router(assumptions_router, prefix="/api")
+app.include_router(quotes_router, prefix="/api")
+app.include_router(quote_drafts_router, prefix="/api")
+app.include_router(erp_router, prefix="/api")
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+

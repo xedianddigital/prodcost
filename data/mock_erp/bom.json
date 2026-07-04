@@ -1,0 +1,18 @@
+[
+  {
+    "part_id": "part_al_sensor_bracket_rev_b",
+    "line": 10,
+    "material_id": "mat_al6082_t6",
+    "stock_id": "stock_al6082_flat_80x20",
+    "stock_pieces_required": 3,
+    "scrap_recovery_eur": 8
+  },
+  {
+    "part_id": "part_s355_fixture_plate_new",
+    "line": 10,
+    "material_id": "mat_s355",
+    "stock_id": "stock_s355_plate_20",
+    "stock_pieces_required": 4,
+    "scrap_recovery_eur": 15
+  }
+]

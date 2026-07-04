@@ -1,0 +1,43 @@
+[
+  {
+    "id": "part_al_sensor_bracket_rev_b",
+    "part_number": "BRK-AL-042",
+    "revision": "B",
+    "name": "CNC aluminium sensor bracket",
+    "customer_id": "cust_baltic_robotics",
+    "rfq_reference": "RFQ-DEMO-STEP-042",
+    "default_quantity": 50,
+    "quantity_breaks": [
+      10,
+      25,
+      50,
+      100,
+      250
+    ],
+    "is_new_part": false,
+    "cam_complexity": "medium",
+    "programming_minutes": 25,
+    "proveout_minutes": 10,
+    "delivery_estimate": "15 working days after order confirmation"
+  },
+  {
+    "id": "part_s355_fixture_plate_new",
+    "part_number": "PLT-S355-117",
+    "revision": "A",
+    "name": "S355 fixture adapter plate",
+    "customer_id": "cust_internal_rd",
+    "rfq_reference": "RFQ-RD-PLATE-117",
+    "default_quantity": 12,
+    "quantity_breaks": [
+      1,
+      5,
+      12,
+      25
+    ],
+    "is_new_part": true,
+    "cam_complexity": "complex",
+    "programming_minutes": 180,
+    "proveout_minutes": 45,
+    "delivery_estimate": "4 weeks after drawing approval"
+  }
+]
