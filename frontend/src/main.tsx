@@ -567,13 +567,48 @@ function profitabilityDirectCostMonth(assumptions: Assumptions | null, utilizati
   }, 0);
 }
 
-// Mirrors calculator.py: total_cost = subtotal + overhead + risk_allowance, sell_price = total_cost / (1 - margin).
-// Margin and risk must gross up the FULL cost base (direct cost + overhead), not direct cost alone --
-// grossing up only direct cost would understate required revenue and overstate gross profit.
-function profitabilityRevenueMonth(directCostMonth: number, overheadMonth: number, marginPercent: number, riskPercent: number) {
-  const subtotalWithOverhead = directCostMonth + overheadMonth;
-  const totalCost = subtotalWithOverhead * (1 + riskPercent);
-  return totalCost / Math.max(0.01, 1 - marginPercent);
+// Revenue and cost must move independently, or gross profit can never go negative (item 5).
+// Price is fixed at the shop's commercial policy -- a blended target sell rate EUR/h, priced
+// once at target Utilization/Availability and grossed up by risk and margin. Sold hours then
+// follow the *scenario* Utilization, which is the free variable being stress-tested. Costs are
+// the full monthly fixed cost (does not shrink with the scenario) plus variable cost over sold
+// hours, plus the full monthly overhead -- never derived from revenue.
+function profitabilityTargetSellRatePerHour(assumptions: Assumptions | null, marginPercent: number, riskPercent: number) {
+  const directPlusOverhead =
+    blendedDirectMachineRate(assumptions, "target_availability_percent", "target_utilization_percent") +
+    overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent");
+  return (directPlusOverhead * (1 + riskPercent)) / Math.max(0.01, 1 - marginPercent);
+}
+
+function profitabilityRevenueMonth(assumptions: Assumptions | null, utilizationScenario: number, sellRatePerHour: number) {
+  const soldHours = (assumptions?.machine_classes ?? []).reduce(
+    (sum, machine) => sum + profitabilityEffectiveHours(machine, utilizationScenario),
+    0
+  );
+  return soldHours * sellRatePerHour;
+}
+
+// Closed-form break-even: solve revenue(u) = cost(u) for the scenario Utilization u, using
+// that both sold hours and variable cost scale linearly with u while fixed cost and overhead
+// don't. Returns null when the sell rate can never cover marginal (variable) cost, so no
+// Utilization closes the gap.
+function profitabilityBreakEvenUtilization(assumptions: Assumptions | null, sellRatePerHour: number) {
+  const machines = assumptions?.machine_classes ?? [];
+  let hoursAtFullUtilization = 0;
+  let variableCostAtFullUtilization = 0;
+  let fixedCostMonth = 0;
+  machines.forEach((machine) => {
+    const hours = profitabilityEffectiveHours(machine, 1);
+    hoursAtFullUtilization += hours;
+    variableCostAtFullUtilization += hours * (machine.variable_cost_eur_per_hour ?? 0);
+    fixedCostMonth += machine.monthly_fixed_cost_eur ?? 0;
+  });
+  const overheadMonth = totalMonthlyOverheadEur(assumptions);
+  const denominator = sellRatePerHour * hoursAtFullUtilization - variableCostAtFullUtilization;
+  if (denominator <= 0) {
+    return null;
+  }
+  return (fixedCostMonth + overheadMonth) / denominator;
 }
 
 function averageActualUtilization(assumptions: Assumptions | null) {
@@ -3438,7 +3473,7 @@ function App() {
             <article className="panel explanationCard"><h2>Idleness</h2><p>Idleness is <code>1 - Utilization</code> — the empty-order gap. It is not derived from OEE. A machine can be 0% idle (fully loaded with orders) and still have mediocre OEE if it runs poorly once loaded; conversely a machine can have excellent OEE and be 60% idle because there simply aren't enough orders. Keeping Idleness tied to Utilization, not OEE, prevents a real demand problem from being mistaken for a shop-floor performance problem.</p></article>
             <article className="panel explanationCard"><h2>Fixed Cost From Purchase Price</h2><p>The "Estimate fixed cost from purchase price" helper on each machine turns purchase price into a monthly figure using straight-line depreciation: <code>(purchase price x (1 - salvage %)) / (useful life years x 12)</code>, plus any other known monthly fixed cost (maintenance contract, floor/rent share, insurance, financing). This makes the previously opaque "Fixed cost EUR/month" box explainable and replaceable with a real number.</p></article>
             <article className="panel explanationCard"><h2>Overhead Allocation</h2><p>Overhead is admin, sales, quality management, and facility cost that sits outside any single machine or direct labor rate — real for a roughly 30-person company with 18-20 on the shop floor, and previously missing from this tool's formula entirely. Enter one total; choose how it reaches quotes: spread as EUR/h across total planned productive hours (folded into each machine's rate), or expressed as a % coefficient on production cost. Both readouts are derived from the same total, so switching methods stays comparable and nothing is double-counted.</p></article>
-            <article className="panel explanationCard"><h2>Profitability Calculator</h2><p>A standalone "can we be profitable" check, independent of any single quote. It reuses the Overhead Allocation expense list, assumes each machine's own Target OEE, and lets you stress-test a shop-wide Utilization scenario. The output bridges Revenue capacity down to machine direct cost and overhead to a monthly gross profit or loss — the route from negative to positive.</p></article>
+            <article className="panel explanationCard"><h2>Profitability Calculator</h2><p>A standalone "can we be profitable" check, independent of any single quote. Revenue and cost move independently, so this can actually show a loss: the sell rate EUR/h is fixed once, at target Utilization/Availability and the commercial policy (direct rate + overhead/h, grossed up by risk and margin) -- it is not re-derived from the scenario's own cost, which would make a loss mathematically impossible. Sold hours follow the shop-wide Utilization scenario you stress-test; revenue is sold hours x the fixed sell rate. Cost is the full monthly fixed cost (unchanged by the scenario) plus variable cost over sold hours, plus full monthly overhead (reusing the same Overhead Allocation expense list). The bridge shows gross profit or loss, plus the break-even Utilization that closes the gap.</p></article>
             <article className="panel explanationCard"><h2>Power kW</h2><p>Power should be average loaded consumption when available, ideally measured with a power analyzer during representative machining. If only the nameplate value is known, treat it as a conservative estimate and mark quality accordingly. Nominal installed power often overstates normal cutting consumption.</p></article>
             <article className="panel explanationCard"><h2>Full JSON</h2><p>The full JSON editor exposes every assumption, including values that do not yet have structured fields. Use it carefully: it is powerful, but invalid structure can break calculations or dropdowns. The Save button validates that required top-level sections still exist.</p></article>
             <article className="panel explanationCard wideCard"><h2>Latvian Payroll Rule Reference</h2><p>VID states that the standard mandatory social insurance contribution rate is 34.09%, split into 23.59% paid by the employer and 10.50% by the employee when the worker is insured for all social insurance types. This app uses the employer-side 23.59% as an editable default for gross salary based labor costing.</p><p>Source: https://www.vid.gov.lv/lv/valsts-socialas-apdrosinasanas-obligatas-iemaksas</p></article>
@@ -3520,17 +3555,23 @@ function App() {
             {(() => {
               const directCostMonth = profitabilityDirectCostMonth(assumptions, profitabilityUtilization);
               const overheadMonth = totalMonthlyOverheadEur(assumptions);
-              const revenueMonth = profitabilityRevenueMonth(
-                directCostMonth,
-                overheadMonth,
+              const sellRatePerHour = profitabilityTargetSellRatePerHour(
+                assumptions,
                 assumptions.commercial_policy.default_margin_percent,
                 assumptions.commercial_policy.risk_allowance_percent
               );
+              const revenueMonth = profitabilityRevenueMonth(assumptions, profitabilityUtilization, sellRatePerHour);
               const grossProfitMonth = revenueMonth - directCostMonth - overheadMonth;
+              const breakEvenUtilization = profitabilityBreakEvenUtilization(assumptions, sellRatePerHour);
               return (
                 <section className="panel backbonePanel">
                   <div className="sectionHeader"><h2>Monthly Gross Profit Bridge</h2></div>
-                  <p className="sectionHelp">Revenue capacity at the chosen Utilization scenario, minus what it costs to run the machines, minus overhead. This is the route from negative to positive gross profit.</p>
+                  <p className="sectionHelp">Revenue is sold hours (planned hours x target Availability x the Utilization scenario) at a fixed sell rate priced once at target Utilization/Availability and the commercial policy -- it does not shrink or grow with the scenario's own cost. Cost is the full monthly fixed cost (unchanged by the scenario) plus variable cost over sold hours, plus full monthly overhead. At low scenario Utilization this can and should show a loss.</p>
+                  <p className="sectionHelp">
+                    {breakEvenUtilization === null
+                      ? "Break-even Utilization: none -- the target sell rate does not even cover variable cost at any Utilization."
+                      : `Break-even Utilization: ${formatPercent(Math.max(0, Math.min(1, breakEvenUtilization)))}% ${breakEvenUtilization > 1 ? "(above 100% -- this shop cannot break even even fully booked at today's cost structure)" : ""}`}
+                  </p>
                   <ProfitBridgeChart
                     revenue={revenueMonth}
                     directCost={directCostMonth}
