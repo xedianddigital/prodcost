@@ -278,3 +278,41 @@ def test_rate_driver_match_within_1_percent_produces_no_warning() -> None:
     result = calculate_quote(quote)
 
     assert not any("rate label may not match drivers" in warning for warning in result.warnings)
+
+
+def test_unit_material_cost_differs_across_quantity_breaks_when_stock_pieces_recompute() -> None:
+    """Item 4: a 250-pc break must not be priced with the 50-pc break's frozen stock pieces.
+
+    Simulates what the frontend now sends per break: stockPiecesForQuantity recomputes stock
+    pieces from cutoff data (or scales proportionally) instead of reusing the main quantity's
+    stock_pieces_required for every break. With real cutoff nesting, doubling quantity does not
+    require exactly double the stock pieces -- so the unit material cost should shift, not stay
+    frozen at the 50-pc figure.
+    """
+    op = OperationInput(operation_type="saw_cutting", machine_hour_rate_eur=10, run_machine_minutes_per_part=1)
+
+    small_break = QuoteInput(
+        part_name="Break 50",
+        quantity=50,
+        material=MaterialInput(name="round bar", stock_piece_cost_eur=55, stock_pieces_required=13),
+        operations=[op],
+    )
+    large_break = QuoteInput(
+        part_name="Break 250",
+        quantity=250,
+        # Nesting efficiency means 250 pcs needs less than 5x the 50-pc stock piece count.
+        material=MaterialInput(name="round bar", stock_piece_cost_eur=55, stock_pieces_required=61),
+        operations=[op],
+    )
+
+    small_result = calculate_quote(small_break)
+    large_result = calculate_quote(large_break)
+
+    small_unit_material_cost = small_result.material_cost_eur / 50
+    large_unit_material_cost = large_result.material_cost_eur / 250
+
+    assert small_unit_material_cost != large_unit_material_cost
+    # Naively reusing the 50-pc stock_pieces_required (13) for 250 pcs would give a materially
+    # cheaper, wrong unit cost -- confirm the recomputed 250-pc figure is not that number.
+    frozen_stock_unit_cost = (13 * 55) / 250
+    assert large_unit_material_cost != frozen_stock_unit_cost

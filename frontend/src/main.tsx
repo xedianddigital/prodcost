@@ -854,7 +854,7 @@ function PrintableQuote({
   partName: string;
   paymentTerms: string;
   quantity: number;
-  quantityBreakResults: Array<{ quantity: number; target: QuoteResult; accounting: QuoteResult }>;
+  quantityBreakResults: Array<{ quantity: number; target: QuoteResult; accounting: QuoteResult; materialScaledLinearly?: boolean }>;
   quoteNumber: string;
   quoteOperations: QuoteOperation[];
   rfqReference: string;
@@ -1016,7 +1016,7 @@ function App() {
   const [printDocumentMode, setPrintDocumentMode] = useState<PrintDocumentMode>("customer_offer");
   const [quantity, setQuantity] = useState(20);
   const [quantityBreakText, setQuantityBreakText] = useState("10, 20, 50, 100");
-  const [quantityBreakResults, setQuantityBreakResults] = useState<Array<{ quantity: number; target: QuoteResult; accounting: QuoteResult }>>([]);
+  const [quantityBreakResults, setQuantityBreakResults] = useState<Array<{ quantity: number; target: QuoteResult; accounting: QuoteResult; materialScaledLinearly?: boolean }>>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [stockName, setStockName] = useState("S355 plate blank");
   const [stockCost, setStockCost] = useState(100);
@@ -1331,7 +1331,27 @@ function App() {
     return setup + run + perPartVariable + outsourcedBatch + scrapAllowance;
   }
 
+  // Quantity breaks must not reuse the main quantity's frozen material quantity -- a 250-pc
+  // break priced with 50 pcs of material understates its true cost. When the selected
+  // library material has cutoff data, recompute stock pieces for the break quantity via the
+  // real cutoff calculator; otherwise scale the manually-entered stock pieces linearly.
+  function stockPiecesForQuantity(targetQuantity: number): { pieces: number; scaledLinearly: boolean } {
+    const selectedMaterial = assumptions?.material_examples.find((material) => material.id === selectedMaterialId);
+    if (selectedMaterial) {
+      const isPlate = selectedMaterial.stock_shape === "plate";
+      const recomputed = stockPiecesRequiredForMaterial(selectedMaterial, cutLengthMm, isPlate ? cutWidthMm : 0, targetQuantity);
+      if (recomputed !== null) {
+        return { pieces: recomputed, scaledLinearly: false };
+      }
+    }
+    if (targetQuantity === quantity) {
+      return { pieces: stockPieces, scaledLinearly: false };
+    }
+    return { pieces: Math.max(1, Math.ceil((stockPieces / quantity) * targetQuantity)), scaledLinearly: true };
+  }
+
   function quotePayloadForMode(mode: RateMode, overrideQuantity = quantity) {
+    const materialForBreak = stockPiecesForQuantity(overrideQuantity);
     return {
       part_name: partName,
       quantity: overrideQuantity,
@@ -1358,7 +1378,7 @@ function App() {
       material: {
         name: stockName,
         stock_piece_cost_eur: stockCost,
-        stock_pieces_required: stockPieces,
+        stock_pieces_required: materialForBreak.pieces,
         scrap_recovery_eur: scrapRecovery,
         assumption_quality: "company_estimate"
       },
@@ -1797,7 +1817,8 @@ function App() {
               return {
                 quantity: breakQuantity,
                 target: (await targetBreakResponse.json()) as QuoteResult,
-                accounting: (await accountingBreakResponse.json()) as QuoteResult
+                accounting: (await accountingBreakResponse.json()) as QuoteResult,
+                materialScaledLinearly: stockPiecesForQuantity(breakQuantity).scaledLinearly
               };
             })
           );
@@ -2695,14 +2716,14 @@ function App() {
               <div className="sectionHeader wide">
                 <div>
                   <h2>Quantity Breaks</h2>
-                  <p className="sectionHelp">Unit prices show how setup and CAM costs amortize across batch sizes.</p>
+                  <p className="sectionHelp">Unit prices show how setup and CAM costs amortize across batch sizes. Material quantity is recomputed per break, not frozen at the main quantity.</p>
                 </div>
               </div>
               <div className="operationTable">
                 <div className="tableHead quantityBreakHead"><span>Qty, pcs</span><span>Target total, EUR</span><span>Target unit, EUR/pc</span><span>Accounting total, EUR</span><span>Accounting unit, EUR/pc</span><span>Premium, EUR/pc</span></div>
                 {quantityBreakResults.map((item) => (
                   <div className="tableRow quantityBreakRow" key={item.quantity}>
-                    <span>{item.quantity}</span>
+                    <span>{item.quantity}{item.materialScaledLinearly ? <em className="scaledNote" title="No cutoff data for this material: stock pieces were scaled linearly from the main quantity, not cutoff-optimized."> (material scaled linearly)</em> : null}</span>
                     <span>{money.format(item.target.sell_price_eur)}</span>
                     <span>{money.format(item.target.unit_sell_price_eur)}</span>
                     <span>{money.format(item.accounting.sell_price_eur)}</span>
