@@ -151,6 +151,7 @@ type QuoteResult = {
   margin_percent: number;
   sell_price_eur: number;
   unit_sell_price_eur: number;
+  commercial_multiplier: number;
   lines: Array<{ code: string; label: string; cost_eur: number; unit_cost_eur: number }>;
   assumptions_used: string[];
   warnings: string[];
@@ -1292,9 +1293,13 @@ function App() {
     const laborHourly = laborRate(operation.laborClassId);
     const setup = (setupMachineMinutes / 60) * machineHourly + (setupLaborMinutes / 60) * laborHourly;
     const run = quantity * ((runMachineMinutes / 60) * machineHourly + (runLaborMinutes / 60) * laborHourly);
-    const variable = quantity * (operation.toolingCostPerPart + operation.consumablesCostPerPart + operation.outsourcedCostPerPart) + operation.outsourcedBatchCost + missingToolBatchCostForOperation(operation);
-    const base = setup + run + variable;
-    return base * (1 + scrapPercent);
+    const perPartVariable = quantity * (operation.toolingCostPerPart + operation.consumablesCostPerPart + operation.outsourcedCostPerPart);
+    const outsourcedBatch = operation.outsourcedBatchCost + missingToolBatchCostForOperation(operation);
+    // Scrap allowance only covers run cost and per-part variable cost -- setup and the
+    // outsourced batch cost are one-off per-batch costs scrap doesn't multiply (mirrors
+    // backend/app/costing/calculator.py).
+    const scrapAllowance = (run + perPartVariable) * scrapPercent;
+    return setup + run + perPartVariable + outsourcedBatch + scrapAllowance;
   }
 
   function quotePayloadForMode(mode: RateMode, overrideQuantity = quantity) {
@@ -2633,6 +2638,7 @@ function App() {
                   <div><dt>Engineering/CAM operation, EUR</dt><dd>{selectedResult ? money.format(selectedResult.engineering_cost_eur) : "..."}</dd></div>
                   <div><dt>Sell price, EUR</dt><dd>{selectedResult ? money.format(selectedResult.sell_price_eur) : "..."}</dd></div>
                   <div><dt>Unit price, EUR/pc</dt><dd>{selectedResult ? money.format(selectedResult.unit_sell_price_eur) : "..."}</dd></div>
+                  <div><dt>Commercial multiplier</dt><dd>{selectedResult ? `×${selectedResult.commercial_multiplier.toFixed(2)} (overhead, risk, margin, min-order admin)` : "..."}</dd></div>
                 </dl>
               </div>
             </section>

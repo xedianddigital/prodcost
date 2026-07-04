@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class FormulaVersion(StrEnum):
     V0_1 = "costing.v0.1"
+    V0_2 = "costing.v0.2"
 
 
 class PrecisionLevel(StrEnum):
@@ -114,6 +115,7 @@ class QuoteResult(BaseModel):
     margin_percent: float
     sell_price_eur: float
     unit_sell_price_eur: float
+    commercial_multiplier: float
     lines: list[CostLine]
     assumptions_used: list[str]
     warnings: list[str]

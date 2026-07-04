@@ -63,17 +63,49 @@ def _cam_programming_cost(cam: CamProgrammingInput | None, quantity: int) -> tup
     return total, line
 
 
-def _operation_cost(operation: OperationInput, quantity: int) -> tuple[float, CostLine]:
+_MAX_SCRAP_ALLOWANCE_PERCENT = 0.95
+
+
+def _effective_scrap_percent(operation: OperationInput) -> float:
+    return min(operation.scrap_allowance_percent, _MAX_SCRAP_ALLOWANCE_PERCENT)
+
+
+def _started_quantities(operations: list[OperationInput], quantity: int) -> list[float]:
+    """Sequential yield: to ship `quantity` good parts, the quantity fed into operation i
+    must cover its own scrap plus every downstream operation's scrap. Computed backward
+    from the last operation so each op's started quantity is Q / prod(1 - scrap_j) for j >= i.
+    """
+    started = [0.0] * len(operations)
+    running_yield = 1.0
+    for i in range(len(operations) - 1, -1, -1):
+        running_yield *= 1 - _effective_scrap_percent(operations[i])
+        started[i] = quantity / max(running_yield, 1 - _MAX_SCRAP_ALLOWANCE_PERCENT)
+    return started
+
+
+def _operation_cost(
+    operation: OperationInput, quantity: int, started_quantity: float
+) -> tuple[float, float, float, CostLine]:
+    """Returns (total_cost, conversion_cost, pass_through_cost, line).
+
+    conversion_cost is setup + run machine/labor cost plus its share of the scrap
+    allowance -- the base for percent-of-cost overhead (item 6c). pass_through_cost is
+    tooling/consumables/outsourced-per-part plus outsourced batch cost plus their share
+    of scrap -- risk/margin still apply to it, but overhead does not, and it feeds the
+    pass-through visibility warning (item 6d).
+    """
     label = operation.name or operation.operation_type.replace("_", " ").title()
+    scrap_percent = _effective_scrap_percent(operation)
+
     setup_machine_cost = _hours(operation.setup_machine_minutes) * operation.machine_hour_rate_eur
     setup_labor_cost = _hours(operation.setup_labor_minutes) * operation.labor_hour_rate_eur
     run_machine_cost = (
-        quantity
+        started_quantity
         * _hours(operation.run_machine_minutes_per_part)
         * operation.machine_hour_rate_eur
     )
     run_labor_cost = (
-        quantity
+        started_quantity
         * _hours(operation.run_labor_minutes_per_part)
         * operation.labor_hour_rate_eur
     )
@@ -82,23 +114,25 @@ def _operation_cost(operation: OperationInput, quantity: int) -> tuple[float, Co
         + operation.consumables_cost_per_part_eur
         + operation.outsourced_cost_per_part_eur
     )
-    variable_cost = quantity * variable_unit_cost
-    base_cost = (
-        setup_machine_cost
-        + setup_labor_cost
-        + run_machine_cost
-        + run_labor_cost
-        + variable_cost
-        + operation.outsourced_batch_cost_eur
-    )
-    scrap_allowance = base_cost * operation.scrap_allowance_percent
-    total = base_cost + scrap_allowance
+    variable_cost = started_quantity * variable_unit_cost
+
+    # Scrap allowance covers run cost and per-part variable cost only -- setup and the
+    # outsourced batch cost are paid once per batch regardless of scrap, so they stay outside.
+    scrap_on_run = (run_machine_cost + run_labor_cost) * scrap_percent
+    scrap_on_variable = variable_cost * scrap_percent
+    scrap_allowance = scrap_on_run + scrap_on_variable
+
+    conversion_cost = setup_machine_cost + setup_labor_cost + run_machine_cost + run_labor_cost + scrap_on_run
+    pass_through_cost = variable_cost + scrap_on_variable + operation.outsourced_batch_cost_eur
+    total = conversion_cost + pass_through_cost
+
     line = CostLine(
         code=f"operation.{operation.operation_type}",
         label=label,
         cost_eur=_round_money(total),
         unit_cost_eur=_round_money(total / quantity),
         details={
+            "started_quantity": round(started_quantity, 2),
             "setup_machine_cost_eur": _round_money(setup_machine_cost),
             "setup_labor_cost_eur": _round_money(setup_labor_cost),
             "run_machine_cost_eur": _round_money(run_machine_cost),
@@ -109,7 +143,7 @@ def _operation_cost(operation: OperationInput, quantity: int) -> tuple[float, Co
             "assumption_quality": operation.assumption_quality,
         },
     )
-    return total, line
+    return total, conversion_cost, pass_through_cost, line
 
 
 def calculate_quote(quote: QuoteInput) -> QuoteResult:
@@ -147,12 +181,26 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
                 "STEP geometry is not parsed yet; CAM time is estimated from complexity inputs."
             )
 
+    started_quantities = _started_quantities(quote.operations, quote.quantity)
+
     operation_cost = 0.0
-    for operation in quote.operations:
-        cost, line = _operation_cost(operation, quote.quantity)
+    conversion_cost = engineering_cost
+    pass_through_cost = 0.0
+    for operation, started_quantity in zip(quote.operations, started_quantities):
+        cost, op_conversion, op_pass_through, line = _operation_cost(
+            operation, quote.quantity, started_quantity
+        )
         operation_cost += cost
+        conversion_cost += op_conversion
+        pass_through_cost += op_pass_through
         lines.append(line)
 
+        if operation.scrap_allowance_percent >= _MAX_SCRAP_ALLOWANCE_PERCENT:
+            warnings.append(
+                f"Operation '{operation.operation_type}' scrap allowance "
+                f"{operation.scrap_allowance_percent:.0%} is capped at "
+                f"{_MAX_SCRAP_ALLOWANCE_PERCENT:.0%} to avoid an unbounded started quantity."
+            )
         if operation.assumption_quality != "measured":
             assumptions_used.append(
                 f"Operation '{operation.operation_type}' uses {operation.assumption_quality} data."
@@ -165,7 +213,12 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
             warnings.append(f"Operation '{operation.operation_type}' has labor time but zero labor rate.")
 
     subtotal_before_policy = material_cost + engineering_cost + operation_cost
-    overhead_cost = subtotal_before_policy * quote.commercial_policy.overhead_percent
+    # Overhead (admin/sales/quality/facility) is absorbed against conversion cost --
+    # setup + run machine/labor time, post-scrap, plus engineering -- not against material,
+    # tooling/consumables/outsourced-per-part, or outsourced batch cost. Those pass-through
+    # costs don't consume the shop's own conversion capacity, so loading overhead onto them
+    # would make material-heavy quotes diverge between the two overhead allocation methods.
+    overhead_cost = conversion_cost * quote.commercial_policy.overhead_percent
     risk_allowance = (
         subtotal_before_policy + overhead_cost
     ) * quote.commercial_policy.risk_allowance_percent
@@ -174,6 +227,15 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
 
     margin_percent = quote.commercial_policy.margin_percent
     sell_price = total_cost / (1 - margin_percent)
+    commercial_multiplier = sell_price / subtotal_before_policy if subtotal_before_policy > 0 else 0.0
+
+    pass_through_total = material_cost + pass_through_cost
+    if total_cost > 0 and pass_through_total / total_cost > 0.4:
+        warnings.append(
+            "Material and outsourced/pass-through cost is "
+            f"{pass_through_total / total_cost:.0%} of total cost: full risk and margin are "
+            "being applied to pass-through cost, a known driver of uncompetitive quotes."
+        )
 
     if quote.quantity < 10:
         warnings.append("Low quantity: setup amortization may dominate the unit price.")
@@ -181,7 +243,7 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
         warnings.append("Fast estimate: verify route, setup time, and cycle time before committing price.")
 
     return QuoteResult(
-        formula_version=FormulaVersion.V0_1,
+        formula_version=FormulaVersion.V0_2,
         quote_id=quote.quote_id,
         part_name=quote.part_name,
         quantity=quote.quantity,
@@ -198,6 +260,7 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
         margin_percent=margin_percent,
         sell_price_eur=_round_money(sell_price),
         unit_sell_price_eur=_round_money(sell_price / quote.quantity),
+        commercial_multiplier=round(commercial_multiplier, 3),
         lines=lines,
         assumptions_used=assumptions_used,
         warnings=warnings,

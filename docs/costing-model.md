@@ -82,16 +82,30 @@ operation_cost =
   + outsourced_batch_cost
 ```
 
-Scrap can be handled at two levels:
-
-- material-level extra stock pieces
-- operation-level scrap allowance percentage
-
-For the first implementation, operation scrap allowance is applied to the operation subtotal:
+Scrap is modeled as **sequential yield across the route**, not a single flat multiplier. To
+ship `Q` good parts, the quantity that must be *started* into operation `i` is:
 
 ```text
-operation_cost_with_scrap =
-  operation_cost * (1 + scrap_allowance_percent)
+started_quantity_i = Q / Π(1 - scrap_j)   for every operation j from i to the last operation
+```
+
+Each operation's run cost (machine + labor) is computed against its own started quantity, not
+the final shipped quantity — an upstream operation must produce enough extra parts to absorb
+every downstream operation's scrap. Material stock pieces are sized off the first operation's
+started quantity (rounded up), since that is the number of blanks actually consumed. Setup cost
+and `outsourced_batch_cost` are paid once per batch and are not scaled by started quantity.
+Per-operation scrap is capped at 95% internally to keep started quantity finite; a quote that
+declares 95%+ scrap on an operation gets a warning rather than a divide-by-zero.
+
+On top of the yield-driven quantity, `scrap_allowance_percent` is also a **monetary buffer** —
+extra cost for rework, inspection, and disposal that isn't fully captured just by running more
+units. That buffer applies only to run machine/labor cost and per-part variable cost (tooling,
+consumables, outsourced per part); it does not apply to setup or `outsourced_batch_cost`,
+since those are one-off per-batch costs that scrap doesn't multiply:
+
+```text
+scrap_allowance = (run_machine_cost + run_labor_cost + variable_cost) * scrap_allowance_percent
+operation_cost = setup_cost + run_cost + variable_cost + outsourced_batch_cost + scrap_allowance
 ```
 
 ## CAD/CAM Estimate Cost
@@ -155,9 +169,17 @@ This distinction matters because pricing off low actual Utilization as if it wer
 Admin, sales, quality management, and facility cost sit outside any single machine or direct labor rate. A single editable total (`overhead.monthly_items`) can reach quotes through one of two methods, both derived from the same total so they stay comparable:
 
 - `per_machine_hour` (default): `overhead_eur_per_hour = total_monthly_overhead / total_planned_productive_hours_across_machines`, folded directly into each machine's EUR/h.
-- `percent_of_cost`: the same EUR/h figure expressed as an equivalent coefficient on production cost (`overhead_eur_per_hour / blended_direct_machine_rate`), applied through the existing `commercial_policy.overhead_percent` coefficient.
+- `percent_of_cost`: the same EUR/h figure expressed as an equivalent coefficient on production cost (`overhead_eur_per_hour / blended_direct_machine_rate`), applied through `commercial_policy.overhead_percent` against the **conversion cost base only**.
 
 Only one method should be active in a given quote — applying both would double-count overhead.
+
+The `percent_of_cost` base is **conversion cost**: each operation's setup + run machine/labor
+cost (post-scrap) plus engineering (CAM) cost. It explicitly **excludes** material, tooling/
+consumables/outsourced-per-part, and outsourced batch cost — those are pass-through costs that
+don't consume the shop's own conversion capacity. Applying overhead to the whole subtotal
+(including material and outsourced work) would make a material-heavy quote and a machining-heavy
+quote of the same total cost diverge sharply between the two allocation methods, even though
+both methods are meant to be derived from the same total and stay comparable.
 
 ## What This Model Does Not Do
 
