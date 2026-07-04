@@ -309,7 +309,15 @@ type OperationTemplate = {
   default_outsourced_cost_per_part_eur?: number;
   default_outsourced_batch_cost_eur?: number;
   default_scrap_allowance_percent?: number;
+  calibration_sample_count?: number;
   quality?: string;
+};
+
+type CalibrationCandidate = {
+  operationType: string;
+  fieldChanges: Array<{ key: keyof OperationTemplate; label: string; oldValue: number; newValue: number; deviates: boolean }>;
+  newSampleCount: number;
+  requiresConfirmation: boolean;
 };
 
 type Assumptions = {
@@ -1088,6 +1096,8 @@ function App() {
   const [expandedPortalDetails, setExpandedPortalDetails] = useState<Record<string, boolean>>({});
   const [profitabilityUtilization, setProfitabilityUtilization] = useState(0.7);
   const [assumptionStatus, setAssumptionStatus] = useState("Loading assumptions...");
+  const [pendingCalibration, setPendingCalibration] = useState<CalibrationCandidate[] | null>(null);
+  const [calibrationConfirmations, setCalibrationConfirmations] = useState<Record<string, boolean>>({});
   const [targetResult, setTargetResult] = useState<QuoteResult | null>(null);
   const [accountingResult, setAccountingResult] = useState<QuoteResult | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -2240,36 +2250,94 @@ function App() {
     });
   }
 
-  function applyActualsToTemplates() {
+  const CALIBRATION_MAX_SAMPLE_COUNT = 20;
+  const CALIBRATION_DEVIATION_MULTIPLE = 3;
+  const CALIBRATION_FIELDS: Array<{ key: keyof OperationTemplate; label: string; selector: (actual: ActualOperation) => number }> = [
+    { key: "default_setup_machine_minutes", label: "Setup machine, min", selector: (actual) => actual.actualSetupMachineMinutes },
+    { key: "default_setup_labor_minutes", label: "Setup labor, min", selector: (actual) => actual.actualSetupLaborMinutes },
+    { key: "default_run_machine_minutes_per_part", label: "Run machine, min/part", selector: (actual) => actual.actualRunMachineMinutesPerPart },
+    { key: "default_run_labor_minutes_per_part", label: "Run labor, min/part", selector: (actual) => actual.actualRunLaborMinutesPerPart },
+    { key: "default_scrap_allowance_percent", label: "Scrap allowance %", selector: (actual) => actual.actualScrapPercent }
+  ];
+
+  // Running weighted mean, not a flat average across unrelated jobs: new = (old*n + mean(actuals)*k)
+  // / (n+k), n capped at CALIBRATION_MAX_SAMPLE_COUNT so the template stays adaptive rather than
+  // freezing on old data forever. Calibration is per operation TYPE across whatever parts used it
+  // in this session, not per part family -- one odd job on a shared operation type still nudges the
+  // shared default, just proportionally less as the sample count grows.
+  function computeCalibrationCandidates(): CalibrationCandidate[] {
     if (!assumptions) {
+      return [];
+    }
+    return assumptions.operation_templates
+      .map((template): CalibrationCandidate | null => {
+        const matchingOperations = quoteOperations.filter((operation) => operation.operationType === template.operation_type);
+        const matchingActuals = matchingOperations
+          .map((operation) => actualOperations.find((actual) => actual.operationId === operation.id))
+          .filter((actual): actual is ActualOperation => Boolean(actual));
+        if (matchingActuals.length === 0) {
+          return null;
+        }
+        const k = matchingActuals.length;
+        const n = Math.min(template.calibration_sample_count ?? 0, CALIBRATION_MAX_SAMPLE_COUNT);
+        const fieldChanges = CALIBRATION_FIELDS.map(({ key, label, selector }) => {
+          const meanActual = matchingActuals.reduce((sum, actual) => sum + selector(actual), 0) / k;
+          const oldValue = (template[key] as number | undefined) ?? 0;
+          const newValue = roundMoney((oldValue * n + meanActual * k) / Math.max(1, n + k));
+          const deviates = oldValue > 0 && (newValue >= oldValue * CALIBRATION_DEVIATION_MULTIPLE || newValue <= oldValue / CALIBRATION_DEVIATION_MULTIPLE);
+          return { key, label, oldValue, newValue, deviates };
+        });
+        return {
+          operationType: template.operation_type,
+          fieldChanges,
+          newSampleCount: Math.min(n + k, CALIBRATION_MAX_SAMPLE_COUNT),
+          requiresConfirmation: fieldChanges.some((change) => change.deviates)
+        };
+      })
+      .filter((candidate): candidate is CalibrationCandidate => candidate !== null);
+  }
+
+  function applyActualsToTemplates() {
+    const candidates = computeCalibrationCandidates();
+    if (candidates.length === 0) {
+      setAssumptionStatus("No matching actuals recorded for any operation template.");
       return;
     }
-    const nextTemplates = assumptions.operation_templates.map((template) => {
-      const matchingOperations = quoteOperations.filter((operation) => operation.operationType === template.operation_type);
-      const matchingActuals = matchingOperations
-        .map((operation) => actualOperations.find((actual) => actual.operationId === operation.id))
-        .filter((actual): actual is ActualOperation => Boolean(actual));
+    setPendingCalibration(candidates);
+    setCalibrationConfirmations({});
+  }
 
-      if (matchingActuals.length === 0) {
+  function confirmCalibration() {
+    if (!assumptions || !pendingCalibration) {
+      return;
+    }
+    const blocked = pendingCalibration.filter((candidate) => candidate.requiresConfirmation && !calibrationConfirmations[candidate.operationType]);
+    if (blocked.length > 0) {
+      setAssumptionStatus(`Confirm the large deviation checkbox for: ${blocked.map((item) => operationLabel(item.operationType)).join(", ")}.`);
+      return;
+    }
+    const changesByType = new Map(pendingCalibration.map((candidate) => [candidate.operationType, candidate]));
+    const nextTemplates = assumptions.operation_templates.map((template) => {
+      const candidate = changesByType.get(template.operation_type);
+      if (!candidate) {
         return template;
       }
-
-      const average = (selector: (actual: ActualOperation) => number) =>
-        roundMoney(matchingActuals.reduce((sum, actual) => sum + selector(actual), 0) / matchingActuals.length);
-
-      return {
-        ...template,
-        default_setup_machine_minutes: average((actual) => actual.actualSetupMachineMinutes),
-        default_setup_labor_minutes: average((actual) => actual.actualSetupLaborMinutes),
-        default_run_machine_minutes_per_part: average((actual) => actual.actualRunMachineMinutesPerPart),
-        default_run_labor_minutes_per_part: average((actual) => actual.actualRunLaborMinutesPerPart),
-        default_scrap_allowance_percent: average((actual) => actual.actualScrapPercent),
-        quality: "company_estimate"
-      };
+      const updates: Partial<OperationTemplate> = { calibration_sample_count: candidate.newSampleCount, quality: "company_estimate" };
+      candidate.fieldChanges.forEach((change) => {
+        (updates as Record<string, number>)[change.key] = change.newValue;
+      });
+      return { ...template, ...updates };
     });
 
     updateAssumptions({ ...assumptions, operation_templates: nextTemplates });
-    setAssumptionStatus("Actuals applied to operation templates. Save Resources to persist.");
+    setAssumptionStatus("Actuals applied to operation templates as a running weighted mean. Save Resources to persist.");
+    setPendingCalibration(null);
+    setCalibrationConfirmations({});
+  }
+
+  function cancelCalibration() {
+    setPendingCalibration(null);
+    setCalibrationConfirmations({});
   }
 
   function removeOperation(index: number) {
@@ -2996,6 +3064,38 @@ function App() {
                   );
                 })}
               </div>
+              {pendingCalibration && pendingCalibration.length > 0 ? (
+                <div className="panel calibrationReview">
+                  <div className="sectionHeader"><h2>Confirm Calibration</h2></div>
+                  <p className="sectionHelp">Calibration is per operation type, not per part family: this updates the shared template for every part that uses this operation type. Applied as a running weighted mean (old value weighted by its sample count, capped at {CALIBRATION_MAX_SAMPLE_COUNT}), not a flat overwrite -- one odd job can no longer swing the default outright.</p>
+                  {pendingCalibration.map((candidate) => (
+                    <div className="calibrationCard" key={candidate.operationType}>
+                      <strong>{operationLabel(candidate.operationType)} (sample count {candidate.newSampleCount})</strong>
+                      <div className="calibrationFieldGrid">
+                        {candidate.fieldChanges.map((change) => (
+                          <span key={change.key} className={change.deviates ? "calibrationDeviates" : ""}>
+                            {change.label}: {change.oldValue} -&gt; {change.newValue}{change.deviates ? " (>=3x deviation)" : ""}
+                          </span>
+                        ))}
+                      </div>
+                      {candidate.requiresConfirmation ? (
+                        <label className="calibrationConfirm">
+                          <input
+                            type="checkbox"
+                            checked={calibrationConfirmations[candidate.operationType] ?? false}
+                            onChange={(event) => setCalibrationConfirmations((current) => ({ ...current, [candidate.operationType]: event.target.checked }))}
+                          />
+                          I confirm this large deviation from the current template is correct.
+                        </label>
+                      ) : null}
+                    </div>
+                  ))}
+                  <div className="buttonRow">
+                    <button className="primaryButton" onClick={confirmCalibration}>Confirm &amp; Apply</button>
+                    <button className="secondaryButton" onClick={cancelCalibration}>Cancel</button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </>
         ) : null}
@@ -3499,7 +3599,7 @@ function App() {
             <article className="panel explanationCard"><h2>Material Library</h2><p>Material library entries represent purchasable stock pieces used for quoting. Use supplier stock dimensions and purchase cost, not theoretical net part material. Scrap recovery is optional and should be based on actual resale/reuse value where known.</p></article>
             <article className="panel explanationCard"><h2>Cutoff Calculator</h2><p>Stock comes in fixed dimensions (a 3m bar, a 6m tube, a 1500x3000mm plate), and a part rarely divides evenly into it. The Cutoff Calculator turns a required cut length (and cut width for plate) into how many whole stock units must actually be purchased, so unusable cutoff waste is priced in rather than assumed away. For linear stock (round/hex/square bar, tube), it divides stock length by cut length plus saw kerf. For plate, it is a rough area estimate (order area divided by usable sheet area at a fixed packing efficiency) -- not true 2D nesting with rotation and rectangle packing, so treat plate estimates as a rough band, not an exact cutting plan. Available in the Quote Builder RFQ panel and the Client Portal, both driven by the same Material Library stock dimensions.</p></article>
             <article className="panel explanationCard wideCard"><h2>Client Portal Methodology</h2><p>The client-facing preliminary estimate always prices at the <strong>Target</strong> rate (achievable OEE, a stress-testable Utilization scenario) so the client sees a competitive number, not today's under-loaded Accounting cost. "Show internal pricing detail" on each part reveals what stays hidden from the client: the Accounting cross-check (what the price would be if charged at today's actual Utilization -- a large gap is a reminder that this price assumes the shop wins more orders), the adjustment factors applied for complexity/tolerance/QC/delivery (hand-picked heuristics, not yet calibrated against actuals -- complexity no longer uses uploaded file size in bytes as a signal, since that reflects export settings rather than part complexity; its weight was redistributed across the remaining signals), a real Tool Inventory check for the assumed route including tapping when threads/inserts are requested, and an informational repeat-order CAM savings estimate when declared annual volume suggests future repeat business (this does not change the price of the current, necessarily new-part, order). "Send to Quote Builder" carries the RFQ into a real quote draft for the manual confirmation the portal promises -- before that button existed, a portal RFQ was a dead end once you left the tab.</p></article>
-            <article className="panel explanationCard"><h2>Operation Templates</h2><p>Operation templates hold default setup time, cycle time, variable costs, and scrap assumptions used when adding quote operations. The Actuals Feedback action can copy measured production actuals into these defaults, but assumptions still need to be saved in Resources to persist.</p></article>
+            <article className="panel explanationCard"><h2>Operation Templates</h2><p>Operation templates hold default setup time, cycle time, variable costs, and scrap assumptions used when adding quote operations. The Actuals Feedback action applies measured production actuals as a running weighted mean (old value weighted by its sample count, capped at 20), not a flat overwrite, and shows an old-&gt;new review with a required confirmation checkbox when any field would jump 3x or more. Calibration is per operation type across whatever parts used it, not per part family -- normalizing by part family is future work. Assumptions still need to be saved in Resources to persist.</p></article>
             <article className="panel explanationCard"><h2>Tool Inventory</h2><p>Tool inventory describes cutters, drills, taps, inserts, fixtures, and gauges that must exist before the part can be produced. If a required tool is missing, the quote should either charge the purchase cost, amortize it over expected future use, or explicitly show that management chose to ignore the cost.</p></article>
             <article className="panel explanationCard"><h2>Machine Classes</h2><p>Machine Rate Calculator shows how machine EUR/h is built. Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability, target Utilization (95% by default), and optional target discount. The formula is fixed monthly machine cost divided by productive hours (planned hours x Utilization x Availability) plus variable hourly cost, plus overhead EUR/h if that allocation method is selected. OEE is shown alongside as a diagnostic gauge only — it does not enter this formula, because performance losses already live in cycle/setup minutes and quality losses in the scrap allowance; multiplying by full OEE here would double-charge both.</p></article>
             <article className="panel explanationCard"><h2>Actual Availability % vs Actual Utilization %</h2><p>These answer two different questions. Actual Availability is the share of scheduled time the machine is actually up and running (not broken down, changed over, or blocked) during the time it is scheduled to work. Actual Utilization is how much of the available planned time actually gets loaded with orders at all. A machine can have good Availability and still sit idle most of the month if Utilization is low — that is a sales/load problem, not a machine problem. Both should describe a defined recent measurement window, normally the last 3 to 12 months. Actual OEE (availability x performance x quality) is still shown as a diagnostic gauge, but only Availability feeds the rate.</p></article>

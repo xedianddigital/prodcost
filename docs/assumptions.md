@@ -36,6 +36,25 @@ Replace assumptions in this order:
 7. overhead allocation total and method (per machine hour vs percent of cost)
 8. scrap and rework rates
 
+## Calibration Loop (Actuals Feedback)
+
+"Apply to Templates" in the Quote Builder's Actuals Feedback panel updates operation templates
+from measured actuals, but it is a **per operation type** loop, not per part family: it averages
+recorded actuals across whatever parts in the current session used that operation type, and
+writes the result into the one shared template for that operation type. It is not yet smart
+enough to notice that a `milling_3_axis` operation on a small aluminium bracket behaves
+differently from the same operation type on a large steel plate -- part-family-aware
+normalization is future work.
+
+To keep one odd job from swinging the shared default for every future quote, the update is a
+**running weighted mean**, not a flat overwrite: `new = (old * n + mean(actuals) * k) / (n + k)`,
+where `n` is the template's `calibration_sample_count` (capped at 20 so the template stays
+adaptive rather than freezing on old data forever) and `k` is the number of actuals just
+recorded. Before applying, the UI shows an old -> new review per affected template; if any field
+would move 3x or more, that template requires an explicit confirmation checkbox before the apply
+button will proceed. Sample counts persist in `data/baseline_assumptions.lv.json` alongside each
+template's `quality` field.
+
 ## Labor Cost From Gross Salary
 
 Labor can be entered either as a direct loaded hourly rate or derived from gross monthly salary.

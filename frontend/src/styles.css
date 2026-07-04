@@ -922,6 +922,39 @@ input[readonly] {
   width: 100%;
 }
 
+.calibrationReview {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.calibrationCard {
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.calibrationFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 4px;
+  font-size: 13px;
+}
+
+.calibrationDeviates {
+  color: #b3261e;
+  font-weight: 600;
+}
+
+.calibrationConfirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 
 .demoPanel {
   background: #c4ccd5;
