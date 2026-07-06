@@ -2,7 +2,7 @@
   {
     "id": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
     "created_at": "2026-07-05T13:59:29.737216+00:00",
-    "updated_at": "2026-07-06T11:12:59.906769+00:00",
+    "updated_at": "2026-07-06T16:54:46.273770+00:00",
     "name": "SIA CNCmetalTest",
     "profile_state": {
       "profileId": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
@@ -534,7 +534,7 @@
         "quality": "industry_estimate"
       },
       "commercial_policy": {
-        "default_margin_percent": 0.25,
+        "default_margin_percent": 0.2,
         "risk_allowance_percent": 0.05,
         "minimum_order_admin_cost_eur": 40,
         "material_markup_percent": 0.1
@@ -821,7 +821,7 @@
           "monthly_fixed_cost_eur": 725,
           "planned_hours_per_month": 160,
           "variable_cost_eur_per_hour": 5,
-          "market_sell_rate_eur_per_hour": 201.28,
+          "market_sell_rate_eur_per_hour": 195,
           "market_rate_class_id": "cnc",
           "target_rate_discount_percent": 0,
           "purchase_price_eur": 87000,

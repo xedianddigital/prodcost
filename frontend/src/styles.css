@@ -1133,29 +1133,6 @@ input[readonly] {
 }
 
 
-.demoPanel {
-  background: #c4ccd5;
-  border: 1px solid #9ea8b2;
-  border-radius: 8px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.demoPanel h2 {
-  margin-bottom: 10px;
-}
-
-.demoPanel ol {
-  margin: 0;
-  padding-left: 20px;
-  color: #38414a;
-  display: grid;
-  gap: 6px;
-}
-
 .businessCase {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1163,12 +1140,71 @@ input[readonly] {
 }
 
 @media (max-width: 900px) {
-  .demoPanel {
+  .businessCase {
+    grid-template-columns: 1fr;
+  }
+}
+
+.costingBasisStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  background: #d4dbe2;
+}
+
+.costingBasisStrip.warning {
+  border-color: #b98c48;
+  background: #ddd3c1;
+}
+
+.costingBasisStrip div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.costingBasisStrip span {
+  color: #59636d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.costingBasisStrip strong {
+  color: #17202a;
+  font-size: 18px;
+}
+
+.costingBasisStrip p {
+  margin: 0;
+  color: #38414a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.costingBasisActions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.costingBasisActions button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .costingBasisStrip {
     display: grid;
   }
 
-  .businessCase {
-    grid-template-columns: 1fr;
+  .costingBasisActions {
+    justify-content: flex-start;
   }
 }
 
@@ -1180,7 +1216,7 @@ input[readonly] {
 
 .erpControls {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto auto;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, max-content);
   gap: 12px;
   align-items: end;
 }
@@ -1827,7 +1863,7 @@ input[readonly] {
 }
 
 .erpControls {
-  grid-template-columns: minmax(280px, 1fr) max-content max-content;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, max-content);
 }
 
 .erpControls label {
@@ -3102,4 +3138,149 @@ input[readonly] {
   font-size: 12px;
   font-style: normal;
   line-height: 1.3;
+}
+
+
+.marketRateActions > .primaryButton,
+.marketRateActions > .secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  line-height: 1.15;
+}
+
+
+.quoteSummaryScenarioStrip {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 14px 0 12px;
+  padding: 12px;
+  background: #d7dde3;
+  border-color: #b7c0c9;
+}
+
+.quoteSummaryScenarioStrip div {
+  grid-template-columns: minmax(108px, 0.9fr) minmax(92px, auto);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+}
+
+.quoteSummaryScenarioStrip .scenarioLabel {
+  font-size: 12px;
+}
+
+.quoteSummaryScenarioStrip strong {
+  justify-self: end;
+  font-size: 16px;
+}
+
+.quoteSummaryScenarioStrip .scenarioHint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+}
+
+
+.quoteMarketRateCard {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #b7c0c9;
+  border-radius: 8px;
+  background: #d7dde3;
+}
+
+.quoteMarketRateHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quoteMarketRateHeader div {
+  display: grid;
+  gap: 3px;
+}
+
+.quoteMarketRateHeader strong {
+  color: #20252b;
+  font-size: 14px;
+}
+
+.quoteMarketRateHeader span,
+.quoteMarketRateCard p {
+  color: #4b5661;
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.quoteMarketRateHeader em {
+  color: #20252b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quoteMarketRateActions {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.quoteMarketRateActions .secondaryButton {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.quoteMarketRateRows {
+  display: grid;
+  gap: 6px;
+}
+
+.quoteMarketRateRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content minmax(64px, max-content) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.quoteMarketRateRow span {
+  color: #2f3a44;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.quoteMarketRateRow strong {
+  justify-self: end;
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quoteMarketRateRow em {
+  justify-self: end;
+  color: #4b5661;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.quoteMarketRateRow .rateGapCell {
+  justify-self: end;
+}
+
+.quoteMarketRateRow small {
+  color: #59636d;
+  font-size: 11px;
+  white-space: nowrap;
 }

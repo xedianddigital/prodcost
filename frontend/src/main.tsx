@@ -632,6 +632,39 @@ function overheadPerMachineHour(
   return roundMoney(totalMonthlyOverheadEur(assumptions) / Math.max(1, hours));
 }
 
+function machineProductiveHours(machine: MachineClass, availabilityField: AvailabilityField, utilizationField: UtilizationField) {
+  const plannedHours = machine.planned_hours_per_month ?? 160;
+  const availability = Math.max(0.01, availabilityValue(machine, availabilityField));
+  const utilization = Math.max(0.01, machine[utilizationField] ?? 1);
+  return plannedHours * availability * utilization;
+}
+
+function directMachineRateBeforeOverhead(machine: MachineClass, availabilityField: AvailabilityField, utilizationField: UtilizationField) {
+  const hours = machineProductiveHours(machine, availabilityField, utilizationField);
+  const fixedCost = machine.monthly_fixed_cost_eur ?? 0;
+  const variableCost = machine.variable_cost_eur_per_hour ?? 0;
+  return fixedCost / Math.max(1, hours) + variableCost;
+}
+
+function weightedOverheadPerMachineHour(
+  assumptions: Assumptions | null,
+  machine: MachineClass,
+  availabilityField: AvailabilityField,
+  utilizationField: UtilizationField
+) {
+  const overheadMonth = totalMonthlyOverheadEur(assumptions);
+  const machines = assumptions?.machine_classes ?? [];
+  const totalDirectCapacityValue = machines.reduce((sum, item) => {
+    const hours = machineProductiveHours(item, availabilityField, utilizationField);
+    return sum + directMachineRateBeforeOverhead(item, availabilityField, utilizationField) * hours;
+  }, 0);
+  if (overheadMonth <= 0 || totalDirectCapacityValue <= 0) {
+    return 0;
+  }
+  const directRate = directMachineRateBeforeOverhead(machine, availabilityField, utilizationField);
+  return roundMoney((overheadMonth * directRate) / totalDirectCapacityValue);
+}
+
 function blendedDirectMachineRate(
   assumptions: Assumptions | null,
   availabilityField: AvailabilityField,
@@ -683,7 +716,7 @@ function calculatedAccountingMachineRate(machine: MachineClass, assumptions?: As
   const availability = availabilityValue(machine, "actual_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? overheadPerMachineHour(assumptions, "actual_availability_percent", "actual_utilization_percent")
+      ? weightedOverheadPerMachineHour(assumptions, machine, "actual_availability_percent", "actual_utilization_percent")
       : 0;
   return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
 }
@@ -700,7 +733,7 @@ function calculatedTargetMachineRate(machine: MachineClass, assumptions?: Assump
   const availability = availabilityValue(machine, "target_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent")
+      ? weightedOverheadPerMachineHour(assumptions, machine, "target_availability_percent", "target_utilization_percent")
       : 0;
   return roundMoney(
     machineRateFromDrivers(machine, availability, utilization, overheadPerHour) * (1 - discount)
@@ -840,10 +873,24 @@ function machineMarketRateClassId(machine: Pick<MachineClass, "id" | "name" | "m
   return machine.market_rate_class_id ?? inferredMarketRateClassId(machine.id, machine.name);
 }
 
-function operationWorkCenterHours(operation: QuoteOperation, quantity: number) {
-  const machineMinutes = operation.setupMachineMinutes + operation.runMachineMinutesPerPart * quantity;
-  const laborMinutes = operation.setupLaborMinutes + operation.runLaborMinutesPerPart * quantity;
+function operationWorkCenterHours(operation: QuoteOperation, startedQuantity: number) {
+  const machineMinutes = operation.setupMachineMinutes + operation.runMachineMinutesPerPart * startedQuantity;
+  const laborMinutes = operation.setupLaborMinutes + operation.runLaborMinutesPerPart * startedQuantity;
   return Math.max(machineMinutes, laborMinutes) / 60;
+}
+
+function effectiveScrapPercent(operation: Pick<QuoteOperation, "scrapAllowancePercent">) {
+  return Math.min(operation.scrapAllowancePercent, 0.95);
+}
+
+function startedQuantitiesForOperations(operations: QuoteOperation[], shippedQuantity: number) {
+  const started = new Array<number>(operations.length).fill(shippedQuantity);
+  let runningYield = 1;
+  for (let index = operations.length - 1; index >= 0; index -= 1) {
+    runningYield *= 1 - effectiveScrapPercent(operations[index]);
+    started[index] = shippedQuantity / Math.max(runningYield, 0.05);
+  }
+  return started;
 }
 
 function marketRateCardProfileId(assumptions: Assumptions | null) {
@@ -1000,70 +1047,42 @@ function createStarterCompanyProfile(assumptions: Assumptions): CompanyProfileSt
   const paidHours = assumptions.payroll_tax_defaults?.paid_hours_per_month ?? 160;
   return {
     profileId: null,
-    companyName: "Default manufacturing simulation profile",
+    companyName: "Generic starter profile",
     lowValueInventoryTotalEur: 0,
     lowValueInventoryRefreshMonths: 24,
     assets: [
-      defaultCompanyAsset("manual_tool_station_1", "Manual tool station 1", 2, 1.5),
-      defaultCompanyAsset("manual_tool_station_2", "Manual tool station 2", 2, 1.5),
-      defaultCompanyAsset("manual_tool_station_3", "Manual tool station 3", 2, 1.5),
-      defaultCompanyAsset("cnc_machine_1", "CNC machine 1", 16, 5),
-      defaultCompanyAsset("cnc_machine_2", "CNC machine 2", 16, 5),
-      defaultCompanyAsset("cnc_machine_3", "CNC machine 3", 16, 5),
-      defaultCompanyAsset("assembly_station_1", "Assembly station 1", 2, 1),
-      defaultCompanyAsset("qc_station_1", "QC station 1", 1, 1)
+      defaultCompanyAsset("starter_manual_station", "General manual station", 2, 1.2),
+      defaultCompanyAsset("starter_cnc_work_center", "Generic CNC work center", 12, 4),
+      defaultCompanyAsset("starter_inspection_packing", "Inspection / packing area", 1, 0.8, "support_internal")
     ],
     employees: [
-      defaultCompanyEmployee("machine_operator", "Machine operator", "Production", true, employerRate, paidHours),
-      defaultCompanyEmployee("cnc_setup_programmer", "CNC setup/programmer", "CNC setup and programming", true, employerRate, paidHours),
-      defaultCompanyEmployee("assembler", "Assembler / fitter", "Assembly", true, employerRate, paidHours),
-      defaultCompanyEmployee("quality_inspector", "Quality inspector", "Inspection", true, employerRate, paidHours),
-      defaultCompanyEmployee("production_manager", "Production manager", "Production management", false, employerRate, paidHours),
-      defaultCompanyEmployee("production_planner", "Production planner / scheduler", "Planning", false, employerRate, paidHours),
-      defaultCompanyEmployee("purchasing_specialist", "Purchasing specialist", "Purchasing", false, employerRate, paidHours),
-      defaultCompanyEmployee("warehouse_storekeeper", "Warehouse / storekeeper", "Warehouse", false, employerRate, paidHours),
-      defaultCompanyEmployee("sales_quoting", "Sales / quoting specialist", "Sales and quoting", false, employerRate, paidHours),
-      defaultCompanyEmployee("quality_manager", "Quality manager", "Quality management", false, employerRate, paidHours),
-      defaultCompanyEmployee("maintenance_technician", "Maintenance technician", "Maintenance", false, employerRate, paidHours),
-      defaultCompanyEmployee("office_admin_accounting", "Office admin / accounting", "Administration", false, employerRate, paidHours)
+      defaultCompanyEmployee("starter_operator", "Production operator", "Shop floor", true, employerRate, paidHours),
+      defaultCompanyEmployee("starter_cnc_technician", "CNC technician / programmer", "CNC setup and programming", true, employerRate, paidHours),
+      defaultCompanyEmployee("starter_quality_support", "Quality / release support", "Inspection and documentation", false, employerRate, paidHours),
+      defaultCompanyEmployee("starter_admin_sales", "Admin / sales / planning", "Office and customer coordination", false, employerRate, paidHours)
     ],
     overheadItems: [
-      { id: "facility_rent", name: "Facility rent / mortgage", monthly_cost_eur: 0, quality: "company_estimate" },
-      { id: "utilities_general", name: "Utilities not assigned to machines", monthly_cost_eur: 0, quality: "company_estimate" },
-      { id: "insurance", name: "Insurance", monthly_cost_eur: 0, quality: "company_estimate" },
-      { id: "accounting_legal", name: "Accounting / legal services", monthly_cost_eur: 0, quality: "company_estimate" },
-      { id: "it_software", name: "IT, software, subscriptions", monthly_cost_eur: 0, quality: "company_estimate" },
-      { id: "logistics_vehicle", name: "Logistics / vehicle costs", monthly_cost_eur: 0, quality: "company_estimate" }
+      { id: "starter_facility", name: "Facility and shared utilities", monthly_cost_eur: 0, quality: "company_estimate" },
+      { id: "starter_admin", name: "Administration and sales support", monthly_cost_eur: 0, quality: "company_estimate" },
+      { id: "starter_quality", name: "Quality system and certification", monthly_cost_eur: 0, quality: "company_estimate" },
+      { id: "starter_services", name: "General services and subscriptions", monthly_cost_eur: 0, quality: "company_estimate" }
     ],
     materials: [
-      defaultProfileMaterial("s235_sheet", "S235 sheet / plate", "S235", "S235 sheet or plate stock", "plate"),
-      defaultProfileMaterial("s355_sheet", "S355 sheet / plate", "S355", "S355 sheet or plate stock", "plate"),
-      defaultProfileMaterial("al6082_plate", "EN AW-6082 plate", "EN AW-6082", "Aluminium plate stock", "plate"),
-      defaultProfileMaterial("al6082_bar", "EN AW-6082 bar", "EN AW-6082", "Aluminium bar stock", "round_bar"),
-      defaultProfileMaterial("standard_fasteners", "Standard fasteners", "Mixed", "Purchased fasteners and inserts", "")
+      defaultProfileMaterial("starter_steel_stock", "Generic steel stock", "Steel", "Plate, bar, or tube stock", ""),
+      defaultProfileMaterial("starter_aluminium_stock", "Generic aluminium stock", "Aluminium", "Plate or bar stock", ""),
+      defaultProfileMaterial("starter_purchased_items", "Purchased components", "Mixed", "Fasteners, inserts, and bought-out items", "")
     ],
     tools: [
-      defaultProfileTool("end_mill_set", "End mill set", "end_mill", "aluminium, steel, general"),
-      defaultProfileTool("drill_set", "Drill set", "drill", "general"),
-      defaultProfileTool("tap_set", "Tap set", "tap", "general"),
-      defaultProfileTool("turning_insert_set", "Turning insert set", "turning_insert", "steel, stainless, aluminium"),
-      defaultProfileTool("engraving_tool_set", "Laser engraving fixture / marking tool", "engraving_tool", "general"),
-      defaultProfileTool("bending_tooling", "Press brake tooling", "bending_tool", "sheet_metal, general"),
-      defaultProfileTool("welding_fixture", "Welding fixture / clamps", "fixture", "steel, stainless, aluminium"),
-      defaultProfileTool("inspection_gauges", "Inspection gauges", "gauge", "general")
+      defaultProfileTool("starter_cutting_tools", "General cutting tools", "cutting_tool", "steel, aluminium, general"),
+      defaultProfileTool("starter_holemaking_tools", "Drills and taps", "holemaking_tool", "general"),
+      defaultProfileTool("starter_fixtures_gauges", "Fixtures and measuring tools", "fixture_gauge", "general")
     ],
     operations: [
-      defaultProfileOperation("saw_cutting", "saw_cutting", "Saw cutting", "manual_tool_station_1", "machine_operator"),
-      defaultProfileOperation("turning", "turning", "CNC turning", "cnc_machine_1", "cnc_setup_programmer"),
-      defaultProfileOperation("cnc_milling", "milling_3_axis", "CNC milling", "cnc_machine_2", "cnc_setup_programmer"),
-      defaultProfileOperation("drilling", "drilling", "Drilling", "cnc_machine_2", "machine_operator"),
-      defaultProfileOperation("tapping", "tapping", "Tapping / inserts", "cnc_machine_2", "machine_operator"),
-      defaultProfileOperation("bending", "bending", "Bending / forming", "cnc_machine_3", "machine_operator"),
-      defaultProfileOperation("engraving", "engraving", "Laser engraving / marking", "manual_tool_station_2", "machine_operator"),
-      defaultProfileOperation("welding", "welding", "Welding", "manual_tool_station_3", "machine_operator"),
-      defaultProfileOperation("assembly", "assembly", "Assembly", "assembly_station_1", "assembler"),
-      defaultProfileOperation("manual_inspection", "manual_inspection", "Manual inspection", "qc_station_1", "quality_inspector"),
-      defaultProfileOperation("packing", "packing", "Packing", "assembly_station_1", "assembler")
+      defaultProfileOperation("starter_cutting", "saw_cutting", "Cut stock", "starter_manual_station", "starter_operator"),
+      defaultProfileOperation("starter_cnc_machining", "milling_3_axis", "CNC machining", "starter_cnc_work_center", "starter_cnc_technician"),
+      defaultProfileOperation("starter_drilling", "drilling", "Drilling / holemaking", "starter_cnc_work_center", "starter_operator"),
+      defaultProfileOperation("starter_inspection", "manual_inspection", "Inspect and release", "starter_inspection_packing", "starter_operator"),
+      defaultProfileOperation("starter_packing", "packing", "Pack for shipment", "starter_inspection_packing", "starter_operator")
     ]
   };
 }
@@ -1290,6 +1309,7 @@ type ProfitabilityMachineBreakdownRow = {
   capacityRole: AssetCapacityRole;
   defaultLaborClassId: string | null;
   assignedPayrollRate: number;
+  sharedAllocatedRate: number;
 };
 
 type ProfitabilitySellRateBreakdown = {
@@ -1361,7 +1381,8 @@ function profitabilityMachineBreakdownRows(
       costShare: 0,
       capacityRole: machineCapacityRole(machine),
       defaultLaborClassId: machine.default_labor_class_id ?? null,
-      assignedPayrollRate: 0
+      assignedPayrollRate: 0,
+      sharedAllocatedRate: 0
     };
   });
   const sellableHours = baseRows.filter((row) => row.capacityRole === "sellable_capacity").reduce((sum, row) => sum + row.targetHours, 0);
@@ -1416,14 +1437,12 @@ function profitabilitySellRateBreakdown(
     }
   });
 
-  const machineRows = baseMachineRows.map((row) => ({
+  const payrollMappedRows = baseMachineRows.map((row) => ({
     ...row,
     assignedPayrollRate: row.capacityRole === "sellable_capacity" && row.defaultLaborClassId
       ? assignedPayrollRateByLabor.get(row.defaultLaborClassId) ?? 0
       : 0
   }));
-  const sellableRows = machineRows.filter((row) => row.capacityRole === "sellable_capacity");
-  const supportRows = machineRows.filter((row) => row.capacityRole !== "sellable_capacity");
   const directPayroll = assignedPayrollMonth + supportPayrollMonth + unassignedPayrollMonth;
   const assignedPayrollRate = assignedPayrollMonth / Math.max(1, targetHours);
   const supportPayrollRate = supportPayrollMonth / Math.max(1, targetHours);
@@ -1432,6 +1451,30 @@ function profitabilitySellRateBreakdown(
   const overheadMonth = totalMonthlyOverheadEur(assumptions);
   const overheadRate = overheadMonth / Math.max(1, targetHours);
   const sharedAllocatedRate = supportMachineRate + supportPayrollRate + unassignedPayrollRate + overheadRate;
+  // The shared pool (support assets + support/unassigned payroll + overhead) is spread over
+  // sellable stations in proportion to each station's own hourly rate (machine EUR/h +
+  // assigned payroll EUR/h), not flat per hour: an expensive CNC hour absorbs more of the
+  // pool than a cheap manual bench hour. The pool total recovered stays the same either way.
+  const sharedPoolMonth = supportMachineCostMonth + supportPayrollMonth + unassignedPayrollMonth + overheadMonth;
+  const stationRateWeight = (row: ProfitabilityMachineBreakdownRow) => row.directRate + row.assignedPayrollRate;
+  const sharedWeightedHoursTotal = payrollMappedRows.reduce((sum, row) => (
+    row.capacityRole === "sellable_capacity"
+      ? sum + stationRateWeight(row) * row.targetHours
+      : sum
+  ), 0);
+  const machineRows = payrollMappedRows.map((row) => {
+    if (row.capacityRole !== "sellable_capacity" || row.targetHours <= 0) {
+      return row;
+    }
+    return {
+      ...row,
+      sharedAllocatedRate: sharedWeightedHoursTotal > 0
+        ? sharedPoolMonth * (stationRateWeight(row) / sharedWeightedHoursTotal)
+        : sharedAllocatedRate
+    };
+  });
+  const sellableRows = machineRows.filter((row) => row.capacityRole === "sellable_capacity");
+  const supportRows = machineRows.filter((row) => row.capacityRole !== "sellable_capacity");
   const baseRate = machineRate + directPayrollRate + overheadRate;
   const riskRate = baseRate * riskPercent;
   const rateAfterRisk = baseRate + riskRate;
@@ -1481,7 +1524,8 @@ function profitabilityRevenueBreakdownRows(
     const capacity = profitabilityCapacityDrivers(machine, utilizationScenario, capacityMode);
     const ownMachineRate = machineRow?.directRate ?? 0;
     const assignedPayrollRate = machineRow?.assignedPayrollRate ?? 0;
-    const baseRate = ownMachineRate + assignedPayrollRate + breakdown.sharedAllocatedRate;
+    const sharedAllocatedRate = machineRow?.sharedAllocatedRate ?? breakdown.sharedAllocatedRate;
+    const baseRate = ownMachineRate + assignedPayrollRate + sharedAllocatedRate;
     const requiredSellRate = (baseRate * (1 + riskPercent)) / Math.max(0.01, 1 - marginPercent);
     const marketSellRate = marketSellRateValue(machine);
     return {
@@ -1493,7 +1537,7 @@ function profitabilityRevenueBreakdownRows(
       scenarioHours: capacity.hours,
       ownMachineRate,
       assignedPayrollRate,
-      sharedAllocatedRate: breakdown.sharedAllocatedRate,
+      sharedAllocatedRate,
       baseRate,
       requiredSellRate,
       marketSellRate,
@@ -1986,7 +2030,7 @@ function PrintableQuote({
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<View>("quote");
+  const [activeView, setActiveView] = useState<View>("profile");
   // The quote starts empty on purpose: nothing on the page should look like real data
   // until the user enters it or explicitly loads the demo RFQ / an ERP part / a draft.
   const [partName, setPartName] = useState("");
@@ -2100,22 +2144,6 @@ function App() {
         setProveoutMinutes(data.cam_programming_defaults.default_setup_proveout_minutes);
         setProgrammingMinutes(data.cam_programming_defaults.medium_programming_minutes);
         setSelectedTemplateType(data.operation_templates[0]?.operation_type ?? "milling_3_axis");
-        const firstMaterial = data.material_examples[0];
-        if (firstMaterial) {
-          setSelectedMaterialId(firstMaterial.id);
-          setStockName(firstMaterial.stock_description || firstMaterial.name);
-          setStockCost(firstMaterial.stock_piece_cost_eur);
-        }
-        setQuoteOperations((current) => {
-          if (current.length > 0) {
-            return current;
-          }
-          const route = ["saw_cutting", "milling_3_axis", "manual_inspection"];
-          return route
-            .map((operationType) => data.operation_templates.find((item) => item.operation_type === operationType))
-            .filter((template): template is OperationTemplate => Boolean(template))
-            .map(createOperation);
-        });
         const programmingLabor = data.labor_classes.find(
           (item) => item.id === data.cam_programming_defaults.programming_labor_class_id
         );
@@ -2223,7 +2251,14 @@ function App() {
     };
   }, []);
 
-  const selectedResult = rateMode === "accounting_full_cost" ? accountingResult : targetResult;
+  const quoteHasRoute = quoteOperations.length > 0;
+  const displayTargetResult = quoteHasRoute ? targetResult : null;
+  const displayAccountingResult = quoteHasRoute ? accountingResult : null;
+  const activeCostingBasisName = assumptions?.name?.trim() || "Assumptions not loaded";
+  const loadedProfileName = companyProfile?.companyName?.trim() || "";
+  const loadedProfileNotApplied = Boolean(
+    assumptions && loadedProfileName && loadedProfileName !== activeCostingBasisName
+  );
 
   const reusableProgramPercent = assumptions
     ? isNewPart
@@ -2280,7 +2315,7 @@ function App() {
     const availability = availabilityValue(machine, availabilityField);
     const overheadPerHour =
       assumptions.overhead?.allocation_method === "per_machine_hour"
-        ? overheadPerMachineHour(assumptions, availabilityField, utilizationField)
+        ? weightedOverheadPerMachineHour(assumptions, machine, availabilityField, utilizationField)
         : 0;
     return {
       fixed_cost_eur_per_month: machine.monthly_fixed_cost_eur ?? 0,
@@ -2401,6 +2436,14 @@ function App() {
     return setup + run + perPartVariable + operation.outsourcedBatchCost + missingToolCost + scrapAllowance;
   }
 
+  function operationConversionCost(operation: QuoteOperation, mode: RateMode, startedQuantity: number) {
+    const machineHourly = machineRate(operation.machineClassId, mode);
+    const laborHourly = laborRate(operation.laborClassId);
+    const setup = (operation.setupMachineMinutes / 60) * machineHourly + (operation.setupLaborMinutes / 60) * laborHourly;
+    const run = startedQuantity * ((operation.runMachineMinutesPerPart / 60) * machineHourly + (operation.runLaborMinutesPerPart / 60) * laborHourly);
+    return setup + run + run * effectiveScrapPercent(operation);
+  }
+
   // Quantity breaks must not reuse the main quantity's frozen material quantity -- a 250-pc
   // break priced with 50 pcs of material understates its true cost. When the selected
   // library material has cutoff data, recompute stock pieces for the break quantity via the
@@ -2519,7 +2562,7 @@ function App() {
       const availability = Math.max(0.01, availabilityValue(machine, availabilityField) * (overrides.availabilityFactor ?? 1));
       const overheadPerHour =
         assumptions.overhead?.allocation_method === "per_machine_hour"
-          ? overheadPerMachineHour(assumptions, overheadAvailabilityField, overheadUtilizationField)
+          ? weightedOverheadPerMachineHour(assumptions, machine, overheadAvailabilityField, overheadUtilizationField)
           : 0;
       return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
     }
@@ -2603,7 +2646,7 @@ function App() {
   // availability -> overhead basis), so the biggest single lever is visible instead of only
   // the two endpoint prices.
   async function runGapWaterfall() {
-    if (!assumptions || !accountingResult || !targetResult) {
+    if (!assumptions || !displayAccountingResult || !displayTargetResult) {
       setDiagnosticsStatus("Calculate the quote (Target and Accounting) before running diagnostics.");
       return;
     }
@@ -2627,10 +2670,10 @@ function App() {
           })
         )
       ]);
-      const baseline = accountingResult.unit_sell_price_eur;
+      const baseline = displayAccountingResult.unit_sell_price_eur;
       const afterUtil = afterUtilization.unit_sell_price_eur;
       const afterAvail = afterAvailability.unit_sell_price_eur;
-      const afterOverhead = targetResult.unit_sell_price_eur;
+      const afterOverhead = displayTargetResult.unit_sell_price_eur;
       const totalGap = baseline - afterOverhead;
       const percentOf = (delta: number) => (totalGap !== 0 ? roundMoney((delta / totalGap) * 100) : 0);
       setGapWaterfall([
@@ -2652,7 +2695,7 @@ function App() {
   const SENSITIVITY_STEPS = [-0.25, -0.1, 0.1, 0.25];
 
   async function runSensitivityAnalysis() {
-    if (!assumptions || !targetResult) {
+    if (!assumptions || !displayTargetResult) {
       setDiagnosticsStatus("Calculate the quote (Target) before running diagnostics.");
       return;
     }
@@ -2674,7 +2717,7 @@ function App() {
             driver: driver.label,
             minus25: results[0].unit_sell_price_eur,
             minus10: results[1].unit_sell_price_eur,
-            base: targetResult.unit_sell_price_eur,
+            base: displayTargetResult.unit_sell_price_eur,
             plus10: results[2].unit_sell_price_eur,
             plus25: results[3].unit_sell_price_eur
           };
@@ -2698,7 +2741,7 @@ function App() {
   // above each move ONE lever in isolation; this recalculates the real quote with a chosen
   // margin AND utilization together, so partial moves on two levers can be tested.
   async function runCombinedWhatIf() {
-    if (!assumptions || !targetResult) {
+    if (!assumptions || !displayTargetResult) {
       return;
     }
     const currentMargin = assumptions.commercial_policy.default_margin_percent;
@@ -2716,14 +2759,14 @@ function App() {
   }
 
   function competitorGapAnalysis() {
-    if (!assumptions || !targetResult || competitorUnitPriceEur === null || competitorUnitPriceEur <= 0) {
+    if (!assumptions || !displayTargetResult || competitorUnitPriceEur === null || competitorUnitPriceEur <= 0) {
       return null;
     }
     const competitorTotalPrice = competitorUnitPriceEur * quantity;
-    const gapEur = roundMoney(targetResult.unit_sell_price_eur - competitorUnitPriceEur);
+    const gapEur = roundMoney(displayTargetResult.unit_sell_price_eur - competitorUnitPriceEur);
     const gapPercent = competitorUnitPriceEur > 0 ? roundMoney((gapEur / competitorUnitPriceEur) * 100) : 0;
 
-    const requiredMarginPercent = targetResult.total_cost_eur > 0 ? 1 - targetResult.total_cost_eur / competitorTotalPrice : null;
+    const requiredMarginPercent = displayTargetResult.total_cost_eur > 0 ? 1 - displayTargetResult.total_cost_eur / competitorTotalPrice : null;
     const feasibleMargin = requiredMarginPercent !== null && requiredMarginPercent >= 0 && requiredMarginPercent < 0.95;
 
     let machineCost = 0;
@@ -2748,9 +2791,9 @@ function App() {
       fixedTerm += fixedComponentPerHour * hours;
     });
     const nonFixedMachineTerm = machineCost - fixedTerm;
-    const subtotalBeforePolicy = targetResult.material_cost_eur + targetResult.engineering_cost_eur + targetResult.operation_cost_eur;
+    const subtotalBeforePolicy = displayTargetResult.material_cost_eur + displayTargetResult.engineering_cost_eur + displayTargetResult.operation_cost_eur;
     const nonMachineCost = subtotalBeforePolicy - machineCost;
-    const requiredSubtotal = targetResult.commercial_multiplier > 0 ? competitorTotalPrice / targetResult.commercial_multiplier : null;
+    const requiredSubtotal = displayTargetResult.commercial_multiplier > 0 ? competitorTotalPrice / displayTargetResult.commercial_multiplier : null;
     const requiredMachineCost = requiredSubtotal !== null ? requiredSubtotal - nonMachineCost : null;
 
     let requiredBlendedRateEurPerHour: number | null = null;
@@ -3151,6 +3194,10 @@ function App() {
 
   useEffect(() => {
     if (!assumptions || quoteOperations.length === 0) {
+      setTargetResult((current) => current ? null : current);
+      setAccountingResult((current) => current ? null : current);
+      setQuantityBreakResults((current) => current.length > 0 ? [] : current);
+      setApiError(null);
       return;
     }
     let cancelled = false;
@@ -3455,7 +3502,7 @@ function App() {
   async function loadCompanyProfile(profileId: string) {
     if (!profileId) {
       setCompanyProfile(assumptions ? createStarterCompanyProfile(assumptions) : null);
-      setProfileStatus("Started a new standard metalforming profile");
+      setProfileStatus("Started a new generic starter profile");
       return;
     }
     try {
@@ -3483,7 +3530,7 @@ function App() {
       }
       await refreshCompanyProfiles();
       setCompanyProfile(assumptions ? createStarterCompanyProfile(assumptions) : null);
-      setProfileStatus("Company profile deleted; started a new standard profile");
+      setProfileStatus("Company profile deleted; started a new generic starter profile");
     } catch (error) {
       setProfileStatus(error instanceof Error ? error.message : "Company profile delete failed");
     }
@@ -3604,24 +3651,25 @@ function App() {
 
   function loadCurrentQuoteRouteIntoMarketEvidence() {
     if (!assumptions) return;
-    const rows = quoteOperations.map((operation) => {
+    const startedQuantities = startedQuantitiesForOperations(quoteOperations, quantity);
+    const rows = quoteOperations.map((operation, index) => {
       const machine = assumptions.machine_classes.find((item) => item.id === operation.machineClassId);
       return {
         id: `market_route_${operation.id}`,
         marketRateClassId: machine ? machineMarketRateClassId(machine) : inferredMarketRateClassId(operation.operationType, operation.name),
-        hours: roundMoney(operationWorkCenterHours(operation, quantity))
+        hours: roundMoney(operationWorkCenterHours(operation, startedQuantities[index] ?? quantity))
       };
     }).filter((row) => row.hours > 0);
     setMarketEvidenceRows(rows.length > 0 ? rows : [{ id: `market_route_row_${Date.now()}`, marketRateClassId: "cnc", hours: 1 }]);
-    if (targetResult) {
-      setMarketEvidenceProductionCost(targetResult.total_cost_eur);
-      setMarketEvidenceMaterialSell(targetResult.material_cost_eur);
+    if (displayTargetResult) {
+      setMarketEvidenceProductionCost(displayTargetResult.total_cost_eur);
+      setMarketEvidenceMaterialSell(displayTargetResult.material_cost_eur);
       setMarketEvidenceBoughtOutSell(0);
-      setMarketEvidenceFixedCharges(targetResult.engineering_cost_eur);
+      setMarketEvidenceFixedCharges(displayTargetResult.engineering_cost_eur);
       if (competitorUnitPriceEur && competitorUnitPriceEur > 0) {
         setMarketEvidenceSellPrice(roundMoney(competitorUnitPriceEur * quantity));
       } else {
-        setMarketEvidenceSellPrice(targetResult.sell_price_eur);
+        setMarketEvidenceSellPrice(displayTargetResult.sell_price_eur);
       }
     }
   }
@@ -4017,7 +4065,7 @@ function App() {
   }
 
   async function sendCustomerOfferToErp() {
-    if (!targetResult) {
+    if (!displayTargetResult) {
       setErpStatus("Calculate a quote before sending a Customer Offer payload");
       return;
     }
@@ -4031,10 +4079,10 @@ function App() {
           rfq_reference: rfqReference,
           part_name: partName,
           quantity,
-          target_sell_price_eur: targetResult.sell_price_eur,
-          target_unit_sell_price_eur: targetResult.unit_sell_price_eur,
-          accounting_sell_price_eur: accountingResult?.sell_price_eur ?? null,
-          accounting_unit_sell_price_eur: accountingResult?.unit_sell_price_eur ?? null,
+          target_sell_price_eur: displayTargetResult.sell_price_eur,
+          target_unit_sell_price_eur: displayTargetResult.unit_sell_price_eur,
+          accounting_sell_price_eur: displayAccountingResult?.sell_price_eur ?? null,
+          accounting_unit_sell_price_eur: displayAccountingResult?.unit_sell_price_eur ?? null,
           validity_date: validityDate,
           delivery_estimate: deliveryEstimate,
           payment_terms: paymentTerms,
@@ -4299,9 +4347,9 @@ function App() {
         body: JSON.stringify({
           name: `${quoteNumber || partName} - ${customerName || "Customer"}`,
           quote_state: currentQuoteState(),
-          target_result: targetResult,
-          accounting_result: accountingResult,
-          quantity_break_results: quantityBreakResults,
+          target_result: displayTargetResult,
+          accounting_result: displayAccountingResult,
+          quantity_break_results: quoteHasRoute ? quantityBreakResults : [],
           assumptions_snapshot: assumptions
         })
       });
@@ -4428,9 +4476,56 @@ function App() {
     }
   }
 
-  const priceGap = accountingResult && targetResult
-    ? accountingResult.sell_price_eur - targetResult.sell_price_eur
+  const priceGap = displayAccountingResult && displayTargetResult
+    ? displayAccountingResult.sell_price_eur - displayTargetResult.sell_price_eur
     : 0;
+
+  const operationStartedQuantities = startedQuantitiesForOperations(quoteOperations, quantity);
+  const routeMarketRows = (() => {
+    if (!assumptions) return [];
+    const rows = new Map<string, { machine: MachineClass; machineIndex: number; hours: number; requiredSellValue: number }>();
+    const marginDivisor = Math.max(0.01, 1 - commercialPolicy.default_margin_percent);
+    quoteOperations.forEach((operation, index) => {
+      if (!operation.machineClassId) return;
+      const machineIndex = assumptions.machine_classes.findIndex((machine) => machine.id === operation.machineClassId);
+      if (machineIndex < 0) return;
+      const machine = assumptions.machine_classes[machineIndex];
+      const startedQuantity = operationStartedQuantities[index] ?? quantity;
+      const hours = operationWorkCenterHours(operation, startedQuantity);
+      const requiredConversionCost = operationConversionCost(operation, "target_competitive", startedQuantity);
+      const requiredSellValue = (requiredConversionCost * (1 + commercialPolicy.risk_allowance_percent)) / marginDivisor;
+      const current = rows.get(machine.id) ?? { machine, machineIndex, hours: 0, requiredSellValue: 0 };
+      rows.set(machine.id, {
+        ...current,
+        hours: current.hours + hours,
+        requiredSellValue: current.requiredSellValue + requiredSellValue
+      });
+    });
+    return Array.from(rows.values()).map((row) => ({
+      ...row,
+      hours: roundMoney(row.hours),
+      quoteRequiredRate: row.hours > 0 ? roundMoney(row.requiredSellValue / row.hours) : 0
+    }));
+  })();
+  const routeMarketHours = routeMarketRows.reduce((sum, row) => sum + row.hours, 0);
+  const routeWeightedRequiredRate = routeMarketRows.reduce(
+    (sum, row) => sum + row.hours * row.quoteRequiredRate,
+    0
+  ) / Math.max(1, routeMarketHours);
+  // The saved-vs-required gap is only meaningful over stations that actually have saved
+  // market evidence; averaging zeros in would fake a market rate below the required one.
+  const routeSavedRateRows = routeMarketRows.filter((row) => marketSellRateValue(row.machine) > 0);
+  const routeSavedRateHours = routeSavedRateRows.reduce((sum, row) => sum + row.hours, 0);
+  const routeWeightedMarketRate = routeSavedRateRows.reduce(
+    (sum, row) => sum + row.hours * marketSellRateValue(row.machine),
+    0
+  ) / Math.max(1, routeSavedRateHours);
+  const routeWeightedRateGap = routeSavedRateRows.reduce(
+    (sum, row) => sum + row.hours * (marketSellRateValue(row.machine) - row.quoteRequiredRate),
+    0
+  ) / Math.max(1, routeSavedRateHours);
+  const formatRateGap = (gap: number) => `${gap >= 0 ? "+" : "-"}${money.format(Math.abs(gap))}/h`;
+  const selectedResult = rateMode === "accounting_full_cost" ? displayAccountingResult : displayTargetResult;
 
   const currentToolChecks = toolCheckResults();
   const missingToolChecks = currentToolChecks.filter((item) => item.status === "missing");
@@ -4444,14 +4539,6 @@ function App() {
           <span>ProdCost</span>
         </div>
         <nav className="nav">
-          <button
-            className={`navItem ${activeView === "quote" ? "active" : ""}`}
-            title="Quote builder"
-            onClick={() => setActiveView("quote")}
-          >
-            <Calculator size={18} />
-            <span>Quote</span>
-          </button>
           <button
             className={`navItem ${activeView === "profile" ? "active" : ""}`}
             title="Company profile"
@@ -4467,6 +4554,14 @@ function App() {
           >
             <LibraryBig size={18} />
             <span>Resources</span>
+          </button>
+          <button
+            className={`navItem ${activeView === "quote" ? "active" : ""}`}
+            title="Quote builder"
+            onClick={() => setActiveView("quote")}
+          >
+            <Calculator size={18} />
+            <span>Quote</span>
           </button>
           <button
             className={`navItem ${activeView === "market_rates" ? "active" : ""}`}
@@ -4545,23 +4640,34 @@ function App() {
 
         {activeView === "quote" ? (
           <>
-            <section className="demoPanel">
+            <section className={`costingBasisStrip ${loadedProfileNotApplied ? "warning" : ""}`}>
               <div>
-                <h2>Quote Builder</h2>
-                <p className="sectionHelp">The page starts empty. Fill the RFQ manually, import an ERP part below, or load a complete realistic example with one click.</p>
+                <span>Quote costing basis</span>
+                <strong>{activeCostingBasisName}</strong>
+                <p>
+                  {loadedProfileNotApplied
+                    ? `Loaded Profile is ${loadedProfileName}, but it has not been applied to costing yet. Quote calculations are still using ${activeCostingBasisName}.`
+                    : "This is the active company assumptions set used for Quote calculations."}
+                </p>
               </div>
-              <button className="primaryButton" onClick={loadDemoRfq}>Load Demo RFQ</button>
+              <div className="costingBasisActions">
+                {loadedProfileNotApplied ? (
+                  <button className="primaryButton" onClick={applyCompanyProfileToAssumptions}>Apply Loaded Profile</button>
+                ) : (
+                  <button className="secondaryButton" onClick={() => setActiveView("profile")}>Open Profile</button>
+                )}
+              </div>
             </section>
 
             <section className="panel erpPanel">
               <div className="sectionHeader wide">
                 <div>
                   <h2>ERP Connection Demo</h2>
-                  <p className="sectionHelp">Import BOM, route, material, and customer context from a sample ERP adapter, then send the calculated Customer Offer payload back.</p>
+                  <p className="sectionHelp">Import BOM, route, material, and customer context from a sample ERP adapter. Use the demo RFQ only when you want a complete sample quote.</p>
                 </div>
-                <div className="buttonRow"><Database size={18} />{sectionToggle("erp_demo")}</div>
+                <div className="buttonRow"><Database size={18} />{sectionToggle("erp_demo", true)}</div>
               </div>
-              {isSectionOpen("erp_demo") ? (
+              {isSectionOpen("erp_demo", true) ? (
               <>
               <div className="erpControls">
                 <label>ERP part<select value={selectedErpPartId} onChange={(event) => setSelectedErpPartId(event.target.value)}>
@@ -4572,6 +4678,7 @@ function App() {
                 </select></label>
                 <button className="primaryButton" onClick={importErpRfq}><Database size={16} /> Import ERP Data</button>
                 <button className="secondaryButton" onClick={sendCustomerOfferToErp}><Send size={16} /> Send Offer Data to ERP</button>
+                <button className="secondaryButton" onClick={loadDemoRfq}><Calculator size={16} /> Load Demo RFQ</button>
               </div>
               <div className="erpStatusGrid">
                 <p className="statusText">{erpStatus}</p>
@@ -4721,27 +4828,80 @@ function App() {
                   <div><dt>Material/bought-out pass-through, EUR</dt><dd>{selectedResult ? `${money.format(selectedResult.pass_through_cost_eur ?? 0)} + ${money.format(selectedResult.material_markup_eur ?? 0)} handling markup` : "..."}</dd></div>
                   <div><dt>Sell price, EUR</dt><dd>{selectedResult ? money.format(selectedResult.sell_price_eur) : "..."}</dd></div>
                   <div><dt>Unit price, EUR/pc</dt><dd>{selectedResult ? money.format(selectedResult.unit_sell_price_eur) : "..."}</dd></div>
+                  <div><dt>Machine rate source</dt><dd>{rateMode === "accounting_full_cost" ? "Accounting cost rates from Resources" : "Target cost rates from Resources"}</dd></div>
                   <div><dt>Commercial multiplier</dt><dd>{selectedResult ? `×${selectedResult.commercial_multiplier.toFixed(2)} (sell price / raw cost subtotal)` : "..."}</dd></div>
                 </dl>
-                <p className="sectionHelp">Price is built in two parts: the shop's own work (machining, labor, engineering, overhead, risk) carries the full profit margin; material and bought-out items are passed through with only the handling markup, the way most customers expect to be charged.</p>
-              </div>
-            </section>
+                <div className="scenarioStrip quoteSummaryScenarioStrip">
+                  <div>
+                    <span className="scenarioLabel">Target price, EUR</span>
+                    <strong>{displayTargetResult ? money.format(displayTargetResult.sell_price_eur) : "..."}</strong>
+                    <span className="scenarioHint">Cost-plus target price from Resources rates.</span>
+                  </div>
+                  <div>
+                    <span className="scenarioLabel">Accounting price, EUR</span>
+                    <strong>{displayAccountingResult ? money.format(displayAccountingResult.sell_price_eur) : "..."}</strong>
+                    <span className="scenarioHint">Current full-cost-rate price.</span>
+                  </div>
+                  <div>
+                    <span className="scenarioLabel">Accounting premium, EUR</span>
+                    <strong>{displayAccountingResult && displayTargetResult ? money.format(priceGap) : "..."}</strong>
+                    <span className="scenarioHint">Accounting minus target.</span>
+                  </div>
+                </div>
 
-            <section className="scenarioStrip">
-              <div>
-                <span className="scenarioLabel">Target price, EUR</span>
-                <strong>{targetResult ? money.format(targetResult.sell_price_eur) : "..."}</strong>
-                <span className="scenarioHint">Competitive target-rate price.</span>
-              </div>
-              <div>
-                <span className="scenarioLabel">Accounting price, EUR</span>
-                <strong>{accountingResult ? money.format(accountingResult.sell_price_eur) : "..."}</strong>
-                <span className="scenarioHint">Current full-cost-rate price.</span>
-              </div>
-              <div>
-                <span className="scenarioLabel">Accounting premium, EUR</span>
-                <strong>{accountingResult && targetResult ? money.format(priceGap) : "..."}</strong>
-                <span className="scenarioHint">Accounting minus target.</span>
+                <div className="quoteMarketRateCard">
+                  <div className="quoteMarketRateHeader">
+                    <div>
+                      <strong>Route rate check</strong>
+                      <span>Saved Market is external evidence. Quote Required is the current target cost-plus route rate before material and engineering/admin. Difference is saved minus required: positive means the market pays above this quote's floor.</span>
+                    </div>
+                    <div className="quoteMarketRateActions">
+                      <em>
+                        {routeMarketRows.length === 0
+                          ? "No route machines"
+                          : routeSavedRateRows.length === 0
+                            ? `${money.format(routeWeightedRequiredRate)}/h required | no saved market rates`
+                            : (
+                              <>
+                                {money.format(routeWeightedMarketRate)}/h saved | {money.format(routeWeightedRequiredRate)}/h required |{" "}
+                                <span className={routeWeightedRateGap >= 0 ? "rateGood" : "rateBad"}>{formatRateGap(routeWeightedRateGap)}</span>
+                              </>
+                            )}
+                      </em>
+                      <button type="button" className="secondaryButton" onClick={() => setActiveView("market_rates")}>Edit Market Rates</button>
+                    </div>
+                  </div>
+                  {routeMarketRows.length > 0 ? (
+                    <div className="quoteMarketRateRows">
+                      {routeMarketRows.map((row) => {
+                        const savedRate = marketSellRateValue(row.machine);
+                        const rateGap = savedRate > 0 ? savedRate - row.quoteRequiredRate : null;
+                        return (
+                          <div className="quoteMarketRateRow" key={row.machine.id}>
+                            <span>{row.machine.name}</span>
+                            <strong title="Saved external market sell rate">{savedRate > 0 ? `${money.format(savedRate)}/h saved` : "Not set"}</strong>
+                            <em title="Quote-required target rate for this route station">{money.format(row.quoteRequiredRate)}/h required</em>
+                            <strong
+                              className={`rateGapCell ${rateGap === null ? "rateMissing" : rateGap >= 0 ? "rateGood" : "rateBad"}`}
+                              title={rateGap === null
+                                ? "No saved market rate for this station, so no difference can be shown."
+                                : rateGap >= 0
+                                  ? "Saved market rate is at or above the quote-required rate."
+                                  : "Saved market rate is below the quote-required rate: this station's hours sell under the cost-plus floor."}
+                            >
+                              {rateGap === null ? "--" : formatRateGap(rateGap)}
+                            </strong>
+                            <small>{row.hours.toFixed(1)} route h</small>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p>Add at least one route operation with a machine to show market sell-rate references.</p>
+                  )}
+                </div>
+
+                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares saved market evidence with the current quote-required target rate; it does not replace the quote price.</p>
               </div>
             </section>
 
@@ -4831,7 +4991,7 @@ function App() {
                   <span>{camComplexity} complexity at {money.format(programmingRate)}/h</span>
                   <span>{programmingMinutes + proveoutMinutes}</span>
                   <span>{formatPercent(reusableProgramPercent)}%</span>
-                  <span>{selectedResult ? money.format(selectedResult.engineering_cost_eur) : "..."}</span>
+                  <span>{displayTargetResult ? money.format(displayTargetResult.engineering_cost_eur) : "..."}</span>
                 </div>
               </div>
             </section>
@@ -4868,7 +5028,7 @@ function App() {
                       <div className="stackedFields">
                         <label>Machine<select value={operation.machineClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { machineClassId: event.target.value || null })}><option value="">No machine</option>{(assumptions?.machine_classes ?? []).map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
                         <label>Labor<select value={operation.laborClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { laborClassId: event.target.value || null })}><option value="">No labor</option>{(assumptions?.labor_classes ?? []).map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select></label>
-                        <span className="rateHint">{money.format(selectedMachineRate)}/h machine, {money.format(selectedLaborRate)}/h labor</span>
+                        <span className="rateHint">{money.format(selectedMachineRate)}/h {rateMode === "accounting_full_cost" ? "accounting" : "target"} machine cost rate, {money.format(selectedLaborRate)}/h labor</span>
                       </div>
                       <div className="miniGrid">
                         <label>Machine, min<input type="number" min="0" value={operation.setupMachineMinutes} onChange={(event) => updateQuoteOperation(index, { setupMachineMinutes: numericValue(event.target.value) })} /></label>
@@ -5226,7 +5386,7 @@ function App() {
                     </div>
                     <div className="profileActions">
                       <select value={companyProfile.profileId ?? ""} onChange={(event) => loadCompanyProfile(event.target.value)}>
-                        <option value="">Current assumptions / unsaved profile</option>
+                        <option value="">Generic starter profile (unsaved)</option>
                         {companyProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                       </select>
                       <button className="primaryButton" onClick={saveCompanyProfile}><Save size={16} /> Save Profile</button>
@@ -5350,7 +5510,7 @@ function App() {
                         <h2>Facility, Utilities, Insurance, and Overhead</h2>
                         <p className="sectionHelp">These items flow into the same overhead allocation used by Resources. Add facility rent, electricity not already in machine variable rates, insurance, accounting, sales, quality management, and other company-level costs.</p>
                       </div>
-                      <div className="buttonRow"><button className="secondaryButton" onClick={() => addProfileOverheadItem("Facility / utilities / insurance")}>Add Facility Cost</button><button className="primaryButton" onClick={() => addProfileOverheadItem()}><Plus size={16} /> Add Item</button></div>
+                      <div className="buttonRow"><button className="primaryButton" onClick={() => addProfileOverheadItem()}><Plus size={16} /> Add Overhead Item</button></div>
                     </div>
                     <div className="resourceTable profileOverheadTable overheadTable">
                       <div className="tableHead"><span>Expense</span><span>Monthly EUR</span><span>Data status</span><span></span></div>
@@ -5831,7 +5991,7 @@ function App() {
                         <h2>Market Rate Card</h2>
                         <p className="sectionHelp">These are external sell rates by work-center family. They are not derived from asset value. Use the source and confidence fields to separate real won-quote evidence from manual placeholders.</p>
                       </div>
-                      <div className="buttonRow">
+                      <div className="buttonRow marketRateActions">
                         <button className="secondaryButton" onClick={addMarketRateEntry}><Plus size={16} /> Add Class</button>
                         <button className="secondaryButton" onClick={loadMarketRateCardFromLoadedProfile}>Load Card from Profile</button>
                         <button className="secondaryButton" onClick={bindMarketRateCardToLoadedProfile}>Bind to Loaded Profile</button>
@@ -6081,7 +6241,7 @@ function App() {
                 if (!gap) {
                   return <p className="sectionHelp">Enter a competitor unit price after the Target quote is calculated to see whether your price is safely below the market or needs attention.</p>;
                 }
-                const targetUnitPrice = targetResult?.unit_sell_price_eur ?? 0;
+                const targetUnitPrice = displayTargetResult?.unit_sell_price_eur ?? 0;
                 const priceRoomEur = roundMoney((competitorUnitPriceEur ?? 0) - targetUnitPrice);
                 const priceRoomPercent = targetUnitPrice > 0 ? roundMoney((Math.abs(priceRoomEur) / targetUnitPrice) * 100) : 0;
                 const isCheaperThanCompetitor = priceRoomEur >= 0;
@@ -6109,7 +6269,7 @@ function App() {
                   </dl>
                 );
               })()}
-              {targetResult && assumptions ? (
+              {displayTargetResult && assumptions ? (
                 <div className="combinedWhatIf">
                   <h3>Combined what-if: move two levers at once</h3>
                   <p className="sectionHelp">The three suggestions above each change one lever in isolation. Here you can test a realistic partial move on both: set a margin and a shop utilization, and the quote is genuinely recalculated with both applied (utilization scales every machine's target level proportionally -- an approximation for mixed shops).</p>
@@ -6280,7 +6440,7 @@ function App() {
                     <div><span>2. Support asset recovery</span><strong>{money.format(sellRateBreakdown.supportMachineRate)}/h</strong><em>{money.format(sellRateBreakdown.supportMachineCostMonth)} support machine cost / {Math.round(targetHoursMonth)} sellable basis h</em></div>
                     <div><span>3. Assigned payroll avg</span><strong>{money.format(sellRateBreakdown.assignedPayrollRate)}/h</strong><em>{money.format(sellRateBreakdown.assignedPayrollMonth)} assigned to sellable station payroll roles</em></div>
                     <div><span>4. Overhead recovery</span><strong>{money.format(sellRateBreakdown.overheadRate)}/h</strong><em>{money.format(sellRateBreakdown.overheadMonth)} / {Math.round(targetHoursMonth)} sellable basis h</em></div>
-                    <div><span>5. Shared recovery layer</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>support assets + support/unassigned payroll + overhead</em></div>
+                    <div><span>5. Shared recovery layer</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>support assets + support/unassigned payroll + overhead -- shop average; allocated per station in proportion to its machine + payroll EUR/h, see table below</em></div>
                     <div><span>6. Required cost-plus uplift</span><strong>{formatPercent(assumptions.commercial_policy.risk_allowance_percent)}% risk, {formatPercent(assumptions.commercial_policy.default_margin_percent)}% margin</strong><em>Diagnostic floor only; revenue uses explicit market sell rates</em></div>
                   </div>
                   {missingSellRateCount > 0 ? (
@@ -6293,7 +6453,7 @@ function App() {
                   </div>
                   <div className="profitabilityTableBlock">
                     <h3>Revenue capacity build-up</h3>
-                    <p className="sectionHelp">This table is the first bridge column as a sum of sellable-capacity asset rows only. Required EUR/h is the cost-plus floor from machine cost, assigned payroll, shared recovery, risk, and margin using the selected capacity basis. Market sell EUR/h is the explicit rate used for revenue.</p>
+                    <p className="sectionHelp">This table is the first bridge column as a sum of sellable-capacity asset rows only. Required EUR/h is the cost-plus floor from machine cost, assigned payroll, shared recovery, risk, and margin using the selected capacity basis. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.</p>
                     <div className="diagnosticTable profitabilityRevenueTable">
                       <div className="tableHead profitabilityRevenueHead"><span>Asset</span><span>Scenario h/mo</span><span>Machine EUR/h</span><span>Payroll EUR/h</span><span>Shared recovery/h</span><span>Base EUR/h</span><span>Required EUR/h</span><span>Market sell EUR/h</span><span>Revenue/mo</span></div>
                       {revenueRows.map((row) => {
@@ -6477,17 +6637,17 @@ function App() {
             <section className="caseSignals">
               <div>
                 <span className="scenarioLabel">Target quote</span>
-                <strong>{targetResult ? money.format(targetResult.sell_price_eur) : "..."}</strong>
+                <strong>{displayTargetResult ? money.format(displayTargetResult.sell_price_eur) : "..."}</strong>
                 <span className="scenarioHint">Cost-side price using the target planning assumptions.</span>
               </div>
               <div>
                 <span className="scenarioLabel">Accounting quote</span>
-                <strong>{accountingResult ? money.format(accountingResult.sell_price_eur) : "..."}</strong>
+                <strong>{displayAccountingResult ? money.format(displayAccountingResult.sell_price_eur) : "..."}</strong>
                 <span className="scenarioHint">Price if current actual capacity load is charged to the order.</span>
               </div>
               <div>
                 <span className="scenarioLabel">Accounting premium</span>
-                <strong>{accountingResult && targetResult ? money.format(priceGap) : "..."}</strong>
+                <strong>{displayAccountingResult && displayTargetResult ? money.format(priceGap) : "..."}</strong>
                 <span className="scenarioHint">Signal that utilization, availability, overhead, or route assumptions need attention.</span>
               </div>
               <div>
@@ -6663,7 +6823,7 @@ function App() {
               quoteOperations={quoteOperations}
               rfqReference={rfqReference}
               stockName={stockName}
-              targetResult={targetResult}
+              targetResult={displayTargetResult}
               validityDate={validityDate}
             />
           </>
