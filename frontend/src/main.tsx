@@ -701,59 +701,10 @@ function weightedSharedRecoveryPerMachineHour(
   return roundMoney(poolMonth * (stationWeight(machine) / weightedHoursTotal));
 }
 
-function blendedDirectMachineRate(
-  assumptions: Assumptions | null,
-  availabilityField: AvailabilityField,
-  utilizationField: UtilizationField
-) {
-  const machines = assumptions?.machine_classes ?? [];
-  let weightedSum = 0;
-  let totalHours = 0;
-  machines.forEach((machine) => {
-    const plannedHours = machine.planned_hours_per_month ?? 160;
-    const availability = Math.max(0.01, availabilityValue(machine, availabilityField));
-    const utilization = Math.max(0.01, machine[utilizationField] ?? 1);
-    const hours = plannedHours * availability * utilization;
-    const fixedCost = machine.monthly_fixed_cost_eur ?? 0;
-    const variableCost = machine.variable_cost_eur_per_hour ?? 0;
-    const directRate = fixedCost / Math.max(1, hours) + variableCost;
-    weightedSum += directRate * hours;
-    totalHours += hours;
-  });
-  return totalHours > 0 ? weightedSum / totalHours : 0;
-}
-
-// Expresses the per-machine-hour overhead figure as an equivalent coefficient on direct cost,
-// derived from the same total-overhead input, so the two allocation methods stay comparable.
-function overheadPercentEquivalent(
-  assumptions: Assumptions | null,
-  availabilityField: AvailabilityField,
-  utilizationField: UtilizationField
-) {
-  const perHour = overheadPerMachineHour(assumptions, availabilityField, utilizationField);
-  const blendedRate = blendedDirectMachineRate(assumptions, availabilityField, utilizationField);
-  return blendedRate > 0 ? perHour / blendedRate : 0;
-}
-
-// Overhead going into a quote's commercial_policy.overhead_percent must be 0 when the
-// per-machine-hour method is active, because it is already folded into each machine's
-// EUR/h by withCalculatedMachineRates -- otherwise overhead would be double-counted.
-function overheadPercentForMode(assumptions: Assumptions | null, mode: RateMode) {
-  if (!assumptions?.overhead || assumptions.overhead.allocation_method === "per_machine_hour") {
-    return 0;
-  }
-  return mode === "target_competitive"
-    ? overheadPercentEquivalent(assumptions, "target_availability_percent", "target_utilization_percent")
-    : overheadPercentEquivalent(assumptions, "actual_availability_percent", "actual_utilization_percent");
-}
-
 function calculatedAccountingMachineRate(machine: MachineClass, assumptions?: Assumptions | null) {
   const utilization = machine.actual_utilization_percent ?? 1;
   const availability = availabilityValue(machine, "actual_availability_percent");
-  const overheadPerHour =
-    assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? weightedSharedRecoveryPerMachineHour(assumptions, machine, "actual_availability_percent", "actual_utilization_percent")
-      : 0;
+  const overheadPerHour = weightedSharedRecoveryPerMachineHour(assumptions ?? null, machine, "actual_availability_percent", "actual_utilization_percent");
   return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
 }
 
@@ -767,10 +718,7 @@ function calculatedTargetMachineRate(machine: MachineClass, assumptions?: Assump
   const discount = machine.target_rate_discount_percent ?? 0;
   const utilization = machine.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT;
   const availability = availabilityValue(machine, "target_availability_percent");
-  const overheadPerHour =
-    assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? weightedSharedRecoveryPerMachineHour(assumptions, machine, "target_availability_percent", "target_utilization_percent")
-      : 0;
+  const overheadPerHour = weightedSharedRecoveryPerMachineHour(assumptions ?? null, machine, "target_availability_percent", "target_utilization_percent");
   return roundMoney(
     machineRateFromDrivers(machine, availability, utilization, overheadPerHour) * (1 - discount)
   );
@@ -2349,10 +2297,7 @@ function App() {
     const availabilityField: AvailabilityField = mode === "accounting_full_cost" ? "actual_availability_percent" : "target_availability_percent";
     const utilization = machine[utilizationField] ?? (mode === "accounting_full_cost" ? 1 : DEFAULT_TARGET_UTILIZATION_PERCENT);
     const availability = availabilityValue(machine, availabilityField);
-    const overheadPerHour =
-      assumptions.overhead?.allocation_method === "per_machine_hour"
-        ? weightedSharedRecoveryPerMachineHour(assumptions, machine, availabilityField, utilizationField)
-        : 0;
+    const overheadPerHour = weightedSharedRecoveryPerMachineHour(assumptions, machine, availabilityField, utilizationField);
     return {
       fixed_cost_eur_per_month: machine.monthly_fixed_cost_eur ?? 0,
       planned_hours_per_month: machine.planned_hours_per_month ?? 160,
@@ -2553,7 +2498,7 @@ function App() {
       })),
       commercial_policy: {
         margin_percent: commercialPolicy.default_margin_percent,
-        overhead_percent: overheadPercentForMode(assumptions, mode),
+        overhead_percent: 0, // overhead is folded into machine rates (weighted shared recovery)
         risk_allowance_percent: commercialPolicy.risk_allowance_percent,
         minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur,
         material_markup_percent: materialMarkupPercent
@@ -2598,17 +2543,9 @@ function App() {
       const baseUtilization = machine[utilizationField] ?? (utilizationField === "target_utilization_percent" ? DEFAULT_TARGET_UTILIZATION_PERCENT : 1);
       const utilization = Math.max(0.01, baseUtilization * (overrides.utilizationFactor ?? 1));
       const availability = Math.max(0.01, availabilityValue(machine, availabilityField) * (overrides.availabilityFactor ?? 1));
-      const overheadPerHour =
-        assumptions.overhead?.allocation_method === "per_machine_hour"
-          ? weightedSharedRecoveryPerMachineHour(assumptions, machine, overheadAvailabilityField, overheadUtilizationField)
-          : 0;
+      const overheadPerHour = weightedSharedRecoveryPerMachineHour(assumptions, machine, overheadAvailabilityField, overheadUtilizationField);
       return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
     }
-
-    const overheadPercent =
-      !assumptions?.overhead || assumptions.overhead.allocation_method === "per_machine_hour"
-        ? 0
-        : overheadPercentEquivalent(assumptions, overheadAvailabilityField, overheadUtilizationField);
 
     return {
       part_name: partName,
@@ -2659,7 +2596,7 @@ function App() {
       })),
       commercial_policy: {
         margin_percent: Math.min(0.95, Math.max(0, commercialPolicy.default_margin_percent * marginFactor)),
-        overhead_percent: overheadPercent,
+        overhead_percent: 0, // overhead is folded into machine rates (weighted shared recovery)
         risk_allowance_percent: commercialPolicy.risk_allowance_percent,
         minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur,
         material_markup_percent: materialMarkupPercent
@@ -3010,7 +2947,7 @@ function App() {
       operations: portalOperations(part, mode),
       commercial_policy: {
         margin_percent: commercialPolicy.default_margin_percent,
-        overhead_percent: overheadPercentForMode(assumptions, mode),
+        overhead_percent: 0, // overhead is folded into machine rates (weighted shared recovery)
         risk_allowance_percent: commercialPolicy.risk_allowance_percent + missingInfoRisk + (part.documentationRequirement === "full_fai" ? 0.02 : 0),
         minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur,
         material_markup_percent: materialMarkupPercent

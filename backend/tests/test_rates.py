@@ -1,9 +1,7 @@
 from app.costing.rates import (
     MachineRateDrivers,
-    blended_direct_machine_rate,
     machine_rate_from_drivers,
     overhead_per_machine_hour,
-    overhead_percent_equivalent,
 )
 
 # Mirrors data/baseline_assumptions.lv.json: saw_cutting, actual scenario.
@@ -71,30 +69,3 @@ def test_overhead_per_machine_hour_target_matches_seed() -> None:
     assert overhead_per_machine_hour(TOTAL_MONTHLY_OVERHEAD, _all_target_machines()) == 18.8
 
 
-def test_blended_direct_machine_rate_is_positive_and_weighted() -> None:
-    machines = [
-        MachineRateDrivers(
-            fixed_cost_eur_per_month=1000,
-            planned_hours_per_month=160,
-            utilization_percent=0.5,
-            availability_percent=0.8,
-            variable_cost_eur_per_hour=2,
-        ),
-        MachineRateDrivers(
-            fixed_cost_eur_per_month=200,
-            planned_hours_per_month=160,
-            utilization_percent=0.5,
-            availability_percent=0.8,
-            variable_cost_eur_per_hour=2,
-        ),
-    ]
-    rate = blended_direct_machine_rate(machines)
-    assert rate > 2  # above the variable-only floor
-    # Weighted toward the higher-fixed-cost machine since both have equal hours.
-    high_rate = machine_rate_from_drivers(machines[0])
-    low_rate = machine_rate_from_drivers(machines[1])
-    assert low_rate < rate < high_rate
-
-
-def test_overhead_percent_equivalent_is_zero_with_no_machines() -> None:
-    assert overhead_percent_equivalent(TOTAL_MONTHLY_OVERHEAD, []) == 0

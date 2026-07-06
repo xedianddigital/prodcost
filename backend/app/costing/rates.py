@@ -1,11 +1,12 @@
 """Pure Python mirror of the machine-rate math in frontend/src/main.tsx.
 
 This is the authoritative contract for the rate formulas -- the frontend implementation at
-main.tsx (machineRateFromDrivers, overheadPerMachineHour, blendedDirectMachineRate,
-overheadPercentEquivalent) must compute the same numbers from the same inputs. See item 2/3
-of FIX_BRIEF.md: only Availability belongs in the rate denominator, not full OEE, because
-performance losses already live in cycle/setup minutes and quality losses in the scrap
-allowance.
+main.tsx (machineRateFromDrivers, overheadPerMachineHour) must compute the same numbers from
+the same inputs. See item 2/3 of FIX_BRIEF.md: only Availability belongs in the rate
+denominator, not full OEE, because performance losses already live in cycle/setup minutes
+and quality losses in the scrap allowance. Overhead allocation itself is the frontend's
+weighted shared-recovery share (see weightedSharedRecoveryPerMachineHour); it arrives here
+as the overhead_eur_per_hour input.
 """
 
 from dataclasses import dataclass
@@ -49,22 +50,3 @@ def total_planned_productive_hours(machines: list[MachineRateDrivers]) -> float:
 def overhead_per_machine_hour(total_monthly_overhead_eur: float, machines: list[MachineRateDrivers]) -> float:
     hours = total_planned_productive_hours(machines)
     return _round_money(total_monthly_overhead_eur / max(1.0, hours))
-
-
-def blended_direct_machine_rate(machines: list[MachineRateDrivers]) -> float:
-    weighted_sum = 0.0
-    total_hours = 0.0
-    for machine in machines:
-        utilization = max(0.01, machine.utilization_percent)
-        availability = max(0.01, machine.availability_percent)
-        hours = machine.planned_hours_per_month * utilization * availability
-        direct_rate = machine.fixed_cost_eur_per_month / max(1.0, hours) + machine.variable_cost_eur_per_hour
-        weighted_sum += direct_rate * hours
-        total_hours += hours
-    return weighted_sum / total_hours if total_hours > 0 else 0.0
-
-
-def overhead_percent_equivalent(total_monthly_overhead_eur: float, machines: list[MachineRateDrivers]) -> float:
-    per_hour = overhead_per_machine_hour(total_monthly_overhead_eur, machines)
-    blended_rate = blended_direct_machine_rate(machines)
-    return per_hour / blended_rate if blended_rate > 0 else 0.0
