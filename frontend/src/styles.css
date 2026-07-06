@@ -3246,7 +3246,7 @@ input[readonly] {
 
 .quoteMarketRateRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content minmax(64px, max-content) auto;
+  grid-template-columns: minmax(0, 1fr) max-content max-content minmax(64px, max-content);
   align-items: center;
   gap: 8px;
 }
@@ -3280,7 +3280,26 @@ input[readonly] {
 }
 
 .quoteMarketRateRow small {
+  display: block;
   color: #59636d;
   font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.quoteMarketRateRow .supportStationTag {
+  justify-self: start;
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #b7c0c9;
+  color: #38414a;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
   white-space: nowrap;
 }

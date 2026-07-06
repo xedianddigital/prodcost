@@ -2436,12 +2436,14 @@ function App() {
     return setup + run + perPartVariable + operation.outsourcedBatchCost + missingToolCost + scrapAllowance;
   }
 
-  function operationConversionCost(operation: QuoteOperation, mode: RateMode, startedQuantity: number) {
+  function operationConversionCostParts(operation: QuoteOperation, mode: RateMode, startedQuantity: number) {
     const machineHourly = machineRate(operation.machineClassId, mode);
     const laborHourly = laborRate(operation.laborClassId);
-    const setup = (operation.setupMachineMinutes / 60) * machineHourly + (operation.setupLaborMinutes / 60) * laborHourly;
-    const run = startedQuantity * ((operation.runMachineMinutesPerPart / 60) * machineHourly + (operation.runLaborMinutesPerPart / 60) * laborHourly);
-    return setup + run + run * effectiveScrapPercent(operation);
+    const machineCost = ((operation.setupMachineMinutes + operation.runMachineMinutesPerPart * startedQuantity) / 60) * machineHourly;
+    const laborCost = ((operation.setupLaborMinutes + operation.runLaborMinutesPerPart * startedQuantity) / 60) * laborHourly;
+    const runCost = startedQuantity * ((operation.runMachineMinutesPerPart / 60) * machineHourly + (operation.runLaborMinutesPerPart / 60) * laborHourly);
+    const scrapCost = runCost * effectiveScrapPercent(operation);
+    return { machineCost, laborCost, scrapCost, total: machineCost + laborCost + scrapCost };
   }
 
   // Quantity breaks must not reuse the main quantity's frozen material quantity -- a 250-pc
@@ -4483,7 +4485,15 @@ function App() {
   const operationStartedQuantities = startedQuantitiesForOperations(quoteOperations, quantity);
   const routeMarketRows = (() => {
     if (!assumptions) return [];
-    const rows = new Map<string, { machine: MachineClass; machineIndex: number; hours: number; requiredSellValue: number }>();
+    const rows = new Map<string, {
+      machine: MachineClass;
+      machineIndex: number;
+      hours: number;
+      machineCost: number;
+      laborCost: number;
+      scrapCost: number;
+      requiredSellValue: number;
+    }>();
     const marginDivisor = Math.max(0.01, 1 - commercialPolicy.default_margin_percent);
     quoteOperations.forEach((operation, index) => {
       if (!operation.machineClassId) return;
@@ -4492,18 +4502,23 @@ function App() {
       const machine = assumptions.machine_classes[machineIndex];
       const startedQuantity = operationStartedQuantities[index] ?? quantity;
       const hours = operationWorkCenterHours(operation, startedQuantity);
-      const requiredConversionCost = operationConversionCost(operation, "target_competitive", startedQuantity);
-      const requiredSellValue = (requiredConversionCost * (1 + commercialPolicy.risk_allowance_percent)) / marginDivisor;
-      const current = rows.get(machine.id) ?? { machine, machineIndex, hours: 0, requiredSellValue: 0 };
+      const costParts = operationConversionCostParts(operation, "target_competitive", startedQuantity);
+      const requiredSellValue = (costParts.total * (1 + commercialPolicy.risk_allowance_percent)) / marginDivisor;
+      const current = rows.get(machine.id)
+        ?? { machine, machineIndex, hours: 0, machineCost: 0, laborCost: 0, scrapCost: 0, requiredSellValue: 0 };
       rows.set(machine.id, {
         ...current,
         hours: current.hours + hours,
+        machineCost: current.machineCost + costParts.machineCost,
+        laborCost: current.laborCost + costParts.laborCost,
+        scrapCost: current.scrapCost + costParts.scrapCost,
         requiredSellValue: current.requiredSellValue + requiredSellValue
       });
     });
     return Array.from(rows.values()).map((row) => ({
       ...row,
       hours: roundMoney(row.hours),
+      isSupportStation: machineCapacityRole(row.machine) !== "sellable_capacity",
       quoteRequiredRate: row.hours > 0 ? roundMoney(row.requiredSellValue / row.hours) : 0
     }));
   })();
@@ -4522,6 +4537,12 @@ function App() {
   ) / Math.max(1, routeSavedRateHours);
   const routeWeightedRateGap = routeSavedRateRows.reduce(
     (sum, row) => sum + row.hours * (marketSellRateValue(row.machine) - row.quoteRequiredRate),
+    0
+  ) / Math.max(1, routeSavedRateHours);
+  // Header comparison must be apples-to-apples: the required average next to the market
+  // average covers the same stations (those with a market rate), not e.g. a QC support row.
+  const routeComparableRequiredRate = routeSavedRateRows.reduce(
+    (sum, row) => sum + row.hours * row.quoteRequiredRate,
     0
   ) / Math.max(1, routeSavedRateHours);
   const formatRateGap = (gap: number) => `${gap >= 0 ? "+" : "-"}${money.format(Math.abs(gap))}/h`;
@@ -4853,17 +4874,17 @@ function App() {
                   <div className="quoteMarketRateHeader">
                     <div>
                       <strong>Route rate check</strong>
-                      <span>Saved Market is external evidence. Quote Required is the current target cost-plus route rate before material and engineering/admin. Difference is saved minus required: positive means the market pays above this quote's floor.</span>
+                      <span>Market EUR/h is the rate entered per station on the Market Rates page. Required EUR/h is this quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk {formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin {formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a Required value for the numbers. Difference is market minus required: positive means the market pays above this quote's floor.</span>
                     </div>
                     <div className="quoteMarketRateActions">
                       <em>
                         {routeMarketRows.length === 0
                           ? "No route machines"
                           : routeSavedRateRows.length === 0
-                            ? `${money.format(routeWeightedRequiredRate)}/h required | no saved market rates`
+                            ? `${money.format(routeWeightedRequiredRate)}/h required | no market rates entered`
                             : (
                               <>
-                                {money.format(routeWeightedMarketRate)}/h saved | {money.format(routeWeightedRequiredRate)}/h required |{" "}
+                                {money.format(routeWeightedMarketRate)}/h market | {money.format(routeComparableRequiredRate)}/h required |{" "}
                                 <span className={routeWeightedRateGap >= 0 ? "rateGood" : "rateBad"}>{formatRateGap(routeWeightedRateGap)}</span>
                               </>
                             )}
@@ -4874,24 +4895,35 @@ function App() {
                   {routeMarketRows.length > 0 ? (
                     <div className="quoteMarketRateRows">
                       {routeMarketRows.map((row) => {
-                        const savedRate = marketSellRateValue(row.machine);
-                        const rateGap = savedRate > 0 ? savedRate - row.quoteRequiredRate : null;
+                        const marketRate = marketSellRateValue(row.machine);
+                        const rateGap = marketRate > 0 ? marketRate - row.quoteRequiredRate : null;
+                        const conversionCost = row.machineCost + row.laborCost + row.scrapCost;
+                        const requiredFormulaTitle = `Machine ${money.format(row.machineCost)} + labor ${money.format(row.laborCost)} + scrap ${money.format(row.scrapCost)} = ${money.format(conversionCost)} conversion cost; × ${(1 + commercialPolicy.risk_allowance_percent).toFixed(2)} risk ÷ ${(1 - commercialPolicy.default_margin_percent).toFixed(2)} margin = ${money.format(row.requiredSellValue)}; ÷ ${row.hours.toFixed(1)} station h = ${money.format(row.quoteRequiredRate)}/h. Machine rate already includes the station's weighted overhead share.`;
                         return (
                           <div className="quoteMarketRateRow" key={row.machine.id}>
-                            <span>{row.machine.name}</span>
-                            <strong title="Saved external market sell rate">{savedRate > 0 ? `${money.format(savedRate)}/h saved` : "Not set"}</strong>
-                            <em title="Quote-required target rate for this route station">{money.format(row.quoteRequiredRate)}/h required</em>
+                            <span>
+                              {row.machine.name}
+                              {row.isSupportStation ? <em className="supportStationTag" title="Support capacity: this station does not sell hours, so no market rate is expected. Required still shows what this quote charges for its routed time.">support</em> : null}
+                              <small>{row.hours.toFixed(1)} route h</small>
+                            </span>
+                            <strong title={row.isSupportStation
+                              ? "Support stations are not sold by the hour, so they have no market rate."
+                              : "Market sell rate entered for this station on the Market Rates page."}>
+                              {marketRate > 0 ? `${money.format(marketRate)}/h market` : row.isSupportStation ? "Support station" : "No market rate"}
+                            </strong>
+                            <em title={requiredFormulaTitle}>{money.format(row.quoteRequiredRate)}/h required</em>
                             <strong
                               className={`rateGapCell ${rateGap === null ? "rateMissing" : rateGap >= 0 ? "rateGood" : "rateBad"}`}
                               title={rateGap === null
-                                ? "No saved market rate for this station, so no difference can be shown."
+                                ? row.isSupportStation
+                                  ? "Support station: no market rate applies, so there is no difference to show."
+                                  : "No market rate entered for this station, so no difference can be shown."
                                 : rateGap >= 0
-                                  ? "Saved market rate is at or above the quote-required rate."
-                                  : "Saved market rate is below the quote-required rate: this station's hours sell under the cost-plus floor."}
+                                  ? "Market rate is at or above the quote-required rate."
+                                  : "Market rate is below the quote-required rate: this station's hours sell under the cost-plus floor."}
                             >
                               {rateGap === null ? "--" : formatRateGap(rateGap)}
                             </strong>
-                            <small>{row.hours.toFixed(1)} route h</small>
                           </div>
                         );
                       })}
@@ -4901,7 +4933,7 @@ function App() {
                   )}
                 </div>
 
-                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares saved market evidence with the current quote-required target rate; it does not replace the quote price.</p>
+                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares the market rates entered on the Market Rates page with this quote's required cost-plus rate per station; it does not replace the quote price.</p>
               </div>
             </section>
 
