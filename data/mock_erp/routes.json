@@ -85,23 +85,6 @@
     "scrap_allowance_percent": 0
   },
   {
-    "part_id": "part_al6082_cnc_marker_bracket",
-    "sequence": 60,
-    "operation_type": "manual_inspection",
-    "name": "Final dimensional inspection",
-    "machine_class_id": "qc_station_1",
-    "labor_class_id": "quality_inspector",
-    "setup_machine_minutes": 5,
-    "setup_labor_minutes": 10,
-    "run_machine_minutes_per_part": 0.4,
-    "run_labor_minutes_per_part": 1,
-    "tooling_cost_per_part_eur": 0,
-    "consumables_cost_per_part_eur": 0,
-    "outsourced_cost_per_part_eur": 0,
-    "outsourced_batch_cost_eur": 0,
-    "scrap_allowance_percent": 0
-  },
-  {
     "part_id": "part_s355_fixture_plate",
     "sequence": 10,
     "operation_type": "saw_cutting",
@@ -168,23 +151,6 @@
     "outsourced_cost_per_part_eur": 0,
     "outsourced_batch_cost_eur": 0,
     "scrap_allowance_percent": 0.01
-  },
-  {
-    "part_id": "part_s355_fixture_plate",
-    "sequence": 50,
-    "operation_type": "manual_inspection",
-    "name": "QC report and final inspection",
-    "machine_class_id": "qc_station_1",
-    "labor_class_id": "quality_inspector",
-    "setup_machine_minutes": 10,
-    "setup_labor_minutes": 25,
-    "run_machine_minutes_per_part": 1,
-    "run_labor_minutes_per_part": 3,
-    "tooling_cost_per_part_eur": 0,
-    "consumables_cost_per_part_eur": 0.1,
-    "outsourced_cost_per_part_eur": 0,
-    "outsourced_batch_cost_eur": 0,
-    "scrap_allowance_percent": 0
   },
   {
     "part_id": "part_s235_welded_guard_assembly",
@@ -255,23 +221,6 @@
     "scrap_allowance_percent": 0.01
   },
   {
-    "part_id": "part_s235_welded_guard_assembly",
-    "sequence": 50,
-    "operation_type": "manual_inspection",
-    "name": "Weld and dimensional inspection",
-    "machine_class_id": "qc_station_1",
-    "labor_class_id": "quality_inspector",
-    "setup_machine_minutes": 10,
-    "setup_labor_minutes": 15,
-    "run_machine_minutes_per_part": 0.5,
-    "run_labor_minutes_per_part": 2.5,
-    "tooling_cost_per_part_eur": 0,
-    "consumables_cost_per_part_eur": 0.1,
-    "outsourced_cost_per_part_eur": 0,
-    "outsourced_batch_cost_eur": 0,
-    "scrap_allowance_percent": 0
-  },
-  {
     "part_id": "part_s355_turned_spacer",
     "sequence": 10,
     "operation_type": "saw_cutting",
@@ -321,22 +270,5 @@
     "outsourced_cost_per_part_eur": 0,
     "outsourced_batch_cost_eur": 0,
     "scrap_allowance_percent": 0.01
-  },
-  {
-    "part_id": "part_s355_turned_spacer",
-    "sequence": 40,
-    "operation_type": "manual_inspection",
-    "name": "Final inspection",
-    "machine_class_id": "qc_station_1",
-    "labor_class_id": "quality_inspector",
-    "setup_machine_minutes": 5,
-    "setup_labor_minutes": 10,
-    "run_machine_minutes_per_part": 0.3,
-    "run_labor_minutes_per_part": 0.8,
-    "tooling_cost_per_part_eur": 0,
-    "consumables_cost_per_part_eur": 0,
-    "outsourced_cost_per_part_eur": 0,
-    "outsourced_batch_cost_eur": 0,
-    "scrap_allowance_percent": 0
   }
 ]

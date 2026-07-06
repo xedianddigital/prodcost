@@ -3229,12 +3229,12 @@ input[readonly] {
 .quoteMarketRateActions {
   display: grid;
   justify-items: end;
-  gap: 6px;
+  gap: 10px;
 }
 
 .quoteMarketRateActions .secondaryButton {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 6px 12px;
   font-size: 12px;
   line-height: 1.15;
 }
@@ -3246,9 +3246,22 @@ input[readonly] {
 
 .quoteMarketRateRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content minmax(64px, max-content);
+  grid-template-columns: minmax(0, 1fr) 96px 108px 88px;
   align-items: center;
   gap: 8px;
+}
+
+.quoteMarketRateHeadRow span {
+  color: #59636d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.quoteMarketRateHeadRow span + span {
+  justify-self: end;
+  text-align: right;
 }
 
 .quoteMarketRateRow span {

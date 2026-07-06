@@ -2888,7 +2888,7 @@ function App() {
   // Threads/inserts route through a real tapping operation (with real tap-tool inventory
   // matching) instead of a flat guessed tooling add-on.
   function portalRouteOperationTypes(part: PortalPart) {
-    return ["saw_cutting", "milling_3_axis", "drilling", ...(part.threadOrInsertRequirement === "yes" ? ["tapping"] : []), "manual_inspection"];
+    return ["saw_cutting", "milling_3_axis", "drilling", ...(part.threadOrInsertRequirement === "yes" ? ["tapping"] : [])];
   }
 
   function portalToolCheckResults(part: PortalPart) {
@@ -4242,7 +4242,9 @@ function App() {
       setStockPieces(3);
       setScrapRecovery(8);
     }
-    const route = ["saw_cutting", "milling_3_axis", "drilling", "tapping", "engraving", "manual_inspection"];
+    // No QC/inspection line: the company profile treats QC as support capacity whose cost
+    // is recovered through the sellable stations, so a quote route must not book it directly.
+    const route = ["saw_cutting", "milling_3_axis", "drilling", "tapping", "engraving"];
     const demoOperations = route
       .map((operationType) => assumptions?.operation_templates.find((template) => template.operation_type === operationType))
       .filter((template): template is OperationTemplate => Boolean(template))
@@ -4874,17 +4876,16 @@ function App() {
                   <div className="quoteMarketRateHeader">
                     <div>
                       <strong>Route rate check</strong>
-                      <span>Market EUR/h is the rate entered per station on the Market Rates page. Required EUR/h is this quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk {formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin {formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a Required value for the numbers. Difference is market minus required: positive means the market pays above this quote's floor.</span>
                     </div>
                     <div className="quoteMarketRateActions">
                       <em>
                         {routeMarketRows.length === 0
                           ? "No route machines"
                           : routeSavedRateRows.length === 0
-                            ? `${money.format(routeWeightedRequiredRate)}/h required | no market rates entered`
+                            ? `${money.format(routeWeightedRequiredRate)}/h cost-plus | no market rates entered`
                             : (
                               <>
-                                {money.format(routeWeightedMarketRate)}/h market | {money.format(routeComparableRequiredRate)}/h required |{" "}
+                                {money.format(routeWeightedMarketRate)}/h market | {money.format(routeComparableRequiredRate)}/h cost-plus |{" "}
                                 <span className={routeWeightedRateGap >= 0 ? "rateGood" : "rateBad"}>{formatRateGap(routeWeightedRateGap)}</span>
                               </>
                             )}
@@ -4894,24 +4895,30 @@ function App() {
                   </div>
                   {routeMarketRows.length > 0 ? (
                     <div className="quoteMarketRateRows">
+                      <div className="quoteMarketRateRow quoteMarketRateHeadRow">
+                        <span>Station</span>
+                        <span title="Rate entered per station on the Market Rates page.">Market EUR/h</span>
+                        <span title={`This quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk ${formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin ${formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a value for the numbers.`}>Cost-plus EUR/h</span>
+                        <span title="Market minus cost-plus: positive means the market pays above this quote's floor.">Difference</span>
+                      </div>
                       {routeMarketRows.map((row) => {
                         const marketRate = marketSellRateValue(row.machine);
                         const rateGap = marketRate > 0 ? marketRate - row.quoteRequiredRate : null;
                         const conversionCost = row.machineCost + row.laborCost + row.scrapCost;
-                        const requiredFormulaTitle = `Machine ${money.format(row.machineCost)} + labor ${money.format(row.laborCost)} + scrap ${money.format(row.scrapCost)} = ${money.format(conversionCost)} conversion cost; × ${(1 + commercialPolicy.risk_allowance_percent).toFixed(2)} risk ÷ ${(1 - commercialPolicy.default_margin_percent).toFixed(2)} margin = ${money.format(row.requiredSellValue)}; ÷ ${row.hours.toFixed(1)} station h = ${money.format(row.quoteRequiredRate)}/h. Machine rate already includes the station's weighted overhead share.`;
+                        const costPlusFormulaTitle = `Machine ${money.format(row.machineCost)} + labor ${money.format(row.laborCost)} + scrap ${money.format(row.scrapCost)} = ${money.format(conversionCost)} conversion cost; × ${(1 + commercialPolicy.risk_allowance_percent).toFixed(2)} risk ÷ ${(1 - commercialPolicy.default_margin_percent).toFixed(2)} margin = ${money.format(row.requiredSellValue)}; ÷ ${row.hours.toFixed(1)} station h = ${money.format(row.quoteRequiredRate)}/h. Machine rate already includes the station's weighted overhead share.`;
                         return (
                           <div className="quoteMarketRateRow" key={row.machine.id}>
                             <span>
                               {row.machine.name}
-                              {row.isSupportStation ? <em className="supportStationTag" title="Support capacity: this station does not sell hours, so no market rate is expected. Required still shows what this quote charges for its routed time.">support</em> : null}
+                              {row.isSupportStation ? <em className="supportStationTag" title="Support capacity: this station does not sell hours, so no market rate is expected. Cost-plus still shows what this quote charges for its routed time.">support</em> : null}
                               <small>{row.hours.toFixed(1)} route h</small>
                             </span>
                             <strong title={row.isSupportStation
                               ? "Support stations are not sold by the hour, so they have no market rate."
                               : "Market sell rate entered for this station on the Market Rates page."}>
-                              {marketRate > 0 ? `${money.format(marketRate)}/h market` : row.isSupportStation ? "Support station" : "No market rate"}
+                              {marketRate > 0 ? `${money.format(marketRate)}/h` : row.isSupportStation ? "Support" : "Not set"}
                             </strong>
-                            <em title={requiredFormulaTitle}>{money.format(row.quoteRequiredRate)}/h required</em>
+                            <em title={costPlusFormulaTitle}>{money.format(row.quoteRequiredRate)}/h</em>
                             <strong
                               className={`rateGapCell ${rateGap === null ? "rateMissing" : rateGap >= 0 ? "rateGood" : "rateBad"}`}
                               title={rateGap === null
@@ -4919,8 +4926,8 @@ function App() {
                                   ? "Support station: no market rate applies, so there is no difference to show."
                                   : "No market rate entered for this station, so no difference can be shown."
                                 : rateGap >= 0
-                                  ? "Market rate is at or above the quote-required rate."
-                                  : "Market rate is below the quote-required rate: this station's hours sell under the cost-plus floor."}
+                                  ? "Market rate is at or above this quote's cost-plus rate."
+                                  : "Market rate is below this quote's cost-plus rate: this station's hours sell under the cost-plus floor."}
                             >
                               {rateGap === null ? "--" : formatRateGap(rateGap)}
                             </strong>
@@ -4933,7 +4940,7 @@ function App() {
                   )}
                 </div>
 
-                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares the market rates entered on the Market Rates page with this quote's required cost-plus rate per station; it does not replace the quote price.</p>
+                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares the market rates entered on the Market Rates page with this quote's cost-plus rate per station; it does not replace the quote price.</p>
               </div>
             </section>
 

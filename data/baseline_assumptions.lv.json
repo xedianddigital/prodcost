@@ -174,14 +174,14 @@
     },
     {
       "id": "assembler",
-      "name": "Assembler / fitter (2x)",
+      "name": "Assembler / fitter",
       "employer_cost_per_hour_eur": 13.52,
       "gross_monthly_salary_eur": 1750,
       "employer_social_contribution_rate": 0.2359,
       "paid_hours_per_month": 160,
       "cost_method": "gross_monthly",
       "derived_employer_cost_per_hour_eur": 13.52,
-      "headcount": 2,
+      "headcount": 1,
       "quality": "company_estimate"
     },
     {
@@ -213,8 +213,8 @@
     {
       "id": "manual_tool_station_1",
       "name": "Precision Saw",
-      "accounting_full_cost_rate_eur_per_hour": 51.37,
-      "target_competitive_rate_eur_per_hour": 41.75,
+      "accounting_full_cost_rate_eur_per_hour": 33.26,
+      "target_competitive_rate_eur_per_hour": 26.18,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.9,
       "actual_availability_percent": 0.8,
@@ -239,8 +239,8 @@
     {
       "id": "manual_tool_station_2",
       "name": "Laser Engraver",
-      "accounting_full_cost_rate_eur_per_hour": 50.47,
-      "target_competitive_rate_eur_per_hour": 41.07,
+      "accounting_full_cost_rate_eur_per_hour": 24.33,
+      "target_competitive_rate_eur_per_hour": 20.18,
       "actual_oee_percent": 0.87,
       "target_oee_percent": 0.9,
       "actual_availability_percent": 0.87,
@@ -265,8 +265,8 @@
     {
       "id": "manual_tool_station_3",
       "name": "Welding Station",
-      "accounting_full_cost_rate_eur_per_hour": 50.55,
-      "target_competitive_rate_eur_per_hour": 40.88,
+      "accounting_full_cost_rate_eur_per_hour": 25.15,
+      "target_competitive_rate_eur_per_hour": 18.47,
       "actual_oee_percent": 0.9,
       "target_oee_percent": 0.9,
       "actual_availability_percent": 0.9,
@@ -291,8 +291,8 @@
     {
       "id": "cnc_machine_1",
       "name": "CNC lathe",
-      "accounting_full_cost_rate_eur_per_hour": 61.01,
-      "target_competitive_rate_eur_per_hour": 49.35,
+      "accounting_full_cost_rate_eur_per_hour": 128.65,
+      "target_competitive_rate_eur_per_hour": 93.69,
       "actual_oee_percent": 0.8,
       "target_oee_percent": 0.85,
       "actual_availability_percent": 0.8,
@@ -303,7 +303,7 @@
       "monthly_fixed_cost_eur": 716.67,
       "planned_hours_per_month": 160,
       "variable_cost_eur_per_hour": 5,
-      "market_sell_rate_eur_per_hour": 120,
+      "market_sell_rate_eur_per_hour": 130,
       "market_rate_class_id": "cnc",
       "target_rate_discount_percent": 0,
       "purchase_price_eur": 86000,
@@ -317,8 +317,8 @@
     {
       "id": "cnc_machine_2",
       "name": "CNC milling station",
-      "accounting_full_cost_rate_eur_per_hour": 60,
-      "target_competitive_rate_eur_per_hour": 49.41,
+      "accounting_full_cost_rate_eur_per_hour": 118.69,
+      "target_competitive_rate_eur_per_hour": 94.26,
       "actual_oee_percent": 0.81,
       "target_oee_percent": 0.85,
       "actual_availability_percent": 0.81,
@@ -329,7 +329,7 @@
       "monthly_fixed_cost_eur": 725,
       "planned_hours_per_month": 160,
       "variable_cost_eur_per_hour": 5,
-      "market_sell_rate_eur_per_hour": 120,
+      "market_sell_rate_eur_per_hour": 130,
       "market_rate_class_id": "cnc",
       "target_rate_discount_percent": 0,
       "purchase_price_eur": 87000,
@@ -343,8 +343,8 @@
     {
       "id": "cnc_machine_3",
       "name": "CNC press brake",
-      "accounting_full_cost_rate_eur_per_hour": 57.9,
-      "target_competitive_rate_eur_per_hour": 47.99,
+      "accounting_full_cost_rate_eur_per_hour": 97.84,
+      "target_competitive_rate_eur_per_hour": 81.65,
       "actual_oee_percent": 0.77,
       "target_oee_percent": 0.85,
       "actual_availability_percent": 0.77,
@@ -355,7 +355,7 @@
       "monthly_fixed_cost_eur": 541.67,
       "planned_hours_per_month": 160,
       "variable_cost_eur_per_hour": 5,
-      "market_sell_rate_eur_per_hour": 120,
+      "market_sell_rate_eur_per_hour": 130,
       "market_rate_class_id": "cnc",
       "target_rate_discount_percent": 0,
       "purchase_price_eur": 65000,
@@ -369,8 +369,8 @@
     {
       "id": "assembly_station_1",
       "name": "Assembly station 1",
-      "accounting_full_cost_rate_eur_per_hour": 49.37,
-      "target_competitive_rate_eur_per_hour": 40.15,
+      "accounting_full_cost_rate_eur_per_hour": 13.44,
+      "target_competitive_rate_eur_per_hour": 11.96,
       "actual_oee_percent": 0.92,
       "target_oee_percent": 0.95,
       "actual_availability_percent": 0.92,
@@ -395,8 +395,8 @@
     {
       "id": "qc_station_1",
       "name": "QC station 1",
-      "accounting_full_cost_rate_eur_per_hour": 49.07,
-      "target_competitive_rate_eur_per_hour": 39.86,
+      "accounting_full_cost_rate_eur_per_hour": 10.49,
+      "target_competitive_rate_eur_per_hour": 9.4,
       "actual_oee_percent": 0.87,
       "target_oee_percent": 0.95,
       "actual_availability_percent": 0.87,
@@ -832,7 +832,7 @@
     {
       "id": "cnc",
       "name": "CNC machining",
-      "rateEurPerHour": 120,
+      "rateEurPerHour": 130,
       "source": "manual_rate_card",
       "confidence": "company_estimate",
       "notes": "Use won/lost quote evidence to replace this placeholder.",
@@ -845,7 +845,7 @@
       "source": "manual_rate_card",
       "confidence": "unknown",
       "notes": "General manual station pricing class.",
-      "lastUpdated": ""
+      "lastUpdated": "2026-07-05"
     },
     {
       "id": "welding",
@@ -854,7 +854,7 @@
       "source": "manual_rate_card",
       "confidence": "unknown",
       "notes": "Separate from generic manual work when quotes support it.",
-      "lastUpdated": ""
+      "lastUpdated": "2026-07-05"
     },
     {
       "id": "assembly",
@@ -863,7 +863,7 @@
       "source": "manual_rate_card",
       "confidence": "unknown",
       "notes": "Commercial assembly sell rate, not asset cost recovery.",
-      "lastUpdated": ""
+      "lastUpdated": "2026-07-05"
     },
     {
       "id": "inspection",
@@ -872,7 +872,7 @@
       "source": "manual_rate_card",
       "confidence": "unknown",
       "notes": "Use only when inspection is sold separately.",
-      "lastUpdated": ""
+      "lastUpdated": "2026-07-05"
     }
   ],
   "market_rate_card_profile_id": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
