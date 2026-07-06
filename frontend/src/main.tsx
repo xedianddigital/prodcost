@@ -5757,7 +5757,7 @@ function App() {
                   <input readOnly value={money.format(totalMonthlyOverheadEur(assumptions))} />
                 </label>
                 <label>
-                  Overhead EUR/h (folded into machine rates)
+                  Overhead EUR/h, flat shop average (machine rates fold in a weighted share per station, not this flat figure)
                   <input readOnly value={money.format(overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent"))} />
                 </label>
               </div>
