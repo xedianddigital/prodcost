@@ -315,6 +315,7 @@ type MachineClass = {
   other_monthly_fixed_cost_eur?: number;
   capacity_role?: AssetCapacityRole;
   default_labor_class_id?: string | null;
+  operator_attendance_share?: number | null;
   quality: string;
 };
 
@@ -672,6 +673,9 @@ function weightedSharedRecoveryPerMachineHour(
     sellableHoursByLabor.set(item.default_labor_class_id, (sellableHoursByLabor.get(item.default_labor_class_id) ?? 0) + hoursOf(item));
   });
 
+  // NRE: the CAM/programming labor class is recovered through the quote's engineering line,
+  // never through machine rates -- every person has exactly one recovery channel.
+  const engineeringLaborId = assumptions.cam_programming_defaults?.programming_labor_class_id ?? null;
   const assignedPayrollRateByLabor = new Map<string, number>();
   let supportOrUnassignedPayroll = 0;
   (assumptions.labor_classes ?? []).forEach((labor) => {
@@ -679,7 +683,7 @@ function weightedSharedRecoveryPerMachineHour(
     const sellableHours = sellableHoursByLabor.get(labor.id) ?? 0;
     if (sellableHours > 0) {
       assignedPayrollRateByLabor.set(labor.id, payroll / sellableHours);
-    } else {
+    } else if (labor.id !== engineeringLaborId) {
       supportOrUnassignedPayroll += payroll;
     }
   });
@@ -806,6 +810,20 @@ function inferredAssetLaborClassId(id: string, name: string) {
 
 function assetPrimaryLaborClassId(asset: Pick<CompanyAsset, "id" | "name" | "primaryLaborClassId">) {
   return asset.primaryLaborClassId ?? inferredAssetLaborClassId(asset.id, asset.name);
+}
+
+// A station operator's wage flows per hour of attendance, not per minute of touching: while
+// the spindle turns the operator cannot be sold elsewhere. This is the ERP "crew size" /
+// machine-crew ratio: 1 = dedicated operator, 1/3 = one operator tending three machines,
+// 0 = unattended. Quoted labor minutes are floored at machine minutes x this share.
+function machineAttendanceShare(machine: MachineClass | null | undefined) {
+  if (!machine) {
+    return 0;
+  }
+  if (machine.operator_attendance_share !== undefined && machine.operator_attendance_share !== null) {
+    return Math.min(1, Math.max(0, machine.operator_attendance_share));
+  }
+  return machineCapacityRole(machine) === "sellable_capacity" && machine.default_labor_class_id ? 1 : 0;
 }
 
 function isSellableCapacityMachine(machine: Pick<MachineClass, "id" | "name" | "capacity_role">) {
@@ -1404,16 +1422,22 @@ function profitabilitySellRateBreakdown(
     targetMap.set(row.defaultLaborClassId, (targetMap.get(row.defaultLaborClassId) ?? 0) + row.targetHours);
   });
 
+  // NRE: the CAM/programming labor class stays out of the shared pool (recovered through
+  // the quote's engineering line) but its payroll still counts as monthly cost in the P&L.
+  const engineeringLaborId = assumptions?.cam_programming_defaults?.programming_labor_class_id ?? null;
   const assignedPayrollRateByLabor = new Map<string, number>();
   let assignedPayrollMonth = 0;
   let supportPayrollMonth = 0;
   let unassignedPayrollMonth = 0;
+  let engineeringPayrollMonth = 0;
   (assumptions?.labor_classes ?? []).forEach((labor) => {
     const payroll = laborMonthlyPayrollCost(labor, assumptions);
     const sellableHours = sellableHoursByLabor.get(labor.id) ?? 0;
     if (sellableHours > 0) {
       assignedPayrollMonth += payroll;
       assignedPayrollRateByLabor.set(labor.id, payroll / sellableHours);
+    } else if (labor.id === engineeringLaborId) {
+      engineeringPayrollMonth += payroll;
     } else if ((supportHoursByLabor.get(labor.id) ?? 0) > 0) {
       supportPayrollMonth += payroll;
     } else {
@@ -1427,7 +1451,7 @@ function profitabilitySellRateBreakdown(
       ? assignedPayrollRateByLabor.get(row.defaultLaborClassId) ?? 0
       : 0
   }));
-  const directPayroll = assignedPayrollMonth + supportPayrollMonth + unassignedPayrollMonth;
+  const directPayroll = assignedPayrollMonth + supportPayrollMonth + unassignedPayrollMonth + engineeringPayrollMonth;
   const assignedPayrollRate = assignedPayrollMonth / Math.max(1, targetHours);
   const supportPayrollRate = supportPayrollMonth / Math.max(1, targetHours);
   const unassignedPayrollRate = unassignedPayrollMonth / Math.max(1, targetHours);
@@ -2322,6 +2346,13 @@ function App() {
     return labor.employer_cost_per_hour_eur ?? 0;
   }
 
+  // Attendance floor: charged labor minutes are never below machine minutes x the station's
+  // operator attendance share, so quotes cannot leak operator salary on machine-paced work.
+  function attendedLaborMinutes(machineClassId: string | null, machineMinutes: number, laborMinutes: number) {
+    const machine = machineClassId ? machineById.get(machineClassId) : null;
+    return roundMoney(Math.max(laborMinutes, machineMinutes * machineAttendanceShare(machine)));
+  }
+
   function toolMatchesRequirement(tool: ToolInventoryItem, requirement: ToolRequirement) {
     const tolerance = assumptions?.tool_match_tolerance_mm ?? 0.05;
     const typeMatches = tool.type === requirement.toolType;
@@ -2420,9 +2451,11 @@ function App() {
   function operationConversionCostParts(operation: QuoteOperation, mode: RateMode, startedQuantity: number) {
     const machineHourly = machineRate(operation.machineClassId, mode);
     const laborHourly = laborRate(operation.laborClassId);
+    const setupLaborMinutes = attendedLaborMinutes(operation.machineClassId, operation.setupMachineMinutes, operation.setupLaborMinutes);
+    const runLaborMinutes = attendedLaborMinutes(operation.machineClassId, operation.runMachineMinutesPerPart, operation.runLaborMinutesPerPart);
     const machineCost = ((operation.setupMachineMinutes + operation.runMachineMinutesPerPart * startedQuantity) / 60) * machineHourly;
-    const laborCost = ((operation.setupLaborMinutes + operation.runLaborMinutesPerPart * startedQuantity) / 60) * laborHourly;
-    const runCost = startedQuantity * ((operation.runMachineMinutesPerPart / 60) * machineHourly + (operation.runLaborMinutesPerPart / 60) * laborHourly);
+    const laborCost = ((setupLaborMinutes + runLaborMinutes * startedQuantity) / 60) * laborHourly;
+    const runCost = startedQuantity * ((operation.runMachineMinutesPerPart / 60) * machineHourly + (runLaborMinutes / 60) * laborHourly);
     const scrapCost = runCost * effectiveScrapPercent(operation);
     return { machineCost, laborCost, scrapCost, total: machineCost + laborCost + scrapCost };
   }
@@ -2484,9 +2517,9 @@ function App() {
         machine_hour_rate_eur: machineRate(operation.machineClassId, mode),
         labor_hour_rate_eur: laborRate(operation.laborClassId),
         setup_machine_minutes: operation.setupMachineMinutes,
-        setup_labor_minutes: operation.setupLaborMinutes,
+        setup_labor_minutes: attendedLaborMinutes(operation.machineClassId, operation.setupMachineMinutes, operation.setupLaborMinutes),
         run_machine_minutes_per_part: operation.runMachineMinutesPerPart,
-        run_labor_minutes_per_part: operation.runLaborMinutesPerPart,
+        run_labor_minutes_per_part: attendedLaborMinutes(operation.machineClassId, operation.runMachineMinutesPerPart, operation.runLaborMinutesPerPart),
         tooling_cost_per_part_eur: operation.toolingCostPerPart,
         consumables_cost_per_part_eur: operation.consumablesCostPerPart,
         outsourced_cost_per_part_eur: operation.outsourcedCostPerPart,
@@ -2583,9 +2616,9 @@ function App() {
         machine_hour_rate_eur: scenarioMachineRate(operation.machineClassId),
         labor_hour_rate_eur: laborRate(operation.laborClassId),
         setup_machine_minutes: operation.setupMachineMinutes,
-        setup_labor_minutes: operation.setupLaborMinutes,
+        setup_labor_minutes: attendedLaborMinutes(operation.machineClassId, operation.setupMachineMinutes, operation.setupLaborMinutes),
         run_machine_minutes_per_part: roundMoney(operation.runMachineMinutesPerPart * cycleTimeFactor),
-        run_labor_minutes_per_part: roundMoney(operation.runLaborMinutesPerPart * cycleTimeFactor),
+        run_labor_minutes_per_part: attendedLaborMinutes(operation.machineClassId, roundMoney(operation.runMachineMinutesPerPart * cycleTimeFactor), roundMoney(operation.runLaborMinutesPerPart * cycleTimeFactor)),
         tooling_cost_per_part_eur: operation.toolingCostPerPart,
         consumables_cost_per_part_eur: operation.consumablesCostPerPart,
         outsourced_cost_per_part_eur: operation.outsourcedCostPerPart,
@@ -2898,9 +2931,9 @@ function App() {
           machine_hour_rate_eur: machineRate(template.default_machine_class_id, mode),
           labor_hour_rate_eur: laborRate(template.default_labor_class_id),
           setup_machine_minutes: roundMoney((template.default_setup_machine_minutes ?? 0) * setupFactor),
-          setup_labor_minutes: roundMoney((template.default_setup_labor_minutes ?? 0) * setupFactor),
+          setup_labor_minutes: attendedLaborMinutes(template.default_machine_class_id, roundMoney((template.default_setup_machine_minutes ?? 0) * setupFactor), roundMoney((template.default_setup_labor_minutes ?? 0) * setupFactor)),
           run_machine_minutes_per_part: roundMoney((template.default_run_machine_minutes_per_part ?? 0) * runFactor),
-          run_labor_minutes_per_part: roundMoney((template.default_run_labor_minutes_per_part ?? 0) * runFactor),
+          run_labor_minutes_per_part: attendedLaborMinutes(template.default_machine_class_id, roundMoney((template.default_run_machine_minutes_per_part ?? 0) * runFactor), roundMoney((template.default_run_labor_minutes_per_part ?? 0) * runFactor)),
           tooling_cost_per_part_eur: template.default_tooling_cost_per_part_eur ?? 0,
           consumables_cost_per_part_eur: template.default_consumables_cost_per_part_eur ?? 0,
           outsourced_cost_per_part_eur: 0,
@@ -5012,7 +5045,7 @@ function App() {
               <div className="sectionHeader wide">
                 <div>
                   <h2>Operations</h2>
-                  <p className="sectionHelp">The production route: each step the part goes through, with its machine and labor time. Rates are pulled from the selected machine and labor classes. Labor minutes mean minutes a person is actually occupied by this step -- if one operator runs three machines at once, enter roughly a third of the machine time per operation, and for hands-on work (deburring, assembly) labor time can exceed machine time. Entering full labor time next to full machine time for the same person double-charges that hour.</p>
+                  <p className="sectionHelp">The production route: each step the part goes through, with its machine and labor time. Rates are pulled from the selected machine and labor classes. Labor minutes mean minutes a person is actually occupied by this step -- if one operator runs three machines at once, enter roughly a third of the machine time per operation, and for hands-on work (deburring, assembly) labor time can exceed machine time. Entering full labor time next to full machine time for the same person double-charges that hour. An attendance floor protects the other direction: charged labor minutes are never below machine minutes × the station's operator attendance share (1 for a dedicated operator), so under-entered labor cannot leak operator salary out of the price.</p>
                 </div>
                 <div className="buttonRow addOperationControls">
                   <select value={selectedTemplateType} onChange={(event) => setSelectedTemplateType(event.target.value)}>
@@ -6452,7 +6485,7 @@ function App() {
                     <div><span>2. Support asset recovery</span><strong>{money.format(sellRateBreakdown.supportMachineRate)}/h</strong><em>{money.format(sellRateBreakdown.supportMachineCostMonth)} support machine cost / {Math.round(targetHoursMonth)} sellable basis h</em></div>
                     <div><span>3. Assigned payroll avg</span><strong>{money.format(sellRateBreakdown.assignedPayrollRate)}/h</strong><em>{money.format(sellRateBreakdown.assignedPayrollMonth)} assigned to sellable station payroll roles</em></div>
                     <div><span>4. Overhead recovery</span><strong>{money.format(sellRateBreakdown.overheadRate)}/h</strong><em>{money.format(sellRateBreakdown.overheadMonth)} / {Math.round(targetHoursMonth)} sellable basis h</em></div>
-                    <div><span>5. Shared recovery layer</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>support assets + support/unassigned payroll + overhead -- shop average; allocated per station in proportion to its machine + payroll EUR/h, see table below</em></div>
+                    <div><span>5. Shared recovery layer</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>support assets + support/unassigned payroll + overhead (engineering/CAM payroll excluded -- recovered via the quote's NRE line) -- shop average; allocated per station in proportion to its machine + payroll EUR/h, see table below</em></div>
                     <div><span>6. Required cost-plus uplift</span><strong>{formatPercent(assumptions.commercial_policy.risk_allowance_percent)}% risk, {formatPercent(assumptions.commercial_policy.default_margin_percent)}% margin</strong><em>Diagnostic floor only; revenue uses explicit market sell rates</em></div>
                   </div>
                   {missingSellRateCount > 0 ? (

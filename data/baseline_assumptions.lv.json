@@ -282,7 +282,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "fabricator_saw",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "manual_tool_station_2",
@@ -308,7 +309,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "fabricator_engraver",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "manual_tool_station_3",
@@ -334,7 +336,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "fabricator_welder",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "cnc_machine_1",
@@ -360,7 +363,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "cnc_operator_lathe",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "cnc_machine_2",
@@ -386,7 +390,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "cnc_operator_milling",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "cnc_machine_3",
@@ -412,7 +417,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "cnc_operator_press_brake",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "assembly_station_1",
@@ -438,7 +444,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "sellable_capacity",
       "default_labor_class_id": "assembler",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 1
     },
     {
       "id": "qc_station_1",
@@ -464,7 +471,8 @@
       "other_monthly_fixed_cost_eur": 0,
       "capacity_role": "support_internal",
       "default_labor_class_id": "quality_inspector",
-      "quality": "company_estimate"
+      "quality": "company_estimate",
+      "operator_attendance_share": 0
     }
   ],
   "operation_templates": [
@@ -475,7 +483,7 @@
       "default_setup_machine_minutes": 15,
       "default_setup_labor_minutes": 15,
       "default_run_machine_minutes_per_part": 1,
-      "default_run_labor_minutes_per_part": 0.5,
+      "default_run_labor_minutes_per_part": 1,
       "default_tooling_cost_per_part_eur": 0,
       "default_consumables_cost_per_part_eur": 0,
       "default_outsourced_cost_per_part_eur": 0,
@@ -507,7 +515,7 @@
       "default_setup_machine_minutes": 60,
       "default_setup_labor_minutes": 90,
       "default_run_machine_minutes_per_part": 8,
-      "default_run_labor_minutes_per_part": 1,
+      "default_run_labor_minutes_per_part": 8,
       "default_tooling_cost_per_part_eur": 0,
       "default_consumables_cost_per_part_eur": 0,
       "default_outsourced_cost_per_part_eur": 0,
@@ -523,7 +531,7 @@
       "default_setup_machine_minutes": 20,
       "default_setup_labor_minutes": 20,
       "default_run_machine_minutes_per_part": 2,
-      "default_run_labor_minutes_per_part": 0.4,
+      "default_run_labor_minutes_per_part": 2,
       "default_tooling_cost_per_part_eur": 0,
       "default_consumables_cost_per_part_eur": 0,
       "default_outsourced_cost_per_part_eur": 0,

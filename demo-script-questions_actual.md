@@ -5,25 +5,6 @@ Each item below keeps your original question, followed by the answer and what wa
 ---
 
 
-**5. Overhead Allocation method toggle — nothing changes when switching.**
-
-It *does* change things, just not inside that section — that was the UX gap. Both readouts ("Equivalent EUR/h" and "Equivalent % of cost") always show the same total expressed two ways, by design. The switch changes **where** overhead lands: with *per machine hour* it's folded into every machine's Accounting/Target EUR/h (watch those columns in the Machine Rate Calculator change when you toggle); with *percent of cost* the machine rates drop back to direct cost and the overhead instead hits each quote as a coefficient on own-work cost.
-
-**DONE:** the active readout is now labeled "— in use", and a help paragraph states exactly what changes where, so the toggle no longer looks dead.
-
-
-**7. Terminology from the Resources page:**
-
-- **Equivalent EUR/h at target** — the total monthly overhead divided by the shop's planned productive hours at target availability/utilization. It's what overhead costs per sellable machine hour. Used automatically when allocation method = "per machine hour".
-- **Equivalent % of cost at target** — the exact same overhead total, expressed as a percentage of own-work (conversion) cost instead of per hour. Used automatically when allocation method = "percent of cost". You never enter these two; they're derived from the expense list.
-- **Risk allowance %** — a cost buffer added to the shop's own work before margin, covering estimation uncertainty: a cycle time that runs long, a fixture surprise, an extra inspection round. Raise it for first-time parts and rough drawings; lower it for repeat work with measured actuals.
-- **Material/bought-out markup %** — the handling fee applied to material and purchased/outsourced items instead of the full profit margin (costing.v0.3). It covers procurement effort and material price risk. Typical job-shop range 5–15%.
-- **Annual-volume relief %** — Client Portal only: when a customer declares a serious annual volume, the preliminary estimate is multiplied by this factor (0.92 = 8% relief) to reflect expected repeat-order economics. Applies only to portal pre-quotes, never to real quotes.
-- **Low/High factor (× sell price)** — the Client Portal quotes a *range*, not one number, because portal data is incomplete. Low = price × 0.85, High = price × 1.35 by default. Asymmetric on purpose: an underquote is cheaper to fix than an overquote that loses the client.
-
----
-
-
 ---
 
 **10. Cutoff Calculator too incomplete — bars only? Plates? Other units?**
@@ -44,10 +25,43 @@ Plate support actually already existed (the width field only appeared when the s
 
 ---
 
-**15. Scenarios waterfall — what is deducted after the availability step / what is "Use target overhead policy: final target price"?**
-
-The waterfall moves from the accounting price to the target price in three separate steps so each driver's share is visible. The subtlety: overhead EUR/h is also "fixed money ÷ productive hours", so it *also* depends on utilization/availability. To isolate effects, the first two steps re-rate only the **machines** at target utilization, then target availability, while overhead stays divided by today's low hours. The last step finally spreads the **overhead** over target hours too — that's the remaining price drop, and it lands on the final target price. **DONE:** the step labels now say this in plain words (e.g. "Overhead also spread over target hours (until this step it was still divided by today's low hours) = final target price").
-
----
 
 
+• Your markup reading also needs a small correction: 5% risk plus 25% margin is not a plain
+  31.25% markup on all cost. The formula is base * 1.05 / 0.75, so the required sell rate
+  is 140% of base, i.e. 40% uplift over base. The margin is on selling price, not on cost.
+
+    required price = base * 1.05 / (1 - 0.25)
+                 = base * 1.40
+
+  So it is a 40% uplift over base cost, while still producing 25% gross margin on the final
+  sell price.
+
+
+
+
+
+ 3. Labor under-recovery, in plain language
+
+  Take your own CNC milling station and its operator, paid €1,800 gross — about
+  €2,225/month with employer tax. The machine runs about 130 hours a month, so having him
+  stand at it really costs about €17 for every machine hour.
+
+  Now look at your CNC-AL-120 quote. Each bracket takes 7.5 minutes of machine time but the
+  route says only 0.9 minutes of labor — the moments he's actually loading the part and
+  pressing buttons. So one hour of machine running carries about 7 minutes of his wage into
+  the price — roughly €1.90.
+
+  But he was there the whole hour. He can't be sold to another customer while the spindle
+  turns — he's watching the process, checking dimensions, deburring the previous part. At
+  the end of the month the quotes have collected about €250 of his €2,225 salary. The
+  missing €2,000 didn't disappear — it quietly came out of profit. That's under-recovery:
+  the wage flows per hour of attendance, but the quote charges per minute of touching.
+
+  The small labor minutes are honest in one case: if he genuinely tends three machines at
+  once. Then each machine hour should carry a third of him — 20 minutes, about €5.70 —
+  still far more than 0.9. So the fix isn't in a formula, it's in the route data: labor
+  minutes per operation should reflect his attendance share (60 min/h if the machine has
+  his full attention, 20 min/h if he runs three), not just hands-on time. That's the number
+  I'd revisit in your operation templates if you want quotes to stop leaking operator
+  salary.

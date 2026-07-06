@@ -63,6 +63,24 @@ machines, each operation gets roughly a third of the machine time as labor time;
 steps (deburring, assembly) can have labor time above machine time. Entering full labor
 minutes equal to full machine minutes for a shared operator double-charges that hour.
 
+The convention is now enforced, not just documented: each machine class carries an
+`operator_attendance_share` (the ERP "crew size" ratio — 1 = dedicated operator, 1/3 = one
+operator tending three machines, 0 = unattended/support). When a quote is priced, charged
+labor minutes are floored at `machine minutes x attendance share`. Entered labor minutes
+below the floor cannot leak operator salary out of the price; minutes above it (hands-on
+work) are charged as entered. The wage flows per hour of attendance, not per minute of
+touching: while the spindle turns, the operator cannot be sold elsewhere.
+
+## Engineering / CAM Labor (NRE)
+
+The CAM programming labor class (`cam_programming_defaults.programming_labor_class_id`) is
+recovered through the quote's engineering line — a non-recurring engineering (NRE) charge on
+new parts, discounted for repeat parts via the reusable-program percent. It is therefore
+excluded from the shared-recovery pool that machine rates absorb: every person has exactly
+one recovery channel (station operators through machine rates, the programmer through NRE,
+office staff through overhead). The Profitability P&L still counts the programmer's full
+payroll as monthly cost, which is conservative because NRE revenue is not modeled there.
+
 ## Material Cost
 
 The tool starts from a sellable/purchasable stock piece, not theoretical net material.
