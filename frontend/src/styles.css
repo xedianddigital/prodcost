@@ -48,6 +48,7 @@ textarea {
 .nav {
   display: grid;
   gap: 8px;
+  align-content: start;
 }
 
 .navItem {
@@ -70,11 +71,33 @@ textarea {
   color: #ffffff;
 }
 
+.clientNavItem {
+  margin-top: 10px;
+  color: #9fd0e0;
+}
+
+.clientNavItem span {
+  color: #9fd0e0;
+}
+
+.clientNavItem.active,
+.clientNavItem:hover {
+  background: transparent;
+  border-color: transparent;
+  color: #b7e3ef;
+}
+
+.clientNavItem.active span,
+.clientNavItem:hover span {
+  color: #b7e3ef;
+}
+
 .workspace {
   padding: 28px;
   display: grid;
   gap: 24px;
   align-content: start;
+  min-width: 0;
 }
 
 .topbar {
@@ -410,6 +433,7 @@ textarea:focus {
     minmax(120px, 0.55fr)
     minmax(120px, 0.55fr)
     minmax(120px, 0.55fr)
+    minmax(120px, 0.55fr)
     minmax(160px, 0.7fr);
 }
 
@@ -506,6 +530,37 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.resourcesPage,
+.scenariosPage {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.resourcesPage > .quoteGrid,
+.resourcesPage > .operations,
+.scenariosPage > .panel,
+.scenariosPage > .explanationGrid {
+  min-width: 0;
+}
+
+.resourceIntroGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+/* Quote page variant: only two panels live in this row (RFQ + Quote Summary), so the
+   generic 3-column grid left a dead third column. RFQ gets the extra room. */
+.quoteIntroGrid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.guideReferenceGrid {
+  display: grid;
+  gap: 16px;
+}
+
 input[readonly] {
   background: #c4cbd3;
   color: #29333d;
@@ -534,6 +589,7 @@ input[readonly] {
   border: 1px solid #aeb7c1;
   border-radius: 8px;
   padding: 16px 20px;
+  min-width: 0;
 }
 
 .scenarioStrip div {
@@ -606,9 +662,23 @@ input[readonly] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.operationEditorRow label,
+.actualsRow label {
+  display: grid;
+  grid-template-rows: 30px minmax(32px, auto);
+  align-content: start;
+}
+
+.operationEditorRow label input,
+.operationEditorRow label select,
+.actualsRow label input,
+.actualsRow label select {
+  align-self: start;
+}
+
 .rateHint {
   color: #47515b;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -630,7 +700,8 @@ input[readonly] {
 }
 
 @media (max-width: 900px) {
-  .scenarioStrip {
+  .scenarioStrip,
+  .resourceIntroGrid {
     grid-template-columns: 1fr;
   }
 
@@ -807,6 +878,12 @@ input[readonly] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+@media (max-width: 1200px) {
+  .resourceIntroGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1100px) {
   .inputPanel .fieldGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -829,10 +906,10 @@ input[readonly] {
 .operationTemplateRow {
   grid-template-columns:
     minmax(180px, 1fr)
-    minmax(220px, 1.15fr)
+    minmax(210px, 1.05fr)
     minmax(180px, 0.95fr)
-    repeat(9, minmax(95px, 0.5fr));
-  min-width: 1520px;
+    repeat(9, minmax(92px, 0.48fr));
+  min-width: 1500px;
 }
 
 .operationTemplateRow {
@@ -855,19 +932,17 @@ input[readonly] {
 .materialHead,
 .materialRow {
   grid-template-columns:
-    minmax(180px, 1fr)
-    minmax(110px, 0.55fr)
-    minmax(220px, 1.2fr)
-    minmax(100px, 0.5fr)
-    minmax(130px, 0.6fr)
-    minmax(90px, 0.45fr)
-    minmax(90px, 0.45fr)
-    minmax(90px, 0.45fr)
-    minmax(150px, 0.7fr)
-    minmax(90px, 0.45fr)
-    minmax(100px, 0.5fr)
-    minmax(150px, 0.75fr);
-  min-width: 1560px;
+    minmax(176px, 1fr)
+    minmax(96px, 0.5fr)
+    minmax(228px, 1.16fr)
+    minmax(72px, 0.34fr)
+    minmax(90px, 0.44fr)
+    minmax(70px, 0.34fr)
+    minmax(70px, 0.34fr)
+    minmax(126px, 0.6fr)
+    minmax(56px, 0.26fr)
+    minmax(72px, 0.34fr);
+  min-width: 1090px;
 }
 
 .materialRow {
@@ -876,10 +951,81 @@ input[readonly] {
   padding-bottom: 8px;
 }
 
-.materialRow input {
+.materialRow input,
+.materialRow select {
   width: 100%;
 }
 
+
+
+.machineRateTable .tableHead,
+.machineRateTable .tableRow,
+.materialTable .tableHead,
+.materialTable .tableRow,
+.operationTemplateTable .tableHead,
+.operationTemplateTable .tableRow {
+  gap: 6px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.machineRateTable .tableHead,
+.materialTable .tableHead,
+.operationTemplateTable .tableHead {
+  font-size: 12px;
+}
+
+.machineRateTable input,
+.machineRateTable select,
+.materialTable input,
+.materialTable select,
+.operationTemplateTable input,
+.operationTemplateTable select {
+  min-height: 32px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.materialTable .tableHead {
+  font-size: 13px;
+}
+
+.materialTable input,
+.materialTable select {
+  font-size: 12.5px;
+}
+
+.operationTemplateTable .tableHead {
+  font-size: 12.5px;
+}
+
+.operationTemplateTable .tableHead > span:first-child,
+.operationTemplateTable .tableRow > span:first-child {
+  font-size: inherit;
+}
+
+.operationTemplateTable .tableHead > :not(:first-child) {
+  font-size: 13px;
+}
+
+.operationTemplateTable input,
+.operationTemplateTable select {
+  font-size: 12.5px;
+}
+
+.machineRateTable .tableHead {
+  font-size: 12.5px;
+}
+
+.machineRateTable input,
+.machineRateTable select {
+  font-size: 12.5px;
+}
+
+.machineRateTable .idlenessHint,
+.machineRateTable .linkButton {
+  font-size: 12px;
+}
 
 .quantityBreakHead,
 .quantityBreakRow {
@@ -930,6 +1076,27 @@ input[readonly] {
 
 .actualsRow input {
   width: 100%;
+}
+
+.actualsSingleField {
+  display: grid;
+  grid-template-rows: 30px minmax(32px, auto);
+  align-content: start;
+  gap: 6px;
+}
+
+.actualsSingleField > span {
+  display: block;
+}
+
+.actualsSingleField > input {
+  align-self: start;
+}
+
+.actualsAlignedValue,
+.actualsAlignedInput {
+  align-self: start;
+  margin-top: 36px;
 }
 
 .calibrationReview {
@@ -1359,6 +1526,36 @@ input[readonly] {
   line-height: 1.58;
 }
 
+.caseFlowSteps,
+.casePageMap {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.caseFlowSteps div,
+.casePageMap div {
+  background: #c4cbd3;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.caseFlowSteps strong,
+.casePageMap strong {
+  color: #26313a;
+}
+
+.caseFlowSteps span,
+.casePageMap span {
+  color: #44505a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .caseSignals {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1472,6 +1669,26 @@ input[readonly] {
   font-weight: 700;
 }
 
+.diagnosticTable > .sensitivityHead,
+.diagnosticTable > .sensitivityRow {
+  grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr);
+}
+
+.diagnosticTable > .sensitivityHead {
+  background: #b8c1ca;
+  font-weight: 700;
+}
+
+.sensitivityRow .decisionGood {
+  color: #1d6b34;
+  font-weight: 700;
+}
+
+.sensitivityRow .decisionBad {
+  color: #a3222c;
+  font-weight: 700;
+}
+
 .oeeExampleGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1515,50 +1732,15 @@ input[readonly] {
   gap: 10px;
 }
 
-.deathSpiralFlow {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.deathSpiralFlow div {
-  background: #3a2426;
-  color: #f4dede;
-  border: 1px solid #6b3a3d;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-.deathSpiralFlow div:not(:last-child)::after {
-  content: "\2192";
-  position: absolute;
-  right: -14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #8a5a5d;
-  font-weight: 700;
-  z-index: 1;
-}
-
 @media (max-width: 1200px) {
   .caseSignals,
+  .caseFlowSteps,
+  .casePageMap,
   .formulaStrip,
   .costBackboneFlow,
   .oeeExampleGrid,
-  .reasonList,
-  .deathSpiralFlow {
+  .reasonList {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .deathSpiralFlow div:not(:last-child)::after {
-    display: none;
   }
 
   .oeeEquation,
@@ -1569,11 +1751,12 @@ input[readonly] {
 
 @media (max-width: 800px) {
   .caseSignals,
+  .caseFlowSteps,
+  .casePageMap,
   .formulaStrip,
   .costBackboneFlow,
   .oeeExampleGrid,
-  .reasonList,
-  .deathSpiralFlow {
+  .reasonList {
     grid-template-columns: 1fr;
   }
 
@@ -1689,27 +1872,35 @@ input[readonly] {
 .machineRateHead,
 .machineRateRow {
   grid-template-columns:
-    minmax(210px, 1.1fr)
-    minmax(130px, 0.65fr)
-    minmax(110px, 0.55fr)
-    minmax(100px, 0.5fr)
-    minmax(100px, 0.5fr)
-    minmax(100px, 0.5fr)
-    minmax(100px, 0.5fr)
-    minmax(110px, 0.55fr)
-    minmax(110px, 0.55fr)
-    minmax(110px, 0.55fr)
-    minmax(120px, 0.6fr)
-    minmax(120px, 0.6fr)
-    minmax(120px, 0.6fr)
-    minmax(90px, 0.4fr);
-  min-width: 1900px;
+    minmax(154px, 0.82fr)
+    minmax(82px, 0.42fr)
+    minmax(84px, 0.4fr)
+    minmax(78px, 0.36fr)
+    minmax(78px, 0.36fr)
+    minmax(92px, 0.44fr)
+    minmax(92px, 0.44fr)
+    minmax(64px, 0.3fr)
+    minmax(68px, 0.32fr)
+    minmax(70px, 0.32fr)
+    minmax(70px, 0.32fr)
+    minmax(84px, 0.38fr)
+    minmax(88px, 0.4fr)
+    minmax(66px, 0.3fr);
+  min-width: 1350px;
 }
 
 .machineRateRow {
   min-height: 56px;
   padding-top: 8px;
   padding-bottom: 8px;
+  align-items: start;
+}
+
+.machineRateRow > input,
+.machineRateRow > .utilizationCell,
+.machineRateRow > .fixedCostToggle,
+.machineRateRow > .fixedCostHelper {
+  align-self: start;
 }
 
 .machineRateRow input {
@@ -1718,7 +1909,13 @@ input[readonly] {
 
 .utilizationCell {
   display: grid;
-  gap: 2px;
+  grid-template-rows: 32px 6px auto;
+  align-content: start;
+  gap: 4px;
+}
+
+.utilizationCell input {
+  align-self: start;
 }
 
 .utilizationBar {
@@ -1747,6 +1944,40 @@ input[readonly] {
   gap: 10px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+.modeSwitch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border: 1px solid #a9b3bd;
+  border-radius: 8px;
+  background: #eef2f5;
+}
+
+.modeButton {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #34404a;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.modeButton.active {
+  background: #ffffff;
+  color: #17212b;
+  box-shadow: 0 1px 4px rgba(18, 28, 38, 0.14);
+}
+
+.modeButton:hover {
+  background: #dde5ec;
+}
+
+.modeButton.active:hover {
+  background: #ffffff;
 }
 
 .profitBridgeLegend {
@@ -1785,8 +2016,8 @@ input[readonly] {
 .profitBridgeChart {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
   margin: 26px 8px 34px;
 }
 
@@ -1851,6 +2082,7 @@ input[readonly] {
 }
 
 .idlenessHint {
+  margin-top: 4px;
   font-size: 11px;
   color: #b3413a;
   font-weight: 600;
@@ -1882,7 +2114,19 @@ input[readonly] {
 }
 
 .cutoffHelper {
-  grid-template-columns: repeat(2, minmax(140px, 0.6fr)) minmax(220px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.cutoffHelper > div {
+  min-width: 0;
+}
+
+.cutoffHelper .suggestedValue {
+  overflow-wrap: anywhere;
+}
+
+.cutoffHelper .secondaryButton {
+  margin-top: 8px;
 }
 
 .fixedCostHelper label {
@@ -1990,4 +2234,872 @@ input[readonly] {
 
 .portalResultBox strong {
   line-height: 1.25;
+}
+
+.profilePage {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profilePage > *,
+.profilePage .panel,
+.profilePage .operations {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profileHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 18px;
+  align-items: start;
+}
+
+.profileActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.profileActions select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profileActions button {
+  flex: 0 0 auto;
+}
+
+.profileAssetTable {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profileAssetTables,
+.profileAssetTableBlock {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profileAssetTableBlock h3 {
+  margin: 0;
+  color: #26313a;
+  font-size: 15px;
+}
+
+.profileAssetNameCell {
+  font-weight: 700;
+  color: #26313a;
+  overflow-wrap: anywhere;
+}
+
+.profileSummaryStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  background: #c7ced6;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.profileSummaryStrip div {
+  display: grid;
+  gap: 6px;
+}
+
+.profileSummaryStrip strong {
+  font-size: 19px;
+}
+
+.profileAssetCostHead,
+.profileAssetCostRow {
+  grid-template-columns:
+    minmax(210px, 1.2fr)
+    minmax(140px, 0.72fr)
+    minmax(160px, 0.82fr)
+    minmax(104px, 0.55fr)
+    minmax(70px, 0.35fr)
+    minmax(82px, 0.38fr)
+    minmax(108px, 0.55fr)
+    minmax(92px, 0.45fr)
+    minmax(104px, 0.5fr)
+    minmax(118px, 0.54fr)
+    48px;
+  min-width: 1240px;
+}
+
+.profileAssetCapacityHead,
+.profileAssetCapacityRow {
+  grid-template-columns:
+    minmax(210px, 1.2fr)
+    minmax(100px, 0.48fr)
+    minmax(128px, 0.62fr)
+    minmax(128px, 0.62fr)
+    minmax(128px, 0.62fr)
+    minmax(128px, 0.62fr)
+    minmax(92px, 0.42fr);
+  min-width: 940px;
+}
+
+.profileAssetCostRow,
+.profileAssetCapacityRow {
+  min-height: 54px;
+}
+
+.profileEmployeeHead,
+.profileEmployeeRow {
+  grid-template-columns:
+    minmax(220px, 1.1fr)
+    minmax(180px, 0.9fr)
+    minmax(95px, 0.45fr)
+    minmax(115px, 0.55fr)
+    minmax(115px, 0.55fr)
+    minmax(105px, 0.5fr)
+    minmax(125px, 0.6fr)
+    minmax(155px, 0.75fr)
+    48px;
+  min-width: 1160px;
+}
+
+.profileOverheadBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+  color: #38414a;
+}
+
+.profileOverheadBreakdown strong {
+  color: #20252b;
+}
+
+@media (max-width: 900px) {
+  .profileHero,
+  .profileSummaryStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .profileActions {
+    justify-content: stretch;
+  }
+
+  .profileActions select,
+  .profileActions button {
+    flex: 1;
+  }
+}
+
+.scenarioIntro {
+  display: grid;
+  gap: 10px;
+}
+
+.scenarioIntro p,
+.scenarioHelpLarge {
+  color: #29333d;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.scenarioHelpLarge {
+  margin-top: 8px;
+  max-width: 980px;
+}
+
+.competitorSummary {
+  margin-top: 16px;
+}
+
+.competitorSummary div.marketGood,
+.competitorSummary div.marketBad {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.competitorSummary .marketGood {
+  background: #d6eadb;
+  border-color: #78a983;
+}
+
+.competitorSummary .marketGood dt,
+.competitorSummary .marketGood dd {
+  color: #1f5c2d;
+}
+
+.competitorSummary .marketBad {
+  background: #efd6d3;
+  border-color: #b77a73;
+}
+
+.competitorSummary .marketBad dt,
+.competitorSummary .marketBad dd {
+  color: #7a2620;
+}
+
+.competitorExplanation {
+  margin-top: -8px;
+  color: #3d4751;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.profileMaterialScopeHead,
+.profileMaterialScopeRow {
+  grid-template-columns:
+    minmax(220px, 1.2fr)
+    minmax(140px, 0.7fr)
+    minmax(280px, 1.4fr)
+    minmax(140px, 0.7fr)
+    48px;
+  min-width: 880px;
+}
+
+.profileToolScopeHead,
+.profileToolScopeRow {
+  grid-template-columns:
+    minmax(240px, 1.2fr)
+    minmax(180px, 0.9fr)
+    minmax(320px, 1.5fr)
+    48px;
+  min-width: 820px;
+}
+
+.profileOperationScopeHead,
+.profileOperationScopeRow {
+  grid-template-columns:
+    minmax(180px, 0.9fr)
+    minmax(220px, 1.1fr)
+    minmax(240px, 1.2fr)
+    minmax(240px, 1.2fr)
+    48px;
+  min-width: 980px;
+}
+
+.dataStatusInput {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  justify-self: start;
+}
+
+.dataStatusDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(32 37 43 / 28%);
+  display: inline-block;
+}
+
+.dataStatusDot.company {
+  background: #2f8f4e;
+}
+
+.dataStatusDot.generic {
+  background: #d6a529;
+}
+
+.dataStatusDot.measured {
+  background: #2f6fbd;
+}
+
+.dataStatusDot.preliminary {
+  background: #d97832;
+}
+
+.dataStatusDot.unknown {
+  background: #8f9aa5;
+}
+
+.marketRatePage {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.marketRatePage > *,
+.marketRatePage .panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.marketRateHero {
+  display: grid;
+  gap: 8px;
+}
+
+.marketRatePanel {
+  display: grid;
+  gap: 14px;
+}
+
+.marketRateCardTable,
+.marketRouteTable,
+.marketMappingTable {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.marketBindingStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  background: #d5dce2;
+}
+
+.marketBindingStrip.blocked {
+  border-color: #b45309;
+  background: #f5d7a3;
+}
+
+.marketBindingStrip.compatible {
+  border-color: #8eb59e;
+  background: #c8ded2;
+}
+
+.marketBindingStrip div {
+  display: grid;
+  gap: 4px;
+}
+
+.marketBindingStrip span {
+  color: #3b4650;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.marketBindingStrip strong {
+  color: #20252b;
+  font-size: 14px;
+}
+
+.marketRateCardHead,
+.marketRateCardRow {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(100px, 0.45fr)
+    minmax(150px, 0.72fr)
+    minmax(130px, 0.58fr)
+    minmax(120px, 0.54fr)
+    minmax(220px, 1.1fr)
+    48px;
+  min-width: 980px;
+}
+
+.marketRouteHead,
+.marketRouteRow {
+  grid-template-columns:
+    minmax(200px, 1fr)
+    minmax(100px, 0.42fr)
+    minmax(105px, 0.42fr)
+    minmax(120px, 0.48fr)
+    48px;
+  min-width: 640px;
+}
+
+.marketMappingHead,
+.marketMappingRow {
+  grid-template-columns:
+    minmax(220px, 1.2fr)
+    minmax(105px, 0.45fr)
+    minmax(210px, 0.9fr)
+    minmax(110px, 0.42fr)
+    minmax(150px, 0.58fr)
+    minmax(100px, 0.4fr);
+  min-width: 920px;
+}
+
+.marketRateCardRow,
+.marketRouteRow,
+.marketMappingRow {
+  align-items: center;
+}
+
+.marketRouteRow > span,
+.marketMappingRow > span {
+  color: #26313a;
+  font-size: 13px;
+}
+
+.marketFormulaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.marketFormulaGrid div,
+.marketDecisionStack div {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  background: #d5dce2;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.marketFormulaGrid span,
+.marketDecisionStack span {
+  color: #3b4650;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.marketFormulaGrid strong,
+.marketDecisionStack strong {
+  color: #20252b;
+  font-size: 20px;
+}
+
+.marketFormulaGrid em {
+  color: #4e5963;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.marketActionRow {
+  justify-content: flex-start;
+}
+
+.marketDecisionStack {
+  display: grid;
+  gap: 12px;
+}
+
+/* Grey small-print arithmetic shown before a decision result, e.g. "3,780 − 3,520 = " --
+   so nobody has to hunt through the cards above to reconstruct which numbers were used. */
+.decisionFormula {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  color: #6d7683;
+  margin-right: 4px;
+}
+
+.marketDecisionStack .decisionGood {
+  background: #c8ded2;
+  border-color: #8eb59e;
+}
+
+.marketDecisionStack .decisionBad {
+  background: #e7c8c4;
+  border-color: #c38f86;
+}
+
+.marketDecisionText {
+  margin-top: 0;
+}
+
+@media (max-width: 1100px) {
+  .marketEvidenceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketFormulaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .marketFormulaGrid,
+  .marketBindingStrip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profitabilityInputs {
+  margin-top: 14px;
+}
+
+.profitFormulaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.profitFormulaGrid div {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  background: #d5dce2;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.profitFormulaGrid span {
+  color: #3b4650;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.profitFormulaGrid strong {
+  color: #20252b;
+  font-size: 20px;
+}
+
+.profitFormulaGrid em {
+  color: #4e5963;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.profitabilityMachineTable {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid #aeb7c1;
+  border-radius: 10px;
+  background: #d9e0e6;
+}
+
+.profitabilityMachineTable > .profitabilityMachineHead,
+.profitabilityMachineTable > .profitabilityMachineRow {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.25fr)
+    minmax(82px, 0.48fr)
+    minmax(78px, 0.45fr)
+    minmax(84px, 0.5fr)
+    minmax(110px, 0.58fr)
+    minmax(104px, 0.56fr)
+    minmax(78px, 0.42fr);
+  min-width: 760px;
+  gap: 0;
+}
+
+.profitabilityMachineTable .profitabilityMachineHead,
+.profitabilityMachineTable .profitabilityMachineRow {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.profitabilityMachineTable .profitabilityMachineHead > span,
+.profitabilityMachineTable .profitabilityMachineRow > span {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #c2cbd3;
+  display: flex;
+  align-items: center;
+}
+
+.profitabilityMachineTable .profitabilityMachineHead > span {
+  min-height: 30px;
+  color: #2f3a44;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.profitabilityMachineTable .profitabilityMachineRow > span {
+  color: #26313a;
+  font-size: 12.5px;
+}
+
+.profitabilityMachineTable .profitabilityMachineRow > span:not(:first-child),
+.profitabilityMachineTable .profitabilityMachineHead > span:not(:first-child) {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.profitabilityMachineTable .profitabilityMachineHead > span:nth-child(5),
+.profitabilityMachineTable .profitabilityMachineHead > span:nth-child(6),
+.profitabilityMachineTable .profitabilityMachineRow > span:nth-child(5),
+.profitabilityMachineTable .profitabilityMachineRow > span:nth-child(6) {
+  background: #cbd8e0;
+}
+
+.profitabilityMachineTable .profitabilityMachineHead > span:nth-child(6),
+.profitabilityMachineTable .profitabilityMachineRow > span:nth-child(6) {
+  background: #c3d2dc;
+  font-weight: 800;
+}
+
+.profitabilityMachineTable .profitabilityMachineRow:last-child > span {
+  border-bottom: 0;
+}
+
+@media (max-width: 1100px) {
+  .profitFormulaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .profitFormulaGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profitabilityTableBlock {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.profitabilityTableBlock h3 {
+  margin: 0;
+  color: #20252b;
+  font-size: 16px;
+}
+
+.profitabilityTableBlock > .sectionHelp {
+  margin: 0;
+}
+
+.profitabilityRevenueTable {
+  overflow-x: auto;
+  border: 1px solid #aeb7c1;
+  border-radius: 10px;
+  background: #d9e0e6;
+}
+
+.profitabilityRevenueTable > .profitabilityRevenueHead,
+.profitabilityRevenueTable > .profitabilityRevenueRow {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1.1fr)
+    minmax(82px, 0.42fr)
+    minmax(90px, 0.46fr)
+    minmax(90px, 0.46fr)
+    minmax(108px, 0.55fr)
+    minmax(88px, 0.45fr)
+    minmax(98px, 0.5fr)
+    minmax(116px, 0.58fr)
+    minmax(110px, 0.56fr);
+  min-width: 1020px;
+  gap: 0;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueHead,
+.profitabilityRevenueTable .profitabilityRevenueRow {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueHead > span,
+.profitabilityRevenueTable .profitabilityRevenueRow > span {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #c2cbd3;
+  display: flex;
+  align-items: center;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueHead > span {
+  min-height: 30px;
+  color: #2f3a44;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueRow > span {
+  color: #26313a;
+  font-size: 12.5px;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueRow > span:not(:first-child),
+.profitabilityRevenueTable .profitabilityRevenueHead > span:not(:first-child) {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(7),
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(8),
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(9),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(7),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(8),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9) {
+  background: #cbd8e0;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(8),
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(9),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(8),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9) {
+  background: #c3d2dc;
+  font-weight: 800;
+}
+
+.profitabilityRevenueTable .profitabilityRevenueRow:last-child > span {
+  border-bottom: 0;
+}
+
+.profitabilityTotalRow > span {
+  background: #b8c7d1 !important;
+  font-weight: 900;
+}
+
+.profitabilityWarning {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #b45309;
+  border-radius: 8px;
+  background: #f5d7a3;
+  color: #5f3212;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rateGood {
+  color: #166534 !important;
+  font-weight: 900;
+}
+
+.rateWarning {
+  color: #9a5b00 !important;
+  font-weight: 900;
+}
+
+.rateBad,
+.rateMissing {
+  color: #9f1d20 !important;
+  font-weight: 900;
+}
+
+
+/* Focused UI cleanup pass. */
+.sectionHeader > .primaryButton,
+.sectionHeader > .secondaryButton,
+.sectionHeader .buttonRow > .primaryButton,
+.sectionHeader .buttonRow > .secondaryButton,
+.marketRatePanel .buttonRow > .primaryButton,
+.marketRatePanel .buttonRow > .secondaryButton {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sectionHeader .buttonRow,
+.marketRatePanel .buttonRow {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.overheadTable > .tableHead,
+.overheadTable > .tableRow {
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.32fr) minmax(92px, 0.22fr) minmax(54px, 54px);
+  min-width: 620px;
+  padding-right: 14px;
+}
+
+.overheadTable .iconButton {
+  justify-self: end;
+  margin-right: 2px;
+}
+
+.capacityBasisGrid label {
+  grid-template-rows: minmax(34px, auto) 40px;
+  align-content: start;
+}
+
+.capacityBasisGrid input {
+  align-self: end;
+}
+
+.modeSwitch {
+  background: #d4dbe2;
+  border-color: #98a4af;
+}
+
+.modeButton {
+  background: #c8d0d8;
+  color: #2f3a44;
+  font-weight: 700;
+}
+
+.modeButton.active {
+  background: #aeb8c2;
+  color: #17212b;
+  box-shadow: inset 0 0 0 1px #87939f;
+}
+
+.modeButton:hover,
+.modeButton.active:hover {
+  background: #b9c3cc;
+}
+
+.breakEvenCallout {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #8798a8;
+  border-left: 5px solid #2f6f73;
+  border-radius: 8px;
+  background: #d8e0e6;
+}
+
+.breakEvenCallout span {
+  color: #34404a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.breakEvenCallout strong {
+  color: #17212b;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.breakEvenCallout p {
+  margin: 0;
+  color: #3c4650;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.gapWaterfallStep {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+}
+
+.gapWaterfallStep strong {
+  color: #20252b;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.gapWaterfallStep em {
+  color: #53606b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
 }
