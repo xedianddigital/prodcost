@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 class FormulaVersion(StrEnum):
     V0_1 = "costing.v0.1"
     V0_2 = "costing.v0.2"
+    V0_3 = "costing.v0.3"
 
 
 class PrecisionLevel(StrEnum):
@@ -87,6 +88,9 @@ class CommercialPolicyInput(BaseModel):
     overhead_percent: float = Field(default=0, ge=0)
     risk_allowance_percent: float = Field(default=0.05, ge=0)
     minimum_order_admin_cost_eur: float = Field(default=0, ge=0)
+    # costing.v0.3: material and bought-out cost is passed through with this handling
+    # markup instead of carrying the full profit margin and risk gross-up.
+    material_markup_percent: float = Field(default=0.10, ge=0, le=1)
 
 
 class QuoteInput(BaseModel):
@@ -130,9 +134,13 @@ class QuoteResult(BaseModel):
     overhead_cost_eur: float
     risk_allowance_eur: float
     minimum_order_admin_cost_eur: float
+    conversion_side_cost_eur: float
+    pass_through_cost_eur: float
     total_cost_eur: float
     unit_cost_eur: float
     margin_percent: float
+    material_markup_percent: float
+    material_markup_eur: float
     sell_price_eur: float
     unit_sell_price_eur: float
     commercial_multiplier: float

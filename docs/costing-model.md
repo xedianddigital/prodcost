@@ -2,7 +2,7 @@
 
 ## Formula Version
 
-Initial formula version: `costing.v0.1`
+Current formula version: `costing.v0.3`
 
 The formula version should be stored with every calculated quote. If formulas change later, historical quotes remain explainable.
 
@@ -15,12 +15,53 @@ total_cost =
   + operation_costs
   + overhead_cost
   + risk_allowance
-
-sell_price =
-  total_cost / (1 - margin_percent)
 ```
 
-Margin is treated as a target gross margin on selling price, not as markup on cost.
+Price formation (`costing.v0.3`) splits the cost into two sides before the sell price:
+
+```text
+pass_through_cost  = material_cost + tooling/consumables/outsourced (incl. their scrap share)
+                     + outsourced_batch_cost + missing_tool_cost
+conversion_side    = total_cost - pass_through_cost
+                     (own machine/labor work + engineering + overhead + risk + min-order admin)
+
+sell_price =
+  conversion_side / (1 - margin_percent)
+  + pass_through_cost * (1 + material_markup_percent)
+```
+
+Margin is a target gross margin on selling price, not markup on cost, and it applies only to
+the shop's own value-add. Material and bought-out cost is re-sold with the smaller editable
+`material_markup_percent` (seed 10%) — customers rarely accept full machining margin on raw
+steel, and grossing pass-through cost up by risk + margin was a known driver of uncompetitive
+quotes on material-heavy work. Risk allowance likewise applies to the conversion side only
+(`(conversion_cost + overhead) * risk%`); procurement/material price risk is what the handling
+markup is for.
+
+## Labor Hourly Cost (billable share)
+
+Salary-based labor classes convert payroll to EUR/h over *billable* hours, not paid hours:
+
+```text
+labor_eur_per_hour = gross_salary * (1 + employer_VSAOI) / (paid_hours * billable_hours_ratio)
+```
+
+`billable_hours_ratio` (default 0.85, editable per labor class or in payroll defaults) is the
+share of paid hours that actually lands on customer work; the rest is waiting, training, and
+internal jobs. Dividing by paid hours alone under-prices labor by the idle share — the same
+trap the machine rate avoids by dividing fixed cost by utilization x availability. The default
+0.85 deliberately lines up with target availability (90%) x target utilization (95%), so the
+quote-side labor recovery is consistent with the Profitability tab's payroll-over-sold-hours
+view.
+
+## Machine vs Labor Time Convention
+
+Operation machine and labor costs are additive: a running machine and an occupied person are
+two real, simultaneous cost streams. The data-entry rule that keeps this honest: **labor
+minutes are person-minutes actually occupied by the operation.** If one operator tends three
+machines, each operation gets roughly a third of the machine time as labor time; hands-on
+steps (deburring, assembly) can have labor time above machine time. Entering full labor
+minutes equal to full machine minutes for a shared operator double-charges that hour.
 
 ## Material Cost
 
@@ -166,20 +207,9 @@ This distinction matters because pricing off low actual Utilization as if it wer
 
 ## Overhead Allocation
 
-Admin, sales, quality management, and facility cost sit outside any single machine or direct labor rate. A single editable total (`overhead.monthly_items`) can reach quotes through one of two methods, both derived from the same total so they stay comparable:
+Admin, sales, quality management, and facility cost sit outside any single machine or direct labor rate. A single editable total (`overhead.monthly_items`) reaches quotes as `per_machine_hour`: `overhead_eur_per_hour = total_monthly_overhead / total_planned_productive_hours_across_machines`, folded directly into each machine's EUR/h.
 
-- `per_machine_hour` (default): `overhead_eur_per_hour = total_monthly_overhead / total_planned_productive_hours_across_machines`, folded directly into each machine's EUR/h.
-- `percent_of_cost`: the same EUR/h figure expressed as an equivalent coefficient on production cost (`overhead_eur_per_hour / blended_direct_machine_rate`), applied through `commercial_policy.overhead_percent` against the **conversion cost base only**.
-
-Only one method should be active in a given quote — applying both would double-count overhead.
-
-The `percent_of_cost` base is **conversion cost**: each operation's setup + run machine/labor
-cost (post-scrap) plus engineering (CAM) cost. It explicitly **excludes** material, tooling/
-consumables/outsourced-per-part, and outsourced batch cost — those are pass-through costs that
-don't consume the shop's own conversion capacity. Applying overhead to the whole subtotal
-(including material and outsourced work) would make a material-heavy quote and a machining-heavy
-quote of the same total cost diverge sharply between the two allocation methods, even though
-both methods are meant to be derived from the same total and stay comparable.
+The costing engine still accepts an alternative `percent_of_cost` method (`commercial_policy.overhead_percent`, applied against the **conversion cost base only** — setup + run machine/labor cost post-scrap plus engineering, explicitly excluding material and other pass-through cost). The two are derived from the same total and mathematically equivalent, but the UI no longer offers the percent variant: stripping overhead out of machine rates made a ~3 EUR/h direct rate sit beside a ~55 EUR/h market sell rate, which read as an error to every non-accountant viewer. Data files that still say `percent_of_cost` are coerced to `per_machine_hour` on load. Only one method may ever be active in a quote — applying both would double-count overhead, and the backend `overhead_percent` stays 0 whenever rates already carry overhead.
 
 ## What This Model Does Not Do
 
@@ -217,9 +247,11 @@ Every calculation should return:
 - operation costs
 - overhead cost
 - risk allowance
+- conversion-side cost and pass-through cost
 - total cost
 - unit cost
 - margin percent
+- material markup percent and material markup amount
 - sell price
 - unit sell price
 - assumptions used

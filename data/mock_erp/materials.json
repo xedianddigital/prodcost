@@ -1,14 +1,26 @@
 [
   {
-    "id": "mat_al6082_t6",
-    "name": "Aluminium EN AW-6082 T6",
-    "grade": "6082-T6",
-    "category": "bar_stock"
+    "id": "mat_al6082",
+    "name": "Aluminium EN AW-6082",
+    "grade": "6082",
+    "category": "bar_and_plate"
   },
   {
     "id": "mat_s355",
     "name": "Structural steel S355",
     "grade": "S355",
-    "category": "plate"
+    "category": "plate_and_bar"
+  },
+  {
+    "id": "mat_s235",
+    "name": "Structural steel S235",
+    "grade": "S235",
+    "category": "sheet"
+  },
+  {
+    "id": "mat_fasteners",
+    "name": "Standard fasteners",
+    "grade": "Mixed",
+    "category": "bought_out"
   }
 ]

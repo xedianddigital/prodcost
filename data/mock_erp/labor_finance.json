@@ -1,14 +1,32 @@
 [
   {
-    "labor_class_id": "cnc_operator",
+    "labor_class_id": "machine_operator",
     "source": "mock_erp_payroll",
-    "gross_monthly_salary_eur": 2800,
+    "gross_monthly_salary_eur": 1500,
+    "employer_social_contribution_rate": 0.2359
+  },
+  {
+    "labor_class_id": "employee_1783273403223",
+    "source": "mock_erp_payroll",
+    "gross_monthly_salary_eur": 1800,
     "employer_social_contribution_rate": 0.2359
   },
   {
     "labor_class_id": "cnc_setup_programmer",
     "source": "mock_erp_payroll",
-    "gross_monthly_salary_eur": 4100,
+    "gross_monthly_salary_eur": 2200,
+    "employer_social_contribution_rate": 0.2359
+  },
+  {
+    "labor_class_id": "assembler",
+    "source": "mock_erp_payroll",
+    "gross_monthly_salary_eur": 1750,
+    "employer_social_contribution_rate": 0.2359
+  },
+  {
+    "labor_class_id": "quality_inspector",
+    "source": "mock_erp_payroll",
+    "gross_monthly_salary_eur": 1900,
     "employer_social_contribution_rate": 0.2359
   }
 ]

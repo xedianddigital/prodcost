@@ -1,8 +1,8 @@
 [
   {
-    "id": "stock_al6082_flat_80x20",
-    "material_id": "mat_al6082_t6",
-    "description": "6082-T6 flat bar 80 x 20 x 3000 mm",
+    "id": "stock_al6082_bar_80x20",
+    "material_id": "mat_al6082",
+    "description": "6082 aluminium flat bar 80 x 20 x 3000 mm",
     "cost_eur": 86,
     "available_quantity": 14,
     "availability_note": "In stock, enough for demo quantity"
@@ -10,9 +10,33 @@
   {
     "id": "stock_s355_plate_20",
     "material_id": "mat_s355",
-    "description": "S355 plate 20 mm, plasma cut blank",
+    "description": "S355 plate 20 mm, saw-cut blank",
     "cost_eur": 145,
-    "available_quantity": 2,
-    "availability_note": "Stock available for prototype only; production batch needs supplier confirmation"
+    "available_quantity": 4,
+    "availability_note": "Stock available for prototype and small batch"
+  },
+  {
+    "id": "stock_s235_sheet_4",
+    "material_id": "mat_s235",
+    "description": "S235 sheet 4 mm, 1250 x 2500 mm",
+    "cost_eur": 118,
+    "available_quantity": 6,
+    "availability_note": "Common stock item"
+  },
+  {
+    "id": "stock_s355_round_45",
+    "material_id": "mat_s355",
+    "description": "S355 round bar 45 mm x 3000 mm",
+    "cost_eur": 74,
+    "available_quantity": 9,
+    "availability_note": "In stock"
+  },
+  {
+    "id": "stock_fastener_kit_m6",
+    "material_id": "mat_fasteners",
+    "description": "M6 zinc fastener kit for welded guard",
+    "cost_eur": 18,
+    "available_quantity": 40,
+    "availability_note": "Bought-out item from local supplier"
   }
 ]

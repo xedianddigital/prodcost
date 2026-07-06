@@ -1,0 +1,1451 @@
+[
+  {
+    "id": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
+    "created_at": "2026-07-05T13:59:29.737216+00:00",
+    "updated_at": "2026-07-06T11:12:59.906769+00:00",
+    "name": "SIA CNCmetalTest",
+    "profile_state": {
+      "profileId": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
+      "companyName": "SIA CNCmetalTest",
+      "lowValueInventoryTotalEur": 24000,
+      "lowValueInventoryRefreshMonths": 24,
+      "assets": [
+        {
+          "id": "manual_tool_station_1",
+          "name": "Precision Saw",
+          "purchasePriceEur": 20000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.8,
+          "targetAvailabilityPercent": 0.9,
+          "actualUtilizationPercent": 0.7,
+          "targetUtilizationPercent": 0.8,
+          "variableCostEurPerHour": 1.5,
+          "loadedPowerKw": 2,
+          "quality": "company_estimate",
+          "sellRateEurPerHour": 55
+        },
+        {
+          "id": "manual_tool_station_2",
+          "name": "Laser Engraver",
+          "purchasePriceEur": 12000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.87,
+          "targetAvailabilityPercent": 0.9,
+          "actualUtilizationPercent": 0.75,
+          "targetUtilizationPercent": 0.9,
+          "variableCostEurPerHour": 1.5,
+          "loadedPowerKw": 2,
+          "quality": "company_estimate",
+          "sellRateEurPerHour": 55
+        },
+        {
+          "id": "manual_tool_station_3",
+          "name": "Welding Station",
+          "purchasePriceEur": 9000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.9,
+          "targetAvailabilityPercent": 0.9,
+          "actualUtilizationPercent": 0.5,
+          "targetUtilizationPercent": 0.9,
+          "variableCostEurPerHour": 1.5,
+          "loadedPowerKw": 2,
+          "quality": "company_estimate",
+          "sellRateEurPerHour": 70
+        },
+        {
+          "id": "cnc_machine_1",
+          "name": "CNC lathe",
+          "purchasePriceEur": 86000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.8,
+          "targetAvailabilityPercent": 0.85,
+          "actualUtilizationPercent": 0.7,
+          "targetUtilizationPercent": 0.95,
+          "variableCostEurPerHour": 5,
+          "loadedPowerKw": 16,
+          "quality": "company_estimate",
+          "primaryLaborClassId": "employee_1783273403223",
+          "sellRateEurPerHour": 120
+        },
+        {
+          "id": "cnc_machine_2",
+          "name": "CNC milling station",
+          "purchasePriceEur": 87000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.81,
+          "targetAvailabilityPercent": 0.85,
+          "actualUtilizationPercent": 0.8,
+          "targetUtilizationPercent": 0.95,
+          "variableCostEurPerHour": 5,
+          "loadedPowerKw": 16,
+          "quality": "company_estimate",
+          "primaryLaborClassId": "employee_1783273403223",
+          "sellRateEurPerHour": 120
+        },
+        {
+          "id": "cnc_machine_3",
+          "name": "CNC press brake",
+          "purchasePriceEur": 65000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.77,
+          "targetAvailabilityPercent": 0.85,
+          "actualUtilizationPercent": 0.9,
+          "targetUtilizationPercent": 0.95,
+          "variableCostEurPerHour": 5,
+          "loadedPowerKw": 16,
+          "quality": "company_estimate",
+          "primaryLaborClassId": "employee_1783273403223",
+          "sellRateEurPerHour": 120
+        },
+        {
+          "id": "assembly_station_1",
+          "name": "Assembly station 1",
+          "purchasePriceEur": 6000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.92,
+          "targetAvailabilityPercent": 0.95,
+          "actualUtilizationPercent": 0.95,
+          "targetUtilizationPercent": 0.95,
+          "variableCostEurPerHour": 1,
+          "loadedPowerKw": 2,
+          "quality": "company_estimate",
+          "capacityRole": "sellable_capacity",
+          "sellRateEurPerHour": 60
+        },
+        {
+          "id": "qc_station_1",
+          "name": "QC station 1",
+          "purchasePriceEur": 1000,
+          "usefulLifeYears": 10,
+          "salvagePercent": 0,
+          "otherMonthlyFixedCostEur": 0,
+          "plannedHoursPerMonth": 160,
+          "actualAvailabilityPercent": 0.87,
+          "targetAvailabilityPercent": 0.95,
+          "actualUtilizationPercent": 1,
+          "targetUtilizationPercent": 0.95,
+          "variableCostEurPerHour": 1,
+          "loadedPowerKw": 1,
+          "quality": "company_estimate",
+          "sellRateEurPerHour": 0
+        }
+      ],
+      "employees": [
+        {
+          "id": "machine_operator",
+          "position": "Fabricator",
+          "processArea": "Production",
+          "headcount": 3,
+          "grossMonthlySalaryEur": 1500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_setup_programmer",
+          "position": "CNC setup/programmer",
+          "processArea": "CNC setup and programming",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 2200,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "assembler",
+          "position": "Assembler / fitter",
+          "processArea": "Assembly",
+          "headcount": 2,
+          "grossMonthlySalaryEur": 1750,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "quality_inspector",
+          "position": "Quality inspector",
+          "processArea": "Inspection",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1900,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "production_manager",
+          "position": "Production manager",
+          "processArea": "Production management",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 4000,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "production_planner",
+          "position": "Production planner / scheduler",
+          "processArea": "Planning",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 2500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "purchasing_specialist",
+          "position": "Purchasing specialist",
+          "processArea": "Purchasing",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 2000,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "warehouse_storekeeper",
+          "position": "Warehouse / storekeeper",
+          "processArea": "Warehouse",
+          "headcount": 3,
+          "grossMonthlySalaryEur": 1700,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "sales_quoting",
+          "position": "Sales / quoting specialist",
+          "processArea": "Sales and quoting",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 2000,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "maintenance_technician",
+          "position": "Maintenance technician",
+          "processArea": "Maintenance",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 2200,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "office_admin_accounting",
+          "position": "Office admin / accounting",
+          "processArea": "Administration",
+          "headcount": 3,
+          "grossMonthlySalaryEur": 2500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": false,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "employee_1783273403223",
+          "position": "CNC operator",
+          "processArea": "Production",
+          "headcount": 3,
+          "grossMonthlySalaryEur": 1800,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        }
+      ],
+      "overheadItems": [
+        {
+          "id": "facility_rent",
+          "name": "Facility rent / mortgage",
+          "monthly_cost_eur": 3600,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "utilities_general",
+          "name": "Utilities not assigned to machines",
+          "monthly_cost_eur": 1300,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "insurance",
+          "name": "Insurance",
+          "monthly_cost_eur": 350,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "accounting_legal",
+          "name": "Accounting / legal services",
+          "monthly_cost_eur": 650,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "it_software",
+          "name": "IT, software, subscriptions",
+          "monthly_cost_eur": 900,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "logistics_vehicle",
+          "name": "Logistics / vehicle costs",
+          "monthly_cost_eur": 1700,
+          "quality": "company_estimate"
+        }
+      ],
+      "materials": [
+        {
+          "id": "s235_sheet",
+          "name": "S235 sheet / plate",
+          "materialGrade": "S235",
+          "stockDescription": "S235 sheet or plate stock",
+          "stockShape": "plate"
+        },
+        {
+          "id": "s355_sheet",
+          "name": "S355 sheet / plate",
+          "materialGrade": "S355",
+          "stockDescription": "S355 sheet or plate stock",
+          "stockShape": "plate"
+        },
+        {
+          "id": "al6082_plate",
+          "name": "EN AW-6082 plate",
+          "materialGrade": "EN AW-6082",
+          "stockDescription": "Aluminium plate stock",
+          "stockShape": "plate"
+        },
+        {
+          "id": "al6082_bar",
+          "name": "EN AW-6082 bar",
+          "materialGrade": "EN AW-6082",
+          "stockDescription": "Aluminium bar stock",
+          "stockShape": "round_bar"
+        },
+        {
+          "id": "standard_fasteners",
+          "name": "Standard fasteners",
+          "materialGrade": "Mixed",
+          "stockDescription": "Purchased fasteners and inserts",
+          "stockShape": ""
+        }
+      ],
+      "tools": [
+        {
+          "id": "end_mill_set",
+          "name": "End mill set",
+          "type": "end_mill",
+          "materialGroups": "aluminium, steel, general"
+        },
+        {
+          "id": "drill_set",
+          "name": "Drill set",
+          "type": "drill",
+          "materialGroups": "general"
+        },
+        {
+          "id": "tap_set",
+          "name": "Tap set",
+          "type": "tap",
+          "materialGroups": "general"
+        },
+        {
+          "id": "turning_insert_set",
+          "name": "Turning insert set",
+          "type": "turning_insert",
+          "materialGroups": "steel, stainless, aluminium"
+        },
+        {
+          "id": "engraving_tool_set",
+          "name": "Laser engraving fixture / marking tool",
+          "type": "engraving_tool",
+          "materialGroups": "general"
+        },
+        {
+          "id": "bending_tooling",
+          "name": "Press brake tooling",
+          "type": "bending_tool",
+          "materialGroups": "sheet_metal, general"
+        },
+        {
+          "id": "welding_fixture",
+          "name": "Welding fixture / clamps",
+          "type": "fixture",
+          "materialGroups": "steel, stainless, aluminium"
+        },
+        {
+          "id": "inspection_gauges",
+          "name": "Inspection gauges",
+          "type": "gauge",
+          "materialGroups": "general"
+        }
+      ],
+      "operations": [
+        {
+          "id": "saw_cutting",
+          "operationType": "saw_cutting",
+          "name": "Saw cutting",
+          "defaultMachineClassId": "manual_tool_station_1",
+          "defaultLaborClassId": "machine_operator"
+        },
+        {
+          "id": "turning",
+          "operationType": "turning",
+          "name": "CNC turning",
+          "defaultMachineClassId": "cnc_machine_1",
+          "defaultLaborClassId": "employee_1783273403223"
+        },
+        {
+          "id": "cnc_milling",
+          "operationType": "milling_3_axis",
+          "name": "CNC milling",
+          "defaultMachineClassId": "cnc_machine_2",
+          "defaultLaborClassId": "employee_1783273403223"
+        },
+        {
+          "id": "drilling",
+          "operationType": "drilling",
+          "name": "Drilling",
+          "defaultMachineClassId": "cnc_machine_2",
+          "defaultLaborClassId": "employee_1783273403223"
+        },
+        {
+          "id": "tapping",
+          "operationType": "tapping",
+          "name": "Tapping / inserts",
+          "defaultMachineClassId": "cnc_machine_2",
+          "defaultLaborClassId": "employee_1783273403223"
+        },
+        {
+          "id": "bending",
+          "operationType": "bending",
+          "name": "Bending / forming",
+          "defaultMachineClassId": "cnc_machine_3",
+          "defaultLaborClassId": "employee_1783273403223"
+        },
+        {
+          "id": "engraving",
+          "operationType": "engraving",
+          "name": "Laser engraving / marking",
+          "defaultMachineClassId": "manual_tool_station_2",
+          "defaultLaborClassId": "machine_operator"
+        },
+        {
+          "id": "welding",
+          "operationType": "welding",
+          "name": "Welding",
+          "defaultMachineClassId": "manual_tool_station_3",
+          "defaultLaborClassId": "machine_operator"
+        },
+        {
+          "id": "assembly",
+          "operationType": "assembly",
+          "name": "Assembly",
+          "defaultMachineClassId": "assembly_station_1",
+          "defaultLaborClassId": "assembler"
+        },
+        {
+          "id": "manual_inspection",
+          "operationType": "manual_inspection",
+          "name": "Manual inspection",
+          "defaultMachineClassId": "qc_station_1",
+          "defaultLaborClassId": "quality_inspector"
+        },
+        {
+          "id": "packing",
+          "operationType": "packing",
+          "name": "Packing",
+          "defaultMachineClassId": "assembly_station_1",
+          "defaultLaborClassId": "assembler"
+        }
+      ]
+    },
+    "assumptions_snapshot": {
+      "id": "latvia-metalworking-starter-2026-v0",
+      "name": "SIA CNCmetalTest",
+      "currency": "EUR",
+      "country": "LV",
+      "formula_version": "costing.v0.3",
+      "data_quality_default": "industry_estimate",
+      "source_notes": [
+        {
+          "topic": "Latvia national wage and labour cost baseline",
+          "quality": "public_proxy",
+          "url": "https://stat.gov.lv/en/statistics-themes/labour-market/wages-and-salaries/press-releases/26599-wages-and-salaries-4th?themeCode=DS",
+          "note": "2025 average monthly gross wages EUR 1815 and hourly labour costs EUR 15.45."
+        },
+        {
+          "topic": "Latvia Q1 2026 wage and labour cost baseline",
+          "quality": "public_proxy",
+          "url": "https://stat.gov.lv/en/statistics-themes/labour-market/wages-and-salaries/press-releases/27579-wages-and-salaries-1st?themeCode=DS",
+          "note": "Q1 2026 provisional monthly gross wages EUR 1831 and hourly labour costs EUR 14.95."
+        },
+        {
+          "topic": "Non-household electricity reference",
+          "quality": "public_proxy",
+          "url": "https://ec.europa.eu/eurostat/databrowser/view/nrg_pc_205/default/table?lang=en",
+          "note": "Use for electricity validation; current seed value remains editable."
+        },
+        {
+          "topic": "Latvia employer VSAOI default rate",
+          "quality": "public_proxy",
+          "url": "https://www.vid.gov.lv/lv/valsts-socialas-apdrosinasanas-obligatas-iemaksas",
+          "note": "VID states standard VSAOI is 34.09%, split as 23.59% employer and 10.50% employee when the worker is insured for all social insurance types. Special categories can differ."
+        }
+      ],
+      "cam_programming_defaults": {
+        "new_part_reusable_program_percent": 0,
+        "repeat_part_reusable_program_percent": 0.85,
+        "simple_programming_minutes": 45,
+        "medium_programming_minutes": 90,
+        "complex_programming_minutes": 180,
+        "default_setup_proveout_minutes": 30,
+        "programming_labor_class_id": "cnc_setup_programmer",
+        "quality": "industry_estimate"
+      },
+      "commercial_policy": {
+        "default_margin_percent": 0.25,
+        "risk_allowance_percent": 0.05,
+        "minimum_order_admin_cost_eur": 40,
+        "material_markup_percent": 0.1
+      },
+      "client_portal": {
+        "range_low_factor": 0.85,
+        "range_high_factor": 1.35,
+        "annual_volume_relief_percent": 0.92
+      },
+      "overhead": {
+        "allocation_method": "per_machine_hour",
+        "monthly_items": [
+          {
+            "id": "facility_rent",
+            "name": "Facility rent / mortgage",
+            "monthly_cost_eur": 3600,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "utilities_general",
+            "name": "Utilities not assigned to machines",
+            "monthly_cost_eur": 1300,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "insurance",
+            "name": "Insurance",
+            "monthly_cost_eur": 350,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "accounting_legal",
+            "name": "Accounting / legal services",
+            "monthly_cost_eur": 650,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "it_software",
+            "name": "IT, software, subscriptions",
+            "monthly_cost_eur": 900,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "logistics_vehicle",
+            "name": "Logistics / vehicle costs",
+            "monthly_cost_eur": 1700,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "low_value_inventory_reserve",
+            "name": "Low-value inventory reserve",
+            "monthly_cost_eur": 583.33,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_production_manager",
+            "name": "Indirect payroll - Production manager",
+            "monthly_cost_eur": 4943.6,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_production_planner",
+            "name": "Indirect payroll - Production planner / scheduler",
+            "monthly_cost_eur": 3089.75,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_purchasing_specialist",
+            "name": "Indirect payroll - Purchasing specialist",
+            "monthly_cost_eur": 2471.8,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_warehouse_storekeeper",
+            "name": "Indirect payroll - Warehouse / storekeeper",
+            "monthly_cost_eur": 6303.09,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_sales_quoting",
+            "name": "Indirect payroll - Sales / quoting specialist",
+            "monthly_cost_eur": 2471.8,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_maintenance_technician",
+            "name": "Indirect payroll - Maintenance technician",
+            "monthly_cost_eur": 2718.98,
+            "quality": "company_estimate"
+          },
+          {
+            "id": "indirect_office_admin_accounting",
+            "name": "Indirect payroll - Office admin / accounting",
+            "monthly_cost_eur": 9269.25,
+            "quality": "company_estimate"
+          }
+        ]
+      },
+      "factory_calendar": {
+        "planned_shifts_per_day": 1,
+        "planned_workdays_per_year": 240,
+        "planned_hours_per_shift": 8,
+        "planned_hours_per_year": 1920
+      },
+      "labor_classes": [
+        {
+          "id": "machine_operator",
+          "name": "Fabricator (3x)",
+          "employer_cost_per_hour_eur": 13.63,
+          "gross_monthly_salary_eur": 1500,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 13.63,
+          "headcount": 3,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_setup_programmer",
+          "name": "CNC setup/programmer",
+          "employer_cost_per_hour_eur": 19.99,
+          "gross_monthly_salary_eur": 2200,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 19.99,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "assembler",
+          "name": "Assembler / fitter (2x)",
+          "employer_cost_per_hour_eur": 15.9,
+          "gross_monthly_salary_eur": 1750,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 15.9,
+          "headcount": 2,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "quality_inspector",
+          "name": "Quality inspector",
+          "employer_cost_per_hour_eur": 17.27,
+          "gross_monthly_salary_eur": 1900,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 17.27,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "employee_1783273403223",
+          "name": "CNC operator (3x)",
+          "employer_cost_per_hour_eur": 16.36,
+          "gross_monthly_salary_eur": 1800,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 16.36,
+          "headcount": 3,
+          "quality": "company_estimate"
+        }
+      ],
+      "machine_classes": [
+        {
+          "id": "manual_tool_station_1",
+          "name": "Precision Saw",
+          "accounting_full_cost_rate_eur_per_hour": 50.88,
+          "target_competitive_rate_eur_per_hour": 41.35,
+          "actual_oee_percent": 0.8,
+          "target_oee_percent": 0.9,
+          "actual_availability_percent": 0.8,
+          "target_availability_percent": 0.9,
+          "actual_utilization_percent": 0.7,
+          "target_utilization_percent": 0.8,
+          "loaded_power_kw": 2,
+          "monthly_fixed_cost_eur": 166.67,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 1.5,
+          "market_sell_rate_eur_per_hour": 55,
+          "market_rate_class_id": "manual",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 20000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "machine_operator",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "manual_tool_station_2",
+          "name": "Laser Engraver",
+          "accounting_full_cost_rate_eur_per_hour": 49.98,
+          "target_competitive_rate_eur_per_hour": 40.67,
+          "actual_oee_percent": 0.87,
+          "target_oee_percent": 0.9,
+          "actual_availability_percent": 0.87,
+          "target_availability_percent": 0.9,
+          "actual_utilization_percent": 0.75,
+          "target_utilization_percent": 0.9,
+          "loaded_power_kw": 2,
+          "monthly_fixed_cost_eur": 100,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 1.5,
+          "market_sell_rate_eur_per_hour": 55,
+          "market_rate_class_id": "manual",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 12000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "machine_operator",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "manual_tool_station_3",
+          "name": "Welding Station",
+          "accounting_full_cost_rate_eur_per_hour": 50.06,
+          "target_competitive_rate_eur_per_hour": 40.48,
+          "actual_oee_percent": 0.9,
+          "target_oee_percent": 0.9,
+          "actual_availability_percent": 0.9,
+          "target_availability_percent": 0.9,
+          "actual_utilization_percent": 0.5,
+          "target_utilization_percent": 0.9,
+          "loaded_power_kw": 2,
+          "monthly_fixed_cost_eur": 75,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 1.5,
+          "market_sell_rate_eur_per_hour": 70,
+          "market_rate_class_id": "welding",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 9000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "machine_operator",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_machine_1",
+          "name": "CNC lathe",
+          "accounting_full_cost_rate_eur_per_hour": 60.52,
+          "target_competitive_rate_eur_per_hour": 48.95,
+          "actual_oee_percent": 0.8,
+          "target_oee_percent": 0.85,
+          "actual_availability_percent": 0.8,
+          "target_availability_percent": 0.85,
+          "actual_utilization_percent": 0.7,
+          "target_utilization_percent": 0.95,
+          "loaded_power_kw": 16,
+          "monthly_fixed_cost_eur": 716.67,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 5,
+          "market_sell_rate_eur_per_hour": 201.28,
+          "market_rate_class_id": "cnc",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 86000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "employee_1783273403223",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_machine_2",
+          "name": "CNC milling station",
+          "accounting_full_cost_rate_eur_per_hour": 59.51,
+          "target_competitive_rate_eur_per_hour": 49.01,
+          "actual_oee_percent": 0.81,
+          "target_oee_percent": 0.85,
+          "actual_availability_percent": 0.81,
+          "target_availability_percent": 0.85,
+          "actual_utilization_percent": 0.8,
+          "target_utilization_percent": 0.95,
+          "loaded_power_kw": 16,
+          "monthly_fixed_cost_eur": 725,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 5,
+          "market_sell_rate_eur_per_hour": 201.28,
+          "market_rate_class_id": "cnc",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 87000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "employee_1783273403223",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_machine_3",
+          "name": "CNC press brake",
+          "accounting_full_cost_rate_eur_per_hour": 57.41,
+          "target_competitive_rate_eur_per_hour": 47.59,
+          "actual_oee_percent": 0.77,
+          "target_oee_percent": 0.85,
+          "actual_availability_percent": 0.77,
+          "target_availability_percent": 0.85,
+          "actual_utilization_percent": 0.9,
+          "target_utilization_percent": 0.95,
+          "loaded_power_kw": 16,
+          "monthly_fixed_cost_eur": 541.67,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 5,
+          "market_sell_rate_eur_per_hour": 201.28,
+          "market_rate_class_id": "cnc",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 65000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "employee_1783273403223",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "assembly_station_1",
+          "name": "Assembly station 1",
+          "accounting_full_cost_rate_eur_per_hour": 48.88,
+          "target_competitive_rate_eur_per_hour": 39.75,
+          "actual_oee_percent": 0.92,
+          "target_oee_percent": 0.95,
+          "actual_availability_percent": 0.92,
+          "target_availability_percent": 0.95,
+          "actual_utilization_percent": 0.95,
+          "target_utilization_percent": 0.95,
+          "loaded_power_kw": 2,
+          "monthly_fixed_cost_eur": 50,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 1,
+          "market_sell_rate_eur_per_hour": 0,
+          "market_rate_class_id": "assembly",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 6000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "sellable_capacity",
+          "default_labor_class_id": "assembler",
+          "quality": "company_estimate"
+        },
+        {
+          "id": "qc_station_1",
+          "name": "QC station 1",
+          "accounting_full_cost_rate_eur_per_hour": 48.58,
+          "target_competitive_rate_eur_per_hour": 39.46,
+          "actual_oee_percent": 0.87,
+          "target_oee_percent": 0.95,
+          "actual_availability_percent": 0.87,
+          "target_availability_percent": 0.95,
+          "actual_utilization_percent": 1,
+          "target_utilization_percent": 0.95,
+          "loaded_power_kw": 1,
+          "monthly_fixed_cost_eur": 8.33,
+          "planned_hours_per_month": 160,
+          "variable_cost_eur_per_hour": 1,
+          "market_sell_rate_eur_per_hour": 0,
+          "market_rate_class_id": "inspection",
+          "target_rate_discount_percent": 0,
+          "purchase_price_eur": 1000,
+          "useful_life_years": 10,
+          "salvage_percent": 0,
+          "other_monthly_fixed_cost_eur": 0,
+          "capacity_role": "support_internal",
+          "default_labor_class_id": "quality_inspector",
+          "quality": "company_estimate"
+        }
+      ],
+      "operation_templates": [
+        {
+          "operation_type": "saw_cutting",
+          "default_machine_class_id": "manual_tool_station_1",
+          "default_labor_class_id": "machine_operator",
+          "default_setup_machine_minutes": 15,
+          "default_setup_labor_minutes": 15,
+          "default_run_machine_minutes_per_part": 1,
+          "default_run_labor_minutes_per_part": 0.5,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "turning",
+          "default_machine_class_id": "cnc_machine_1",
+          "default_labor_class_id": "employee_1783273403223",
+          "default_setup_machine_minutes": 45,
+          "default_setup_labor_minutes": 55,
+          "default_run_machine_minutes_per_part": 6,
+          "default_run_labor_minutes_per_part": 1.2,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.01,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "milling_3_axis",
+          "default_machine_class_id": "cnc_machine_2",
+          "default_labor_class_id": "employee_1783273403223",
+          "default_setup_machine_minutes": 60,
+          "default_setup_labor_minutes": 90,
+          "default_run_machine_minutes_per_part": 8,
+          "default_run_labor_minutes_per_part": 1,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.02,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "drilling",
+          "default_machine_class_id": "cnc_machine_2",
+          "default_labor_class_id": "employee_1783273403223",
+          "default_setup_machine_minutes": 20,
+          "default_setup_labor_minutes": 20,
+          "default_run_machine_minutes_per_part": 2,
+          "default_run_labor_minutes_per_part": 0.4,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.01,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "tapping",
+          "default_machine_class_id": "cnc_machine_2",
+          "default_labor_class_id": "employee_1783273403223",
+          "default_setup_machine_minutes": 20,
+          "default_setup_labor_minutes": 20,
+          "default_run_machine_minutes_per_part": 1.5,
+          "default_run_labor_minutes_per_part": 0.4,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.01,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "bending",
+          "default_machine_class_id": "cnc_machine_3",
+          "default_labor_class_id": "employee_1783273403223",
+          "default_setup_machine_minutes": 20,
+          "default_setup_labor_minutes": 20,
+          "default_run_machine_minutes_per_part": 1.5,
+          "default_run_labor_minutes_per_part": 1,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.01,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "engraving",
+          "default_machine_class_id": "manual_tool_station_2",
+          "default_labor_class_id": "machine_operator",
+          "default_setup_machine_minutes": 10,
+          "default_setup_labor_minutes": 10,
+          "default_run_machine_minutes_per_part": 1,
+          "default_run_labor_minutes_per_part": 0.4,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "welding",
+          "default_machine_class_id": "manual_tool_station_3",
+          "default_labor_class_id": "machine_operator",
+          "default_setup_machine_minutes": 20,
+          "default_setup_labor_minutes": 30,
+          "default_run_machine_minutes_per_part": 0,
+          "default_run_labor_minutes_per_part": 8,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0.01,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "assembly",
+          "default_machine_class_id": "assembly_station_1",
+          "default_labor_class_id": "assembler",
+          "default_setup_machine_minutes": 0,
+          "default_setup_labor_minutes": 10,
+          "default_run_machine_minutes_per_part": 0,
+          "default_run_labor_minutes_per_part": 4,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0,
+          "calibration_sample_count": 0,
+          "quality": "company_estimate"
+        },
+        {
+          "operation_type": "manual_inspection",
+          "default_machine_class_id": "qc_station_1",
+          "default_labor_class_id": "quality_inspector",
+          "default_setup_machine_minutes": 0,
+          "default_setup_labor_minutes": 10,
+          "default_run_machine_minutes_per_part": 0,
+          "default_run_labor_minutes_per_part": 2,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0,
+          "calibration_sample_count": 0,
+          "quality": "industry_estimate"
+        },
+        {
+          "operation_type": "packing",
+          "default_machine_class_id": "assembly_station_1",
+          "default_labor_class_id": "assembler",
+          "default_setup_machine_minutes": 0,
+          "default_setup_labor_minutes": 8,
+          "default_run_machine_minutes_per_part": 0,
+          "default_run_labor_minutes_per_part": 1.5,
+          "default_tooling_cost_per_part_eur": 0,
+          "default_consumables_cost_per_part_eur": 0,
+          "default_outsourced_cost_per_part_eur": 0,
+          "default_outsourced_batch_cost_eur": 0,
+          "default_scrap_allowance_percent": 0,
+          "calibration_sample_count": 0,
+          "quality": "company_estimate"
+        }
+      ],
+      "material_examples": [
+        {
+          "id": "s235_sheet",
+          "name": "S235 sheet / plate",
+          "unit": "stock_piece",
+          "stock_piece_cost_eur": 0,
+          "category": "raw_stock",
+          "material_grade": "S235",
+          "stock_description": "S235 sheet or plate stock",
+          "supplier": "",
+          "minimum_order_quantity": 1,
+          "scrap_recovery_percent": 0,
+          "last_updated": "2026-07-05",
+          "quality": "company_estimate",
+          "stock_shape": "plate",
+          "stock_length_mm": 0,
+          "stock_width_mm": 0,
+          "kerf_mm": 0
+        },
+        {
+          "id": "s355_sheet",
+          "name": "S355 sheet / plate",
+          "unit": "stock_piece",
+          "stock_piece_cost_eur": 0,
+          "category": "raw_stock",
+          "material_grade": "S355",
+          "stock_description": "S355 sheet or plate stock",
+          "supplier": "",
+          "minimum_order_quantity": 1,
+          "scrap_recovery_percent": 0,
+          "last_updated": "2026-07-05",
+          "quality": "company_estimate",
+          "stock_shape": "plate",
+          "stock_length_mm": 0,
+          "stock_width_mm": 0,
+          "kerf_mm": 0
+        },
+        {
+          "id": "al6082_plate",
+          "name": "EN AW-6082 plate",
+          "unit": "stock_piece",
+          "stock_piece_cost_eur": 0,
+          "category": "raw_stock",
+          "material_grade": "EN AW-6082",
+          "stock_description": "Aluminium plate stock",
+          "supplier": "",
+          "minimum_order_quantity": 1,
+          "scrap_recovery_percent": 0,
+          "last_updated": "2026-07-05",
+          "quality": "company_estimate",
+          "stock_shape": "plate",
+          "stock_length_mm": 0,
+          "stock_width_mm": 0,
+          "kerf_mm": 0
+        },
+        {
+          "id": "al6082_bar",
+          "name": "EN AW-6082 bar",
+          "unit": "stock_piece",
+          "stock_piece_cost_eur": 0,
+          "category": "raw_stock",
+          "material_grade": "EN AW-6082",
+          "stock_description": "Aluminium bar stock",
+          "supplier": "",
+          "minimum_order_quantity": 1,
+          "scrap_recovery_percent": 0,
+          "last_updated": "2026-07-05",
+          "quality": "company_estimate",
+          "stock_shape": "round_bar",
+          "stock_length_mm": 0,
+          "stock_width_mm": 0,
+          "kerf_mm": 0
+        },
+        {
+          "id": "standard_fasteners",
+          "name": "Standard fasteners",
+          "unit": "stock_piece",
+          "stock_piece_cost_eur": 0,
+          "category": "bought_out",
+          "material_grade": "Mixed",
+          "stock_description": "Purchased fasteners and inserts",
+          "supplier": "",
+          "minimum_order_quantity": 1,
+          "scrap_recovery_percent": 0,
+          "last_updated": "2026-07-05",
+          "quality": "company_estimate",
+          "stock_length_mm": 0,
+          "stock_width_mm": 0,
+          "kerf_mm": 0
+        }
+      ],
+      "payroll_tax_defaults": {
+        "country": "LV",
+        "employer_social_contribution_rate": 0.2359,
+        "employee_social_contribution_rate": 0.105,
+        "standard_total_vsaoi_rate": 0.3409,
+        "paid_hours_per_month": 160,
+        "billable_hours_ratio": 0.85,
+        "source_url": "https://www.vid.gov.lv/lv/valsts-socialas-apdrosinasanas-obligatas-iemaksas",
+        "quality": "public_proxy"
+      },
+      "tool_match_tolerance_mm": 0.05,
+      "tool_inventory": [
+        {
+          "id": "end_mill_d10_r1_alu",
+          "name": "End mill D10 R1 (alu roughing/profiling)",
+          "type": "end_mill",
+          "diameter_mm": 10,
+          "corner_radius_mm": 1,
+          "material_groups": [
+            "aluminium",
+            "general"
+          ],
+          "available_quantity": 1,
+          "replacement_cost_eur": 58,
+          "lead_time_days": 3,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "end_mill_d6_r05_alu",
+          "name": "End mill D6 R0.5 (alu corner finishing)",
+          "type": "end_mill",
+          "diameter_mm": 6,
+          "corner_radius_mm": 0.5,
+          "material_groups": [
+            "aluminium",
+            "general"
+          ],
+          "available_quantity": 1,
+          "replacement_cost_eur": 42,
+          "lead_time_days": 3,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "drill_d5",
+          "name": "Drill D5 HSS-Co",
+          "type": "drill",
+          "diameter_mm": 5,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 1,
+          "replacement_cost_eur": 18,
+          "lead_time_days": 2,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "tap_m5",
+          "name": "M5 machine tap",
+          "type": "tap",
+          "diameter_mm": 5,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 1,
+          "replacement_cost_eur": 31,
+          "lead_time_days": 2,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "engraver_d3",
+          "name": "Engraving cutter D3",
+          "type": "engraving_tool",
+          "diameter_mm": 3,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 1,
+          "replacement_cost_eur": 24,
+          "lead_time_days": 4,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "end_mill_set",
+          "name": "End mill set",
+          "type": "end_mill",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "aluminium",
+            "steel",
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "drill_set",
+          "name": "Drill set",
+          "type": "drill",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "tap_set",
+          "name": "Tap set",
+          "type": "tap",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "turning_insert_set",
+          "name": "Turning insert set",
+          "type": "turning_insert",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "steel",
+            "stainless",
+            "aluminium"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "engraving_tool_set",
+          "name": "Laser engraving fixture / marking tool",
+          "type": "engraving_tool",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "bending_tooling",
+          "name": "Press brake tooling",
+          "type": "bending_tool",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "sheet_metal",
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "welding_fixture",
+          "name": "Welding fixture / clamps",
+          "type": "fixture",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "steel",
+            "stainless",
+            "aluminium"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "inspection_gauges",
+          "name": "Inspection gauges",
+          "type": "gauge",
+          "diameter_mm": 0,
+          "corner_radius_mm": 0,
+          "material_groups": [
+            "general"
+          ],
+          "available_quantity": 0,
+          "replacement_cost_eur": 0,
+          "lead_time_days": 0,
+          "reusable": true,
+          "quality": "company_estimate"
+        }
+      ],
+      "market_rate_card": [
+        {
+          "id": "cnc",
+          "name": "CNC machining",
+          "rateEurPerHour": 120,
+          "source": "manual_rate_card",
+          "confidence": "company_estimate",
+          "notes": "Use won/lost quote evidence to replace this placeholder.",
+          "lastUpdated": "2026-07-05"
+        },
+        {
+          "id": "manual",
+          "name": "Manual / bench work",
+          "rateEurPerHour": 55,
+          "source": "manual_rate_card",
+          "confidence": "unknown",
+          "notes": "General manual station pricing class.",
+          "lastUpdated": ""
+        },
+        {
+          "id": "welding",
+          "name": "Welding / fabrication",
+          "rateEurPerHour": 70,
+          "source": "manual_rate_card",
+          "confidence": "unknown",
+          "notes": "Separate from generic manual work when quotes support it.",
+          "lastUpdated": ""
+        },
+        {
+          "id": "assembly",
+          "name": "Assembly / fitting",
+          "rateEurPerHour": 65,
+          "source": "manual_rate_card",
+          "confidence": "unknown",
+          "notes": "Commercial assembly sell rate, not asset cost recovery.",
+          "lastUpdated": ""
+        },
+        {
+          "id": "inspection",
+          "name": "Inspection / QC if billable",
+          "rateEurPerHour": 0,
+          "source": "manual_rate_card",
+          "confidence": "unknown",
+          "notes": "Use only when inspection is sold separately.",
+          "lastUpdated": ""
+        }
+      ],
+      "market_rate_card_profile_id": "d07f5b44-69fa-47f9-ab6d-52a844e64eab",
+      "market_rate_card_profile_name": "SIA CNCmetalTest"
+    }
+  }
+]

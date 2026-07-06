@@ -257,22 +257,32 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
     # costs don't consume the shop's own conversion capacity, so loading overhead onto them
     # would make material-heavy quotes diverge between the two overhead allocation methods.
     overhead_cost = conversion_cost * quote.commercial_policy.overhead_percent
+    # costing.v0.3: risk allowance covers the shop's own work (conversion + overhead) only.
+    # Material and bought-out cost is priced through material_markup_percent below instead
+    # of carrying the full risk and margin gross-up.
     risk_allowance = (
-        subtotal_before_policy + overhead_cost
+        conversion_cost + overhead_cost
     ) * quote.commercial_policy.risk_allowance_percent
     minimum_order_admin_cost = quote.commercial_policy.minimum_order_admin_cost_eur
-    total_cost = subtotal_before_policy + overhead_cost + risk_allowance + minimum_order_admin_cost
-
-    margin_percent = quote.commercial_policy.margin_percent
-    sell_price = total_cost / (1 - margin_percent)
-    commercial_multiplier = sell_price / subtotal_before_policy if subtotal_before_policy > 0 else 0.0
 
     pass_through_total = material_cost + pass_through_cost
+    conversion_side_cost = conversion_cost + overhead_cost + risk_allowance + minimum_order_admin_cost
+    total_cost = conversion_side_cost + pass_through_total
+
+    margin_percent = quote.commercial_policy.margin_percent
+    material_markup_percent = quote.commercial_policy.material_markup_percent
+    material_markup = pass_through_total * material_markup_percent
+    # Profit margin applies to the shop's own value-add; pass-through cost is re-sold with
+    # a smaller handling markup, the way most job-shop customers expect to be charged.
+    sell_price = conversion_side_cost / (1 - margin_percent) + pass_through_total + material_markup
+    commercial_multiplier = sell_price / subtotal_before_policy if subtotal_before_policy > 0 else 0.0
+
     if total_cost > 0 and pass_through_total / total_cost > 0.4:
         warnings.append(
             "Material and outsourced/pass-through cost is "
-            f"{pass_through_total / total_cost:.0%} of total cost: full risk and margin are "
-            "being applied to pass-through cost, a known driver of uncompetitive quotes."
+            f"{pass_through_total / total_cost:.0%} of total cost: it is priced at the "
+            f"{material_markup_percent:.0%} handling markup, so check that markup covers "
+            "procurement effort and material price risk on this quote."
         )
 
     if quote.quantity < 10:
@@ -281,7 +291,7 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
         warnings.append("Fast estimate: verify route, setup time, and cycle time before committing price.")
 
     return QuoteResult(
-        formula_version=FormulaVersion.V0_2,
+        formula_version=FormulaVersion.V0_3,
         quote_id=quote.quote_id,
         part_name=quote.part_name,
         quantity=quote.quantity,
@@ -294,9 +304,13 @@ def calculate_quote(quote: QuoteInput) -> QuoteResult:
         overhead_cost_eur=_round_money(overhead_cost),
         risk_allowance_eur=_round_money(risk_allowance),
         minimum_order_admin_cost_eur=_round_money(minimum_order_admin_cost),
+        conversion_side_cost_eur=_round_money(conversion_side_cost),
+        pass_through_cost_eur=_round_money(pass_through_total),
         total_cost_eur=_round_money(total_cost),
         unit_cost_eur=_round_money(total_cost / quote.quantity),
         margin_percent=margin_percent,
+        material_markup_percent=material_markup_percent,
+        material_markup_eur=_round_money(material_markup),
         sell_price_eur=_round_money(sell_price),
         unit_sell_price_eur=_round_money(sell_price / quote.quantity),
         commercial_multiplier=round(commercial_multiplier, 3),

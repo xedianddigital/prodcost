@@ -60,7 +60,7 @@ def test_quote_calculation_breaks_out_material_engineering_operations_and_margin
 
     result = calculate_quote(quote)
 
-    assert result.formula_version == "costing.v0.2"
+    assert result.formula_version == "costing.v0.3"
     assert result.material_cost_eur == 190
     assert result.engineering_cost_eur == 64
     assert result.operation_cost_eur > 0
@@ -195,6 +195,49 @@ def test_overhead_percent_base_excludes_material_and_pass_through_cost() -> None
     # Overhead is driven by conversion cost only, so it must be identical regardless of
     # how expensive the pass-through material is.
     assert low.overhead_cost_eur == high.overhead_cost_eur
+
+
+def test_margin_applies_to_conversion_only_and_pass_through_gets_handling_markup() -> None:
+    """costing.v0.3: making the material more expensive must raise the sell price by
+    exactly the extra material cost times (1 + material markup) -- not by the full
+    margin/risk gross-up that applies to the shop's own conversion work."""
+    op = OperationInput(
+        operation_type="milling_3_axis",
+        machine_hour_rate_eur=50,
+        labor_hour_rate_eur=20,
+        run_machine_minutes_per_part=10,
+    )
+    policy = {
+        "margin_percent": 0.25,
+        "risk_allowance_percent": 0.05,
+        "overhead_percent": 0.1,
+        "material_markup_percent": 0.10,
+    }
+    cheap = QuoteInput(
+        part_name="Markup split (cheap material)",
+        quantity=10,
+        material=MaterialInput(name="cheap blank", stock_piece_cost_eur=10, stock_pieces_required=1),
+        operations=[op],
+        commercial_policy=policy,
+    )
+    expensive = QuoteInput(
+        part_name="Markup split (expensive material)",
+        quantity=10,
+        material=MaterialInput(name="expensive blank", stock_piece_cost_eur=510, stock_pieces_required=1),
+        operations=[op],
+        commercial_policy=policy,
+    )
+
+    low = calculate_quote(cheap)
+    high = calculate_quote(expensive)
+
+    material_cost_delta = 500
+    sell_delta = round(high.sell_price_eur - low.sell_price_eur, 2)
+    assert sell_delta == round(material_cost_delta * 1.10, 2)
+    # The old v0.2 behavior would have grossed the delta up by risk and margin instead.
+    assert sell_delta != round(material_cost_delta * 1.05 / 0.75, 2)
+    assert high.material_markup_eur > low.material_markup_eur
+    assert high.pass_through_cost_eur - low.pass_through_cost_eur == material_cost_delta
 
 
 def test_pass_through_visibility_warning_fires_above_40_percent() -> None:

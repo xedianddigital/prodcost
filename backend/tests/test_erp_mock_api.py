@@ -9,15 +9,16 @@ from app.main import app
 def test_mock_erp_import_rfq_returns_quote_ready_payload() -> None:
     client = TestClient(app)
 
-    response = client.post("/api/erp/import-rfq", json={"part_id": "part_al_sensor_bracket_rev_b"})
+    response = client.post("/api/erp/import-rfq", json={"part_id": "part_al6082_cnc_marker_bracket"})
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "mock_erp"
-    assert payload["part"]["name"] == "CNC aluminium sensor bracket"
+    assert payload["part"]["name"] == "6082 CNC marker bracket"
     assert payload["customer"]["name"] == "Baltic Robotics Group"
     assert payload["material"]["stock_piece_cost_eur"] == 86
-    assert len(payload["route"]) >= 3
+    assert len(payload["route"]) >= 5
+    assert {row["machine_class_id"] for row in payload["route"]} <= {"manual_tool_station_1", "manual_tool_station_2", "cnc_machine_2", "qc_station_1"}
 
 
 def test_mock_erp_customer_offer_round_trip(tmp_path: Path) -> None:

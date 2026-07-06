@@ -1,1 +1,1438 @@
-[]
+[
+  {
+    "id": "co-mock-28fb298a-add2-4ac4-8cde-4831df45fd59",
+    "created_at": "2026-07-06T11:24:10.467585+00:00",
+    "status": "mock_sent_to_erp",
+    "quote_number": "Q-WLD-S235-330-B",
+    "customer_id": null,
+    "customer_name": "Baltic Robotics Group",
+    "rfq_reference": "RFQ-SIA-WLD-330",
+    "part_name": "Three-piece welded safety guard assembly",
+    "quantity": 30,
+    "target_sell_price_eur": 1537.48,
+    "target_unit_sell_price_eur": 51.25,
+    "accounting_sell_price_eur": 1631.99,
+    "accounting_unit_sell_price_eur": 54.4,
+    "currency": "EUR",
+    "validity_date": "",
+    "delivery_estimate": "3 weeks after order confirmation",
+    "payment_terms": "30% advance, 70% before delivery",
+    "quantity_breaks": [
+      {
+        "quantity": 5,
+        "target_unit_sell_price_eur": 91.14,
+        "target_sell_price_eur": 455.7,
+        "accounting_unit_sell_price_eur": 98.01,
+        "accounting_sell_price_eur": 490.04
+      },
+      {
+        "quantity": 15,
+        "target_unit_sell_price_eur": 62.69,
+        "target_sell_price_eur": 940.33,
+        "accounting_unit_sell_price_eur": 66.58,
+        "accounting_sell_price_eur": 998.74
+      },
+      {
+        "quantity": 30,
+        "target_unit_sell_price_eur": 51.25,
+        "target_sell_price_eur": 1537.48,
+        "accounting_unit_sell_price_eur": 54.4,
+        "accounting_sell_price_eur": 1631.99
+      },
+      {
+        "quantity": 60,
+        "target_unit_sell_price_eur": 47.69,
+        "target_sell_price_eur": 2861.58,
+        "accounting_unit_sell_price_eur": 50.47,
+        "accounting_sell_price_eur": 3028.29
+      }
+    ],
+    "source_quote_state": {
+      "draftId": null,
+      "partName": "Three-piece welded safety guard assembly",
+      "customerName": "Baltic Robotics Group",
+      "rfqReference": "RFQ-SIA-WLD-330",
+      "quoteNumber": "Q-WLD-S235-330-B",
+      "validityDate": "",
+      "deliveryEstimate": "3 weeks after order confirmation",
+      "paymentTerms": "30% advance, 70% before delivery",
+      "quantity": 30,
+      "quantityBreakText": "5, 15, 30, 60",
+      "quantityBreakResults": [
+        {
+          "quantity": 5,
+          "target": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 5,
+            "precision_level": "operation_based",
+            "rate_mode": "target_competitive",
+            "material_cost_eur": 106,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 189.09,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 9.6,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 241.64,
+            "pass_through_cost_eur": 121.37,
+            "total_cost_eur": 363.01,
+            "unit_cost_eur": 72.6,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 12.14,
+            "sell_price_eur": 455.7,
+            "unit_sell_price_eur": 91.14,
+            "commercial_multiplier": 1.454,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 106,
+                "unit_cost_eur": 21.2,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 1,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 3.66,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 43.12,
+                "unit_cost_eur": 8.62,
+                "details": {
+                  "started_quantity": 5.37,
+                  "setup_machine_cost_eur": 17.23,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 14.79,
+                  "run_labor_cost_eur": 1.83,
+                  "variable_cost_eur": 1.99,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.47,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 55.64,
+                "unit_cost_eur": 11.13,
+                "details": {
+                  "started_quantity": 5.23,
+                  "setup_machine_cost_eur": 27.76,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 14.52,
+                  "run_labor_cost_eur": 1.71,
+                  "variable_cost_eur": 1.83,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.27,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 52.94,
+                "unit_cost_eur": 10.59,
+                "details": {
+                  "started_quantity": 5.15,
+                  "setup_machine_cost_eur": 13.49,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 6.95,
+                  "run_labor_cost_eur": 14.05,
+                  "variable_cost_eur": 8.76,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.6,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 20.75,
+                "unit_cost_eur": 4.15,
+                "details": {
+                  "started_quantity": 5.05,
+                  "setup_machine_cost_eur": 6.63,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 8.03,
+                  "variable_cost_eur": 2.02,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.1,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 16.64,
+                "unit_cost_eur": 3.33,
+                "details": {
+                  "started_quantity": 5,
+                  "setup_machine_cost_eur": 6.58,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 1.64,
+                  "run_labor_cost_eur": 3.6,
+                  "variable_cost_eur": 0.5,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Low quantity: setup amortization may dominate the unit price."
+            ]
+          },
+          "accounting": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 5,
+            "precision_level": "operation_based",
+            "rate_mode": "accounting_full_cost",
+            "material_cost_eur": 106,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 213.61,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 10.83,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 267.4,
+            "pass_through_cost_eur": 121.37,
+            "total_cost_eur": 388.77,
+            "unit_cost_eur": 77.75,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 12.14,
+            "sell_price_eur": 490.04,
+            "unit_sell_price_eur": 98.01,
+            "commercial_multiplier": 1.45,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 106,
+                "unit_cost_eur": 21.2,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 1,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 3.66,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 50.58,
+                "unit_cost_eur": 10.12,
+                "details": {
+                  "started_quantity": 5.37,
+                  "setup_machine_cost_eur": 21.2,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 18.2,
+                  "run_labor_cost_eur": 1.83,
+                  "variable_cost_eur": 1.99,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.55,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 64.41,
+                "unit_cost_eur": 12.88,
+                "details": {
+                  "started_quantity": 5.23,
+                  "setup_machine_cost_eur": 33.49,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 17.52,
+                  "run_labor_cost_eur": 1.71,
+                  "variable_cost_eur": 1.83,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.32,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 57.81,
+                "unit_cost_eur": 11.56,
+                "details": {
+                  "started_quantity": 5.15,
+                  "setup_machine_cost_eur": 16.69,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 8.6,
+                  "run_labor_cost_eur": 14.05,
+                  "variable_cost_eur": 8.76,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.63,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 22.27,
+                "unit_cost_eur": 4.45,
+                "details": {
+                  "started_quantity": 5.05,
+                  "setup_machine_cost_eur": 8.15,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 8.03,
+                  "variable_cost_eur": 2.02,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.1,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 18.54,
+                "unit_cost_eur": 3.71,
+                "details": {
+                  "started_quantity": 5,
+                  "setup_machine_cost_eur": 8.1,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 2.02,
+                  "run_labor_cost_eur": 3.6,
+                  "variable_cost_eur": 0.5,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Low quantity: setup amortization may dominate the unit price."
+            ]
+          },
+          "materialScaledLinearly": true
+        },
+        {
+          "quantity": 15,
+          "target": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 15,
+            "precision_level": "operation_based",
+            "rate_mode": "target_competitive",
+            "material_cost_eur": 342,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 356.41,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 16.43,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 385.05,
+            "pass_through_cost_eur": 388.11,
+            "total_cost_eur": 773.17,
+            "unit_cost_eur": 51.54,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 38.81,
+            "sell_price_eur": 940.33,
+            "unit_sell_price_eur": 62.69,
+            "commercial_multiplier": 1.312,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 342,
+                "unit_cost_eur": 22.8,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 3,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 1.22,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 81.26,
+                "unit_cost_eur": 5.42,
+                "details": {
+                  "started_quantity": 16.1,
+                  "setup_machine_cost_eur": 17.23,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 44.38,
+                  "run_labor_cost_eur": 5.49,
+                  "variable_cost_eur": 5.96,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.4,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 92.32,
+                "unit_cost_eur": 6.15,
+                "details": {
+                  "started_quantity": 15.7,
+                  "setup_machine_cost_eur": 27.76,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 43.57,
+                  "run_labor_cost_eur": 5.14,
+                  "variable_cost_eur": 5.49,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.81,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 113.66,
+                "unit_cost_eur": 7.58,
+                "details": {
+                  "started_quantity": 15.46,
+                  "setup_machine_cost_eur": 13.49,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 20.86,
+                  "run_labor_cost_eur": 42.15,
+                  "variable_cost_eur": 26.28,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.79,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 41.05,
+                "unit_cost_eur": 2.74,
+                "details": {
+                  "started_quantity": 15.15,
+                  "setup_machine_cost_eur": 6.63,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 24.09,
+                  "variable_cost_eur": 6.06,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.3,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 28.12,
+                "unit_cost_eur": 1.87,
+                "details": {
+                  "started_quantity": 15,
+                  "setup_machine_cost_eur": 6.58,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 4.93,
+                  "run_labor_cost_eur": 10.79,
+                  "variable_cost_eur": 1.5,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 50% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "accounting": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 15,
+            "precision_level": "operation_based",
+            "rate_mode": "accounting_full_cost",
+            "material_cost_eur": 342,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 398.13,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 18.52,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 428.86,
+            "pass_through_cost_eur": 388.11,
+            "total_cost_eur": 816.97,
+            "unit_cost_eur": 54.46,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 38.81,
+            "sell_price_eur": 998.74,
+            "unit_sell_price_eur": 66.58,
+            "commercial_multiplier": 1.317,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 342,
+                "unit_cost_eur": 22.8,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 3,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 1.22,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 95.71,
+                "unit_cost_eur": 6.38,
+                "details": {
+                  "started_quantity": 16.1,
+                  "setup_machine_cost_eur": 21.2,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 54.61,
+                  "run_labor_cost_eur": 5.49,
+                  "variable_cost_eur": 5.96,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.65,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 107.18,
+                "unit_cost_eur": 7.15,
+                "details": {
+                  "started_quantity": 15.7,
+                  "setup_machine_cost_eur": 33.49,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 52.57,
+                  "run_labor_cost_eur": 5.14,
+                  "variable_cost_eur": 5.49,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.95,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 121.89,
+                "unit_cost_eur": 8.13,
+                "details": {
+                  "started_quantity": 15.46,
+                  "setup_machine_cost_eur": 16.69,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 25.8,
+                  "run_labor_cost_eur": 42.15,
+                  "variable_cost_eur": 26.28,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.88,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 42.57,
+                "unit_cost_eur": 2.84,
+                "details": {
+                  "started_quantity": 15.15,
+                  "setup_machine_cost_eur": 8.15,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 24.09,
+                  "variable_cost_eur": 6.06,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.3,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 30.78,
+                "unit_cost_eur": 2.05,
+                "details": {
+                  "started_quantity": 15,
+                  "setup_machine_cost_eur": 8.1,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 6.07,
+                  "run_labor_cost_eur": 10.79,
+                  "variable_cost_eur": 1.5,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 48% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "materialScaledLinearly": true
+        },
+        {
+          "quantity": 30,
+          "target": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 30,
+            "precision_level": "operation_based",
+            "rate_mode": "target_competitive",
+            "material_cost_eur": 578,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 607.4,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 26.68,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 600.18,
+            "pass_through_cost_eur": 670.22,
+            "total_cost_eur": 1270.4,
+            "unit_cost_eur": 42.35,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 67.02,
+            "sell_price_eur": 1537.48,
+            "unit_sell_price_eur": 51.25,
+            "commercial_multiplier": 1.277,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 578,
+                "unit_cost_eur": 19.27,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 5,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 0.61,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 138.48,
+                "unit_cost_eur": 4.62,
+                "details": {
+                  "started_quantity": 32.2,
+                  "setup_machine_cost_eur": 17.23,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 88.76,
+                  "run_labor_cost_eur": 10.97,
+                  "variable_cost_eur": 11.91,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 2.79,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 147.34,
+                "unit_cost_eur": 4.91,
+                "details": {
+                  "started_quantity": 31.39,
+                  "setup_machine_cost_eur": 27.76,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 87.15,
+                  "run_labor_cost_eur": 10.27,
+                  "variable_cost_eur": 10.99,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.63,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 204.73,
+                "unit_cost_eur": 6.82,
+                "details": {
+                  "started_quantity": 30.92,
+                  "setup_machine_cost_eur": 13.49,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 41.72,
+                  "run_labor_cost_eur": 84.29,
+                  "variable_cost_eur": 52.57,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 3.57,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 71.51,
+                "unit_cost_eur": 2.38,
+                "details": {
+                  "started_quantity": 30.3,
+                  "setup_machine_cost_eur": 6.63,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 48.18,
+                  "variable_cost_eur": 12.12,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.6,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 45.35,
+                "unit_cost_eur": 1.51,
+                "details": {
+                  "started_quantity": 30,
+                  "setup_machine_cost_eur": 6.58,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 9.87,
+                  "run_labor_cost_eur": 21.59,
+                  "variable_cost_eur": 3,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 53% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "accounting": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 30,
+            "precision_level": "operation_based",
+            "rate_mode": "accounting_full_cost",
+            "material_cost_eur": 578,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 674.91,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 30.05,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 671.06,
+            "pass_through_cost_eur": 670.22,
+            "total_cost_eur": 1341.28,
+            "unit_cost_eur": 44.71,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 67.02,
+            "sell_price_eur": 1631.99,
+            "unit_sell_price_eur": 54.4,
+            "commercial_multiplier": 1.284,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 578,
+                "unit_cost_eur": 19.27,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 5,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 0.61,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 163.41,
+                "unit_cost_eur": 5.45,
+                "details": {
+                  "started_quantity": 32.2,
+                  "setup_machine_cost_eur": 21.2,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 109.21,
+                  "run_labor_cost_eur": 10.97,
+                  "variable_cost_eur": 11.91,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 3.3,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 171.32,
+                "unit_cost_eur": 5.71,
+                "details": {
+                  "started_quantity": 31.39,
+                  "setup_machine_cost_eur": 33.49,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 105.13,
+                  "run_labor_cost_eur": 10.27,
+                  "variable_cost_eur": 10.99,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.9,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 218,
+                "unit_cost_eur": 7.27,
+                "details": {
+                  "started_quantity": 30.92,
+                  "setup_machine_cost_eur": 16.69,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 51.6,
+                  "run_labor_cost_eur": 84.29,
+                  "variable_cost_eur": 52.57,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 3.77,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 73.03,
+                "unit_cost_eur": 2.43,
+                "details": {
+                  "started_quantity": 30.3,
+                  "setup_machine_cost_eur": 8.15,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 48.18,
+                  "variable_cost_eur": 12.12,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0.6,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 49.15,
+                "unit_cost_eur": 1.64,
+                "details": {
+                  "started_quantity": 30,
+                  "setup_machine_cost_eur": 8.1,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 12.15,
+                  "run_labor_cost_eur": 21.59,
+                  "variable_cost_eur": 3,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 50% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "materialScaledLinearly": false
+        },
+        {
+          "quantity": 60,
+          "target": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 60,
+            "precision_level": "operation_based",
+            "rate_mode": "target_competitive",
+            "material_cost_eur": 1168,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 1109.38,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 47.16,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 1030.42,
+            "pass_through_cost_eur": 1352.45,
+            "total_cost_eur": 2382.86,
+            "unit_cost_eur": 39.71,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 135.24,
+            "sell_price_eur": 2861.58,
+            "unit_sell_price_eur": 47.69,
+            "commercial_multiplier": 1.246,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 1168,
+                "unit_cost_eur": 19.47,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 10,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 0.31,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 252.91,
+                "unit_cost_eur": 4.22,
+                "details": {
+                  "started_quantity": 64.39,
+                  "setup_machine_cost_eur": 17.23,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 177.51,
+                  "run_labor_cost_eur": 21.94,
+                  "variable_cost_eur": 23.83,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 5.58,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 257.37,
+                "unit_cost_eur": 4.29,
+                "details": {
+                  "started_quantity": 62.78,
+                  "setup_machine_cost_eur": 27.76,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 174.3,
+                  "run_labor_cost_eur": 20.54,
+                  "variable_cost_eur": 21.97,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 3.25,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 386.89,
+                "unit_cost_eur": 6.45,
+                "details": {
+                  "started_quantity": 61.84,
+                  "setup_machine_cost_eur": 13.49,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 83.45,
+                  "run_labor_cost_eur": 168.58,
+                  "variable_cost_eur": 105.13,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 7.14,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 132.41,
+                "unit_cost_eur": 2.21,
+                "details": {
+                  "started_quantity": 60.61,
+                  "setup_machine_cost_eur": 6.63,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 96.36,
+                  "variable_cost_eur": 24.24,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.21,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 79.8,
+                "unit_cost_eur": 1.33,
+                "details": {
+                  "started_quantity": 60,
+                  "setup_machine_cost_eur": 6.58,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 19.73,
+                  "run_labor_cost_eur": 43.18,
+                  "variable_cost_eur": 6,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 57% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "accounting": {
+            "formula_version": "costing.v0.3",
+            "quote_id": null,
+            "part_name": "Three-piece welded safety guard assembly",
+            "quantity": 60,
+            "precision_level": "operation_based",
+            "rate_mode": "accounting_full_cost",
+            "material_cost_eur": 1168,
+            "engineering_cost_eur": 18.32,
+            "operation_cost_eur": 1228.45,
+            "missing_tool_cost_eur": 0,
+            "overhead_cost_eur": 0,
+            "risk_allowance_eur": 53.12,
+            "minimum_order_admin_cost_eur": 40,
+            "conversion_side_cost_eur": 1155.45,
+            "pass_through_cost_eur": 1352.45,
+            "total_cost_eur": 2507.89,
+            "unit_cost_eur": 41.8,
+            "margin_percent": 0.25,
+            "material_markup_percent": 0.1,
+            "material_markup_eur": 135.24,
+            "sell_price_eur": 3028.29,
+            "unit_sell_price_eur": 50.47,
+            "commercial_multiplier": 1.254,
+            "lines": [
+              {
+                "code": "material",
+                "label": "Material: S235 sheet 4 mm, 1250 x 2500 mm",
+                "cost_eur": 1168,
+                "unit_cost_eur": 19.47,
+                "details": {
+                  "stock_piece_cost_eur": 118,
+                  "stock_pieces_required": 10,
+                  "scrap_recovery_eur": 12,
+                  "assumption_quality": "company_estimate"
+                }
+              },
+              {
+                "code": "engineering.cam_programming",
+                "label": "CAM programming and prove-out",
+                "cost_eur": 18.32,
+                "unit_cost_eur": 0.31,
+                "details": {
+                  "is_new_part": "True",
+                  "complexity": "simple",
+                  "estimated_programming_minutes": 35,
+                  "setup_proveout_minutes": 20,
+                  "reusable_program_percent": 0,
+                  "programming_labor_hour_rate_eur": 19.99,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.saw_cutting",
+                "label": "Cut base, tab, and brace blanks",
+                "cost_eur": 298.81,
+                "unit_cost_eur": 4.98,
+                "details": {
+                  "started_quantity": 64.39,
+                  "setup_machine_cost_eur": 21.2,
+                  "setup_labor_cost_eur": 6.82,
+                  "run_machine_cost_eur": 218.43,
+                  "run_labor_cost_eur": 21.94,
+                  "variable_cost_eur": 23.83,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 6.6,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.bending",
+                "label": "Bend guard flanges",
+                "cost_eur": 299.6,
+                "unit_cost_eur": 4.99,
+                "details": {
+                  "started_quantity": 62.78,
+                  "setup_machine_cost_eur": 33.49,
+                  "setup_labor_cost_eur": 9.54,
+                  "run_machine_cost_eur": 210.26,
+                  "run_labor_cost_eur": 20.54,
+                  "variable_cost_eur": 21.97,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 3.79,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.welding",
+                "label": "Fixture and weld three-piece assembly",
+                "cost_eur": 410.22,
+                "unit_cost_eur": 6.84,
+                "details": {
+                  "started_quantity": 61.84,
+                  "setup_machine_cost_eur": 16.69,
+                  "setup_labor_cost_eur": 9.09,
+                  "run_machine_cost_eur": 103.2,
+                  "run_labor_cost_eur": 168.58,
+                  "variable_cost_eur": 105.13,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 7.54,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.assembly",
+                "label": "Fit fasteners and finish assembly",
+                "cost_eur": 133.93,
+                "unit_cost_eur": 2.23,
+                "details": {
+                  "started_quantity": 60.61,
+                  "setup_machine_cost_eur": 8.15,
+                  "setup_labor_cost_eur": 3.98,
+                  "run_machine_cost_eur": 0,
+                  "run_labor_cost_eur": 96.36,
+                  "variable_cost_eur": 24.24,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 1.21,
+                  "assumption_quality": "industry_estimate"
+                }
+              },
+              {
+                "code": "operation.manual_inspection",
+                "label": "Weld and dimensional inspection",
+                "cost_eur": 85.88,
+                "unit_cost_eur": 1.43,
+                "details": {
+                  "started_quantity": 60,
+                  "setup_machine_cost_eur": 8.1,
+                  "setup_labor_cost_eur": 4.32,
+                  "run_machine_cost_eur": 24.29,
+                  "run_labor_cost_eur": 43.18,
+                  "variable_cost_eur": 6,
+                  "outsourced_batch_cost_eur": 0,
+                  "missing_tool_batch_cost_eur": 0,
+                  "scrap_allowance_eur": 0,
+                  "assumption_quality": "industry_estimate"
+                }
+              }
+            ],
+            "assumptions_used": [
+              "Material 'S235 sheet 4 mm, 1250 x 2500 mm' uses company_estimate data.",
+              "CAM programming time uses industry_estimate data.",
+              "Operation 'saw_cutting' uses industry_estimate data.",
+              "Operation 'bending' uses industry_estimate data.",
+              "Operation 'welding' uses industry_estimate data.",
+              "Operation 'assembly' uses industry_estimate data.",
+              "Operation 'manual_inspection' uses industry_estimate data."
+            ],
+            "warnings": [
+              "Material and outsourced/pass-through cost is 54% of total cost: it is priced at the 10% handling markup, so check that markup covers procurement effort and material price risk on this quote."
+            ]
+          },
+          "materialScaledLinearly": true
+        }
+      ],
+      "selectedMaterialId": "",
+      "stockName": "S235 sheet 4 mm, 1250 x 2500 mm",
+      "stockCost": 118,
+      "stockPieces": 5,
+      "cutLengthMm": 0,
+      "cutWidthMm": 0,
+      "scrapRecovery": 12,
+      "isNewPart": true,
+      "camComplexity": "simple",
+      "programmingMinutes": 35,
+      "proveoutMinutes": 20,
+      "programmingRate": 19.99,
+      "rateMode": "target_competitive",
+      "selectedTemplateType": "saw_cutting",
+      "quoteOperations": [
+        {
+          "id": "saw_cutting-10-1783336866273-5f81b106e3ccb",
+          "operationType": "saw_cutting",
+          "name": "Cut base, tab, and brace blanks",
+          "machineClassId": "manual_tool_station_1",
+          "laborClassId": "machine_operator",
+          "setupMachineMinutes": 25,
+          "setupLaborMinutes": 30,
+          "runMachineMinutesPerPart": 4,
+          "runLaborMinutesPerPart": 1.5,
+          "toolingCostPerPart": 0.25,
+          "consumablesCostPerPart": 0.12,
+          "outsourcedCostPerPart": 0,
+          "outsourcedBatchCost": 0,
+          "scrapAllowancePercent": 0.025,
+          "toolRequirements": []
+        },
+        {
+          "id": "bending-20-1783336866273-ef42473039ce8",
+          "operationType": "bending",
+          "name": "Bend guard flanges",
+          "machineClassId": "cnc_machine_3",
+          "laborClassId": "employee_1783273403223",
+          "setupMachineMinutes": 35,
+          "setupLaborMinutes": 35,
+          "runMachineMinutesPerPart": 3.5,
+          "runLaborMinutesPerPart": 1.2,
+          "toolingCostPerPart": 0.3,
+          "consumablesCostPerPart": 0.05,
+          "outsourcedCostPerPart": 0,
+          "outsourcedBatchCost": 0,
+          "scrapAllowancePercent": 0.015,
+          "toolRequirements": []
+        },
+        {
+          "id": "welding-30-1783336866273-0b3dc707e0fc58",
+          "operationType": "welding",
+          "name": "Fixture and weld three-piece assembly",
+          "machineClassId": "manual_tool_station_3",
+          "laborClassId": "machine_operator",
+          "setupMachineMinutes": 20,
+          "setupLaborMinutes": 40,
+          "runMachineMinutesPerPart": 2,
+          "runLaborMinutesPerPart": 12,
+          "toolingCostPerPart": 0.6,
+          "consumablesCostPerPart": 1.1,
+          "outsourcedCostPerPart": 0,
+          "outsourcedBatchCost": 0,
+          "scrapAllowancePercent": 0.02,
+          "toolRequirements": []
+        },
+        {
+          "id": "assembly-40-1783336866273-a5009241e9d928",
+          "operationType": "assembly",
+          "name": "Fit fasteners and finish assembly",
+          "machineClassId": "assembly_station_1",
+          "laborClassId": "assembler",
+          "setupMachineMinutes": 10,
+          "setupLaborMinutes": 15,
+          "runMachineMinutesPerPart": 0,
+          "runLaborMinutesPerPart": 6,
+          "toolingCostPerPart": 0.1,
+          "consumablesCostPerPart": 0.3,
+          "outsourcedCostPerPart": 0,
+          "outsourcedBatchCost": 0,
+          "scrapAllowancePercent": 0.01,
+          "toolRequirements": []
+        },
+        {
+          "id": "manual_inspection-50-1783336866273-161f20e8269dc",
+          "operationType": "manual_inspection",
+          "name": "Weld and dimensional inspection",
+          "machineClassId": "qc_station_1",
+          "laborClassId": "quality_inspector",
+          "setupMachineMinutes": 10,
+          "setupLaborMinutes": 15,
+          "runMachineMinutesPerPart": 0.5,
+          "runLaborMinutesPerPart": 2.5,
+          "toolingCostPerPart": 0,
+          "consumablesCostPerPart": 0.1,
+          "outsourcedCostPerPart": 0,
+          "outsourcedBatchCost": 0,
+          "scrapAllowancePercent": 0,
+          "toolRequirements": []
+        }
+      ],
+      "actualOperations": [],
+      "erpSource": {
+        "partId": "part_s235_welded_guard_assembly",
+        "partNumber": "WLD-S235-330",
+        "revision": "B",
+        "importedAt": "2026-07-06T11:21:06.271340+00:00"
+      },
+      "competitorUnitPriceEur": null
+    }
+  }
+]

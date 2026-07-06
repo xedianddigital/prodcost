@@ -1,18 +1,42 @@
 [
   {
-    "part_id": "part_al_sensor_bracket_rev_b",
+    "part_id": "part_al6082_cnc_marker_bracket",
     "line": 10,
-    "material_id": "mat_al6082_t6",
-    "stock_id": "stock_al6082_flat_80x20",
+    "material_id": "mat_al6082",
+    "stock_id": "stock_al6082_bar_80x20",
     "stock_pieces_required": 3,
     "scrap_recovery_eur": 8
   },
   {
-    "part_id": "part_s355_fixture_plate_new",
+    "part_id": "part_s355_fixture_plate",
     "line": 10,
     "material_id": "mat_s355",
     "stock_id": "stock_s355_plate_20",
     "stock_pieces_required": 4,
     "scrap_recovery_eur": 15
+  },
+  {
+    "part_id": "part_s235_welded_guard_assembly",
+    "line": 10,
+    "material_id": "mat_s235",
+    "stock_id": "stock_s235_sheet_4",
+    "stock_pieces_required": 5,
+    "scrap_recovery_eur": 12
+  },
+  {
+    "part_id": "part_s235_welded_guard_assembly",
+    "line": 20,
+    "material_id": "mat_fasteners",
+    "stock_id": "stock_fastener_kit_m6",
+    "stock_pieces_required": 1,
+    "scrap_recovery_eur": 0
+  },
+  {
+    "part_id": "part_s355_turned_spacer",
+    "line": 10,
+    "material_id": "mat_s355",
+    "stock_id": "stock_s355_round_45",
+    "stock_pieces_required": 2,
+    "scrap_recovery_eur": 5
   }
 ]

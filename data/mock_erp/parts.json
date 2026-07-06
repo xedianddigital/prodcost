@@ -1,11 +1,11 @@
 [
   {
-    "id": "part_al_sensor_bracket_rev_b",
-    "part_number": "BRK-AL-042",
-    "revision": "B",
-    "name": "CNC aluminium sensor bracket",
+    "id": "part_al6082_cnc_marker_bracket",
+    "part_number": "CNC-AL-120",
+    "revision": "A",
+    "name": "6082 CNC marker bracket",
     "customer_id": "cust_baltic_robotics",
-    "rfq_reference": "RFQ-DEMO-STEP-042",
+    "rfq_reference": "RFQ-SIA-AL-120",
     "default_quantity": 50,
     "quantity_breaks": [
       10,
@@ -16,17 +16,17 @@
     ],
     "is_new_part": false,
     "cam_complexity": "medium",
-    "programming_minutes": 25,
-    "proveout_minutes": 10,
+    "programming_minutes": 60,
+    "proveout_minutes": 20,
     "delivery_estimate": "15 working days after order confirmation"
   },
   {
-    "id": "part_s355_fixture_plate_new",
-    "part_number": "PLT-S355-117",
+    "id": "part_s355_fixture_plate",
+    "part_number": "PLT-S355-240",
     "revision": "A",
-    "name": "S355 fixture adapter plate",
+    "name": "S355 milled fixture plate",
     "customer_id": "cust_internal_rd",
-    "rfq_reference": "RFQ-RD-PLATE-117",
+    "rfq_reference": "RFQ-SIA-PLATE-240",
     "default_quantity": 12,
     "quantity_breaks": [
       1,
@@ -39,5 +39,45 @@
     "programming_minutes": 180,
     "proveout_minutes": 45,
     "delivery_estimate": "4 weeks after drawing approval"
+  },
+  {
+    "id": "part_s235_welded_guard_assembly",
+    "part_number": "WLD-S235-330",
+    "revision": "B",
+    "name": "Three-piece welded safety guard assembly",
+    "customer_id": "cust_baltic_robotics",
+    "rfq_reference": "RFQ-SIA-WLD-330",
+    "default_quantity": 30,
+    "quantity_breaks": [
+      5,
+      15,
+      30,
+      60
+    ],
+    "is_new_part": true,
+    "cam_complexity": "simple",
+    "programming_minutes": 35,
+    "proveout_minutes": 20,
+    "delivery_estimate": "3 weeks after order confirmation"
+  },
+  {
+    "id": "part_s355_turned_spacer",
+    "part_number": "TRN-S355-075",
+    "revision": "A",
+    "name": "Turned and drilled S355 spacer",
+    "customer_id": "cust_baltic_robotics",
+    "rfq_reference": "RFQ-SIA-TRN-075",
+    "default_quantity": 80,
+    "quantity_breaks": [
+      20,
+      40,
+      80,
+      160
+    ],
+    "is_new_part": false,
+    "cam_complexity": "simple",
+    "programming_minutes": 30,
+    "proveout_minutes": 15,
+    "delivery_estimate": "12 working days after order confirmation"
   }
 ]

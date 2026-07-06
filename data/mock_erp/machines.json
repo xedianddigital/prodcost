@@ -1,14 +1,50 @@
 [
   {
-    "id": "mx-310",
-    "name": "MX-310 3-axis milling center",
-    "machine_class_id": "cnc_milling_3_axis",
+    "id": "saw-01",
+    "name": "Precision Saw",
+    "machine_class_id": "manual_tool_station_1",
+    "erp_cost_center": "CC-SAW"
+  },
+  {
+    "id": "laser-01",
+    "name": "Laser Engraver",
+    "machine_class_id": "manual_tool_station_2",
+    "erp_cost_center": "CC-LASER"
+  },
+  {
+    "id": "weld-01",
+    "name": "Welding Station",
+    "machine_class_id": "manual_tool_station_3",
+    "erp_cost_center": "CC-WELD"
+  },
+  {
+    "id": "lathe-01",
+    "name": "CNC lathe",
+    "machine_class_id": "cnc_machine_1",
+    "erp_cost_center": "CC-CNC-LATHE"
+  },
+  {
+    "id": "mill-01",
+    "name": "CNC milling station",
+    "machine_class_id": "cnc_machine_2",
     "erp_cost_center": "CC-CNC-MILL"
   },
   {
-    "id": "tx-210",
-    "name": "TX-210 turning center",
-    "machine_class_id": "cnc_turning",
-    "erp_cost_center": "CC-CNC-TURN"
+    "id": "press-01",
+    "name": "CNC press brake",
+    "machine_class_id": "cnc_machine_3",
+    "erp_cost_center": "CC-PRESS"
+  },
+  {
+    "id": "assembly-01",
+    "name": "Assembly station 1",
+    "machine_class_id": "assembly_station_1",
+    "erp_cost_center": "CC-ASSEMBLY"
+  },
+  {
+    "id": "qc-01",
+    "name": "QC station 1",
+    "machine_class_id": "qc_station_1",
+    "erp_cost_center": "CC-QC"
   }
 ]
