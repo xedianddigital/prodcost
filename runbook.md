@@ -8,7 +8,7 @@ Two services make up the app: a FastAPI backend (the costing engine and JSON sto
 - Node.js 18+ with npm (`node --version`)
 - No database or external services are needed — all data lives in `data/*.json`.
 
-## 1. Backend (FastAPI, port 8001)
+## 1. Backend (FastAPI, port 8002)
 
 First time only — create a virtual environment and install:
 
@@ -24,18 +24,18 @@ Every start:
 ```bash
 cd backend
 . .venv/bin/activate
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8002
 ```
 
-The API is now at `http://localhost:8001`. Quick health check:
+The API is now at `http://localhost:8002`. Quick health check:
 
 ```bash
-curl http://localhost:8001/health
+curl http://localhost:8002/health
 ```
 
-If the port is busy: `uvicorn app.main:app --reload --port 8002` and change the proxy target in `frontend/vite.config.ts` to match.
+If the port is busy: pick another port (e.g. `--port 8003`) and change the proxy target in `frontend/vite.config.ts` to match.
 
-## 2. Frontend (Vite dev server, port 5173)
+## 2. Frontend (Vite dev server, port 8001)
 
 First time only:
 
@@ -51,11 +51,11 @@ cd frontend
 npm run dev
 ```
 
-Open the printed URL, normally `http://localhost:5173`. The dev server proxies every `/api` request to the backend on port 8001, so both must be running.
+Open the printed URL, normally `http://localhost:8001` (the port is set in `frontend/vite.config.ts`). The dev server proxies every `/api` request to the backend on port 8002, so both must be running.
 
 ## 3. Seeing the project
 
-1. Open `http://localhost:5173`.
+1. Open `http://localhost:8001`.
 2. Use **Load Demo RFQ** on the Quote page for a filled-in walkthrough quote.
 3. Suggested demo order for a first-time viewer: **Profile → Resources → Quote → Scenarios → Market Rates → Profitability → Case → Guide → Methods**.
 
@@ -81,5 +81,5 @@ npx tsc --noEmit
 |---|---|
 | UI loads but every number panel says "..." or shows an API error | Backend not running, or running on a different port than the Vite proxy expects. |
 | `ModuleNotFoundError: No module named 'app'` when running pytest | Run from `backend/` with the venv active, or prefix `PYTHONPATH=.` |
-| Port 5173 already in use | Vite picks the next free port automatically — read the URL it prints. |
+| Port 8001 already in use | Vite picks the next free port automatically — read the URL it prints (a fixed port is set in `frontend/vite.config.ts`). |
 | Assumption edits don't persist | The backend writes to `data/*.json`; make sure the process has write permission to the repo's `data/` directory. |
