@@ -25,7 +25,8 @@
           "variableCostEurPerHour": 1.5,
           "loadedPowerKw": 2,
           "quality": "company_estimate",
-          "sellRateEurPerHour": 55
+          "sellRateEurPerHour": 55,
+          "primaryLaborClassId": "fabricator_saw"
         },
         {
           "id": "manual_tool_station_2",
@@ -42,7 +43,8 @@
           "variableCostEurPerHour": 1.5,
           "loadedPowerKw": 2,
           "quality": "company_estimate",
-          "sellRateEurPerHour": 55
+          "sellRateEurPerHour": 55,
+          "primaryLaborClassId": "fabricator_engraver"
         },
         {
           "id": "manual_tool_station_3",
@@ -59,7 +61,8 @@
           "variableCostEurPerHour": 1.5,
           "loadedPowerKw": 2,
           "quality": "company_estimate",
-          "sellRateEurPerHour": 70
+          "sellRateEurPerHour": 70,
+          "primaryLaborClassId": "fabricator_welder"
         },
         {
           "id": "cnc_machine_1",
@@ -76,7 +79,7 @@
           "variableCostEurPerHour": 5,
           "loadedPowerKw": 16,
           "quality": "company_estimate",
-          "primaryLaborClassId": "employee_1783273403223",
+          "primaryLaborClassId": "cnc_operator_lathe",
           "sellRateEurPerHour": 120
         },
         {
@@ -94,7 +97,7 @@
           "variableCostEurPerHour": 5,
           "loadedPowerKw": 16,
           "quality": "company_estimate",
-          "primaryLaborClassId": "employee_1783273403223",
+          "primaryLaborClassId": "cnc_operator_milling",
           "sellRateEurPerHour": 120
         },
         {
@@ -112,7 +115,7 @@
           "variableCostEurPerHour": 5,
           "loadedPowerKw": 16,
           "quality": "company_estimate",
-          "primaryLaborClassId": "employee_1783273403223",
+          "primaryLaborClassId": "cnc_operator_press_brake",
           "sellRateEurPerHour": 120
         },
         {
@@ -131,7 +134,8 @@
           "loadedPowerKw": 2,
           "quality": "company_estimate",
           "capacityRole": "sellable_capacity",
-          "sellRateEurPerHour": 60
+          "sellRateEurPerHour": 60,
+          "primaryLaborClassId": "assembler"
         },
         {
           "id": "qc_station_1",
@@ -148,16 +152,72 @@
           "variableCostEurPerHour": 1,
           "loadedPowerKw": 1,
           "quality": "company_estimate",
-          "sellRateEurPerHour": 0
+          "sellRateEurPerHour": 0,
+          "primaryLaborClassId": "quality_inspector"
         }
       ],
       "employees": [
         {
-          "id": "machine_operator",
-          "position": "Fabricator",
+          "id": "fabricator_saw",
+          "position": "Fabricator - Precision Saw",
           "processArea": "Production",
-          "headcount": 3,
+          "headcount": 1,
           "grossMonthlySalaryEur": 1500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "fabricator_engraver",
+          "position": "Fabricator - Laser Engraver",
+          "processArea": "Production",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "fabricator_welder",
+          "position": "Fabricator - Welding Station",
+          "processArea": "Production",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1500,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_lathe",
+          "position": "CNC operator - Lathe",
+          "processArea": "Production",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1800,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_milling",
+          "position": "CNC operator - Milling",
+          "processArea": "Production",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1800,
+          "employerSocialContributionRate": 0.2359,
+          "paidHoursPerMonth": 160,
+          "directLabor": true,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_press_brake",
+          "position": "CNC operator - Press brake",
+          "processArea": "Production",
+          "headcount": 1,
+          "grossMonthlySalaryEur": 1800,
           "employerSocialContributionRate": 0.2359,
           "paidHoursPerMonth": 160,
           "directLabor": true,
@@ -271,17 +331,6 @@
           "employerSocialContributionRate": 0.2359,
           "paidHoursPerMonth": 160,
           "directLabor": false,
-          "quality": "company_estimate"
-        },
-        {
-          "id": "employee_1783273403223",
-          "position": "CNC operator",
-          "processArea": "Production",
-          "headcount": 3,
-          "grossMonthlySalaryEur": 1800,
-          "employerSocialContributionRate": 0.2359,
-          "paidHoursPerMonth": 160,
-          "directLabor": true,
           "quality": "company_estimate"
         }
       ],
@@ -416,56 +465,56 @@
           "operationType": "saw_cutting",
           "name": "Saw cutting",
           "defaultMachineClassId": "manual_tool_station_1",
-          "defaultLaborClassId": "machine_operator"
+          "defaultLaborClassId": "fabricator_saw"
         },
         {
           "id": "turning",
           "operationType": "turning",
           "name": "CNC turning",
           "defaultMachineClassId": "cnc_machine_1",
-          "defaultLaborClassId": "employee_1783273403223"
+          "defaultLaborClassId": "cnc_operator_lathe"
         },
         {
           "id": "cnc_milling",
           "operationType": "milling_3_axis",
           "name": "CNC milling",
           "defaultMachineClassId": "cnc_machine_2",
-          "defaultLaborClassId": "employee_1783273403223"
+          "defaultLaborClassId": "cnc_operator_milling"
         },
         {
           "id": "drilling",
           "operationType": "drilling",
           "name": "Drilling",
           "defaultMachineClassId": "cnc_machine_2",
-          "defaultLaborClassId": "employee_1783273403223"
+          "defaultLaborClassId": "cnc_operator_milling"
         },
         {
           "id": "tapping",
           "operationType": "tapping",
           "name": "Tapping / inserts",
           "defaultMachineClassId": "cnc_machine_2",
-          "defaultLaborClassId": "employee_1783273403223"
+          "defaultLaborClassId": "cnc_operator_milling"
         },
         {
           "id": "bending",
           "operationType": "bending",
           "name": "Bending / forming",
           "defaultMachineClassId": "cnc_machine_3",
-          "defaultLaborClassId": "employee_1783273403223"
+          "defaultLaborClassId": "cnc_operator_press_brake"
         },
         {
           "id": "engraving",
           "operationType": "engraving",
           "name": "Laser engraving / marking",
           "defaultMachineClassId": "manual_tool_station_2",
-          "defaultLaborClassId": "machine_operator"
+          "defaultLaborClassId": "fabricator_engraver"
         },
         {
           "id": "welding",
           "operationType": "welding",
           "name": "Welding",
           "defaultMachineClassId": "manual_tool_station_3",
-          "defaultLaborClassId": "machine_operator"
+          "defaultLaborClassId": "fabricator_welder"
         },
         {
           "id": "assembly",
@@ -641,15 +690,75 @@
       },
       "labor_classes": [
         {
-          "id": "machine_operator",
-          "name": "Fabricator (3x)",
+          "id": "fabricator_saw",
+          "name": "Fabricator - Precision Saw",
           "employer_cost_per_hour_eur": 11.59,
           "gross_monthly_salary_eur": 1500,
           "employer_social_contribution_rate": 0.2359,
           "paid_hours_per_month": 160,
           "cost_method": "gross_monthly",
           "derived_employer_cost_per_hour_eur": 11.59,
-          "headcount": 3,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "fabricator_engraver",
+          "name": "Fabricator - Laser Engraver",
+          "employer_cost_per_hour_eur": 11.59,
+          "gross_monthly_salary_eur": 1500,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 11.59,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "fabricator_welder",
+          "name": "Fabricator - Welding Station",
+          "employer_cost_per_hour_eur": 11.59,
+          "gross_monthly_salary_eur": 1500,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 11.59,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_lathe",
+          "name": "CNC operator - Lathe",
+          "employer_cost_per_hour_eur": 13.9,
+          "gross_monthly_salary_eur": 1800,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 13.9,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_milling",
+          "name": "CNC operator - Milling",
+          "employer_cost_per_hour_eur": 13.9,
+          "gross_monthly_salary_eur": 1800,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 13.9,
+          "headcount": 1,
+          "quality": "company_estimate"
+        },
+        {
+          "id": "cnc_operator_press_brake",
+          "name": "CNC operator - Press brake",
+          "employer_cost_per_hour_eur": 13.9,
+          "gross_monthly_salary_eur": 1800,
+          "employer_social_contribution_rate": 0.2359,
+          "paid_hours_per_month": 160,
+          "cost_method": "gross_monthly",
+          "derived_employer_cost_per_hour_eur": 13.9,
+          "headcount": 1,
           "quality": "company_estimate"
         },
         {
@@ -687,18 +796,6 @@
           "derived_employer_cost_per_hour_eur": 14.68,
           "headcount": 1,
           "quality": "company_estimate"
-        },
-        {
-          "id": "employee_1783273403223",
-          "name": "CNC operator (3x)",
-          "employer_cost_per_hour_eur": 13.9,
-          "gross_monthly_salary_eur": 1800,
-          "employer_social_contribution_rate": 0.2359,
-          "paid_hours_per_month": 160,
-          "cost_method": "gross_monthly",
-          "derived_employer_cost_per_hour_eur": 13.9,
-          "headcount": 3,
-          "quality": "company_estimate"
         }
       ],
       "machine_classes": [
@@ -725,7 +822,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_saw",
           "quality": "company_estimate"
         },
         {
@@ -751,7 +848,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_engraver",
           "quality": "company_estimate"
         },
         {
@@ -777,7 +874,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_welder",
           "quality": "company_estimate"
         },
         {
@@ -803,7 +900,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_lathe",
           "quality": "company_estimate"
         },
         {
@@ -829,7 +926,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_milling",
           "quality": "company_estimate"
         },
         {
@@ -855,7 +952,7 @@
           "salvage_percent": 0,
           "other_monthly_fixed_cost_eur": 0,
           "capacity_role": "sellable_capacity",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_press_brake",
           "quality": "company_estimate"
         },
         {
@@ -915,7 +1012,7 @@
         {
           "operation_type": "saw_cutting",
           "default_machine_class_id": "manual_tool_station_1",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_saw",
           "default_setup_machine_minutes": 15,
           "default_setup_labor_minutes": 15,
           "default_run_machine_minutes_per_part": 1,
@@ -931,7 +1028,7 @@
         {
           "operation_type": "turning",
           "default_machine_class_id": "cnc_machine_1",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_lathe",
           "default_setup_machine_minutes": 0,
           "default_setup_labor_minutes": 0,
           "default_run_machine_minutes_per_part": 0,
@@ -947,7 +1044,7 @@
         {
           "operation_type": "milling_3_axis",
           "default_machine_class_id": "cnc_machine_2",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_milling",
           "default_setup_machine_minutes": 60,
           "default_setup_labor_minutes": 90,
           "default_run_machine_minutes_per_part": 8,
@@ -963,7 +1060,7 @@
         {
           "operation_type": "drilling",
           "default_machine_class_id": "cnc_machine_2",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_milling",
           "default_setup_machine_minutes": 20,
           "default_setup_labor_minutes": 20,
           "default_run_machine_minutes_per_part": 2,
@@ -979,7 +1076,7 @@
         {
           "operation_type": "tapping",
           "default_machine_class_id": "cnc_machine_2",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_milling",
           "default_setup_machine_minutes": 0,
           "default_setup_labor_minutes": 0,
           "default_run_machine_minutes_per_part": 0,
@@ -995,7 +1092,7 @@
         {
           "operation_type": "bending",
           "default_machine_class_id": "cnc_machine_3",
-          "default_labor_class_id": "employee_1783273403223",
+          "default_labor_class_id": "cnc_operator_press_brake",
           "default_setup_machine_minutes": 0,
           "default_setup_labor_minutes": 0,
           "default_run_machine_minutes_per_part": 0,
@@ -1011,7 +1108,7 @@
         {
           "operation_type": "engraving",
           "default_machine_class_id": "manual_tool_station_2",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_engraver",
           "default_setup_machine_minutes": 0,
           "default_setup_labor_minutes": 0,
           "default_run_machine_minutes_per_part": 0,
@@ -1027,7 +1124,7 @@
         {
           "operation_type": "welding",
           "default_machine_class_id": "manual_tool_station_3",
-          "default_labor_class_id": "machine_operator",
+          "default_labor_class_id": "fabricator_welder",
           "default_setup_machine_minutes": 0,
           "default_setup_labor_minutes": 0,
           "default_run_machine_minutes_per_part": 0,

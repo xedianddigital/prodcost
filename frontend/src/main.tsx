@@ -646,23 +646,59 @@ function directMachineRateBeforeOverhead(machine: MachineClass, availabilityFiel
   return fixedCost / Math.max(1, hours) + variableCost;
 }
 
-function weightedOverheadPerMachineHour(
+// One shared-recovery model for the whole app: quote machine rates and the Profitability
+// tab allocate the same pool (overhead + support-station cost + support/unassigned payroll)
+// with the same weight (station machine EUR/h + assigned payroll EUR/h), over sellable
+// stations only. Support stations charge no share -- they ARE part of the pool.
+function weightedSharedRecoveryPerMachineHour(
   assumptions: Assumptions | null,
   machine: MachineClass,
   availabilityField: AvailabilityField,
   utilizationField: UtilizationField
 ) {
-  const overheadMonth = totalMonthlyOverheadEur(assumptions);
-  const machines = assumptions?.machine_classes ?? [];
-  const totalDirectCapacityValue = machines.reduce((sum, item) => {
-    const hours = machineProductiveHours(item, availabilityField, utilizationField);
-    return sum + directMachineRateBeforeOverhead(item, availabilityField, utilizationField) * hours;
-  }, 0);
-  if (overheadMonth <= 0 || totalDirectCapacityValue <= 0) {
+  if (!assumptions) {
     return 0;
   }
-  const directRate = directMachineRateBeforeOverhead(machine, availabilityField, utilizationField);
-  return roundMoney((overheadMonth * directRate) / totalDirectCapacityValue);
+  if (machineCapacityRole(machine) !== "sellable_capacity") {
+    return 0;
+  }
+  const machines = assumptions.machine_classes ?? [];
+  const hoursOf = (item: MachineClass) => machineProductiveHours(item, availabilityField, utilizationField);
+  const isSellable = (item: MachineClass) => machineCapacityRole(item) === "sellable_capacity";
+
+  const sellableHoursByLabor = new Map<string, number>();
+  machines.forEach((item) => {
+    if (!isSellable(item) || !item.default_labor_class_id) return;
+    sellableHoursByLabor.set(item.default_labor_class_id, (sellableHoursByLabor.get(item.default_labor_class_id) ?? 0) + hoursOf(item));
+  });
+
+  const assignedPayrollRateByLabor = new Map<string, number>();
+  let supportOrUnassignedPayroll = 0;
+  (assumptions.labor_classes ?? []).forEach((labor) => {
+    const payroll = laborMonthlyPayrollCost(labor, assumptions);
+    const sellableHours = sellableHoursByLabor.get(labor.id) ?? 0;
+    if (sellableHours > 0) {
+      assignedPayrollRateByLabor.set(labor.id, payroll / sellableHours);
+    } else {
+      supportOrUnassignedPayroll += payroll;
+    }
+  });
+
+  const supportMachineCostMonth = machines
+    .filter((item) => !isSellable(item))
+    .reduce((sum, item) => sum + (item.monthly_fixed_cost_eur ?? 0) + (item.variable_cost_eur_per_hour ?? 0) * hoursOf(item), 0);
+  const poolMonth = totalMonthlyOverheadEur(assumptions) + supportMachineCostMonth + supportOrUnassignedPayroll;
+
+  const stationWeight = (item: MachineClass) =>
+    directMachineRateBeforeOverhead(item, availabilityField, utilizationField)
+    + (item.default_labor_class_id ? assignedPayrollRateByLabor.get(item.default_labor_class_id) ?? 0 : 0);
+  const weightedHoursTotal = machines
+    .filter(isSellable)
+    .reduce((sum, item) => sum + stationWeight(item) * hoursOf(item), 0);
+  if (poolMonth <= 0 || weightedHoursTotal <= 0) {
+    return 0;
+  }
+  return roundMoney(poolMonth * (stationWeight(machine) / weightedHoursTotal));
 }
 
 function blendedDirectMachineRate(
@@ -716,7 +752,7 @@ function calculatedAccountingMachineRate(machine: MachineClass, assumptions?: As
   const availability = availabilityValue(machine, "actual_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? weightedOverheadPerMachineHour(assumptions, machine, "actual_availability_percent", "actual_utilization_percent")
+      ? weightedSharedRecoveryPerMachineHour(assumptions, machine, "actual_availability_percent", "actual_utilization_percent")
       : 0;
   return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
 }
@@ -733,7 +769,7 @@ function calculatedTargetMachineRate(machine: MachineClass, assumptions?: Assump
   const availability = availabilityValue(machine, "target_availability_percent");
   const overheadPerHour =
     assumptions?.overhead?.allocation_method === "per_machine_hour"
-      ? weightedOverheadPerMachineHour(assumptions, machine, "target_availability_percent", "target_utilization_percent")
+      ? weightedSharedRecoveryPerMachineHour(assumptions, machine, "target_availability_percent", "target_utilization_percent")
       : 0;
   return roundMoney(
     machineRateFromDrivers(machine, availability, utilization, overheadPerHour) * (1 - discount)
@@ -2315,7 +2351,7 @@ function App() {
     const availability = availabilityValue(machine, availabilityField);
     const overheadPerHour =
       assumptions.overhead?.allocation_method === "per_machine_hour"
-        ? weightedOverheadPerMachineHour(assumptions, machine, availabilityField, utilizationField)
+        ? weightedSharedRecoveryPerMachineHour(assumptions, machine, availabilityField, utilizationField)
         : 0;
     return {
       fixed_cost_eur_per_month: machine.monthly_fixed_cost_eur ?? 0,
@@ -2564,7 +2600,7 @@ function App() {
       const availability = Math.max(0.01, availabilityValue(machine, availabilityField) * (overrides.availabilityFactor ?? 1));
       const overheadPerHour =
         assumptions.overhead?.allocation_method === "per_machine_hour"
-          ? weightedOverheadPerMachineHour(assumptions, machine, overheadAvailabilityField, overheadUtilizationField)
+          ? weightedSharedRecoveryPerMachineHour(assumptions, machine, overheadAvailabilityField, overheadUtilizationField)
           : 0;
       return machineRateFromDrivers(machine, availability, utilization, overheadPerHour);
     }
