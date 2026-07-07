@@ -415,23 +415,6 @@ textarea:focus {
   background: #b1bac4;
 }
 
-/* Latvian button/label text runs ~10-20% longer than English on average (and up to ~60%
-   longer for some multi-word phrases). Shrinking font-size and padding slightly in LV mode
-   claws back most of that so buttons wrap to extra rows/lines at the same rate in both
-   languages, instead of the page layout shifting when the language is switched. */
-.lang-lv .primaryButton,
-.lang-lv .secondaryButton {
-  font-size: 12.5px;
-  padding-left: 11px;
-  padding-right: 11px;
-  gap: 6px;
-}
-
-.lang-lv .navItem {
-  font-size: 13.5px;
-  gap: 8px;
-}
-
 .linkButton {
   border: 0;
   background: none;
@@ -2948,7 +2931,9 @@ input[readonly] {
   font-weight: 800;
   letter-spacing: 0.025em;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: break-word;
 }
 
 .profitabilityMachineTable .profitabilityMachineRow > span {
@@ -3055,7 +3040,9 @@ input[readonly] {
   font-weight: 800;
   letter-spacing: 0.025em;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: break-word;
 }
 
 .profitabilityRevenueTable .profitabilityRevenueRow > span {
@@ -3373,6 +3360,9 @@ input[readonly] {
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: break-word;
 }
 
 .quoteMarketRateHeadRow span + span {
