@@ -65,3 +65,57 @@ Plate support actually already existed (the width field only appeared when the s
   his full attention, 20 min/h if he runs three), not just hands-on time. That's the number
   I'd revisit in your operation templates if you want quotes to stop leaking operator
   salary.
+
+
+
+● Both are implemented, tested, and committed (079c328) — and yes, exactly right: this is
+  the standard ERP construct. SAP work centers, JobBOSS, E2, ProShop all carry it as crew 
+  size (or machine-crew ratio) on the work center, and labor cost flows from machine time ×
+  crew ratio. That's precisely what I built.
+
+  The leak fix — attendance floor:
+  - Every machine class now has operator_attendance_share: 1.0 = dedicated operator, 0.33 =
+  one operator tending three machines, 0 = unattended/support. Your stations are seeded at
+  1.0 (matching your one-operator-per-station decision); QC at 0.
+  - At pricing time, charged labor minutes become max(entered minutes, machine minutes × 
+  share) — applied to setup and run minutes in every quote payload (main quote, quantity
+  breaks, scenario diagnostics, client portal) and in the Route rate check math.
+  Under-entering labor can no longer leak salary out of the price; hands-on work above
+  machine time still charges as entered.
+  - The demo data itself was made honest too: the milling operation that charged 0.9 labor
+  minutes against 7.5 machine minutes now shows the real numbers in the route (14 fields
+  raised across the mock ERP routes, 3 in the operation templates). So what you see in the
+  inputs is what gets charged — the floor is the safety net, not a hidden correction.
+  - Concretely: that CNC milling hour now carries ~€16 of operator wage instead of ~€1.90,
+  and the quote-side labor recovery finally lines up with what the Profitability page said
+  a station hour must earn.
+
+  NRE — confirmed and implemented:
+  - The CAM programmer's payroll is excluded from the shared-recovery pool in both the
+  quote machine rates and the Profitability breakdown — he's recovered solely through the
+  engineering line on quotes (which already discounts repeat parts). The double-count is
+  gone.
+  - His salary still counts as monthly cost in the Profitability P&L, so profit is never
+  overstated — slightly conservative, since NRE income isn't modeled as revenue there.
+  - Rule of the model now, documented in costing-model.md: every person has exactly one 
+  recovery channel — operators through machine rates, the programmer through NRE, office
+  staff through overhead.
+
+  Frontend typechecks and builds, backend tests 24/24, and the running app confirms the new
+  data (shares seeded, milling template now 8/8 machine/labor minutes). Reload the Quote
+  page and re-load the demo RFQ or ERP part to see the corrected route — expect visibly
+  higher prices on machine-pace Jump to bottom (ctrl+End) ↓ d, not inflation.
+
+
+
+
+❯ now check the logic of 2 pages of the project. Many has changed since the original idea of the project, so I will explain how i see it (i can be mistaken as well, check my logic, too). Then compare it with the code and lets discuss what and how do we need to change: 
+Profile selected (SIA) - Apply to Costing - Quote page, select ERP part, click Import ERP data - we have Quote Summary. 
+for the part  CNC-AL-120 rev A it has target unit price = €42.17. Route rate check says €109.66/h market | €116.95/h cost-plus | -€7.29/h. 
+Which means that in this calculation we are charging  more that manually entered market rates for the stations. I dont know why we have minus sign for 7.29 and red color. Flagging overprice? Is this appropriate way to Show red negatime overprice, and green positive underprice?
+
+ Anyway, the main question comes next. We proceed to Market Rates page. It was supposed to use closed quotes to exctract sold market rates from the quotes of the company. There was no link between production cost and station sell rate, and this was a helper tool to calculate it. A few days ago this was very needed because we did not calculate machine station sell rate eur/h at quote stage, it was not used to form a prod cost and a price. Now it does, yesterday we fixed that. 
+ So this page does not do the initially intended job since it has shifted. But we still form a market seel rate here, which is still used for building Profitability simulation chart. 
+ If we go to Profitability page and look at Base EUR/h Required EUR/h columns and say - lets count Profitability of Required EUR/h column - these would only be our dreams - target production cost + full desirable margin. It may inflate the chart to show optimistic numbers. BUT! Who said the market is ready to buy at such Market rate? Noone. No proof, no grounding. Therefore we can rebuild Market Rates page ONLY for competitor price/rate calculation and use it as a realistic Profitability cut-off level. So the page should clearly say what it is used for and drop irrelevant leftover piecies of the previous logic. 
+ Lets think further. Required EUR/h for a certain station says 120 eur. After Competitor analysis we found out that Market rate is 100 eur. What does it say? 
+ 1) we need to go to Resources page and reduce margin to see the effect - Required EUR/h will drop, probably will reach Market rate. Do we want to sacrifice margin? No. We go to Resources page, and look at the highest sell rate among teh stations, CNC lathe as an example, it says Actual Utilization = 70% with target 95%. Lets imagine we have enough order to reach 90% of utilization. We set actual 90, go back to Profitability - Required rate for CNC lather has dropped significantly and now is below Market rate, meaning we earn full 25% margin and we even have room to bump price a bit. So Required EUR/h column is a very important column, but it is not enough, it show current actual competitive level and unachievable Market revenue capacity. Must have for comparison. But what do we miss? We need a Target EUR/h column to show possible rate for each station if actual availability and utilization reach their target levels. The same thing I just did by changing 70 to 90 (well I had to change to 95 to be precise). We form the price based of factory state when all targets are achieved. So this target columns is the most critical thing we need. And then we keep Market sell rate as the third column. In real life Target and market should be very close to each other. But we calculate Market revenue capacity still based of Market sell rate. 

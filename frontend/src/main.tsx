@@ -23,7 +23,11 @@ import "./styles.css";
 
 type View = "quote" | "client_portal" | "resources" | "market_rates" | "scenarios" | "print" | "business_case" | "guide" | "profitability" | "profile" | "methods";
 type RateMode = "accounting_full_cost" | "target_competitive";
-type ProfitabilityCapacityMode = "actual_current" | "target_scenario";
+// "scenario" is an opt-in third basis (the "Compare" checkbox on Profitability): one uniform
+// Utilization applied shop-wide, at each asset's target Availability, for ad-hoc "what if we
+// only load to X%" checks. It never drives the Actual/Target columns or the revenue bridge --
+// those stay wired to real per-asset actual/target fields either way.
+type ProfitabilityCapacityMode = "actual_current" | "target_capacity" | "scenario";
 
 type ErpPartSummary = {
   id: string;
@@ -406,17 +410,61 @@ type OperationTemplate = {
   quality?: string;
 };
 
-type MarketRateSource = "manual_rate_card" | "won_quote" | "lost_quote" | "competitor_backsolve" | "cost_plus_floor";
+// "won_quote" was removed as a selectable source: backsolving a rate from our own accepted
+// quote just returns our own cost-plus price, which proves nothing about what the market
+// would pay. Real market grounding comes from outside this tool's own pricing engine:
+// lost_quote (a lost bid -- we know what the winner charged), competitor_backsolve (a blind/
+// proxy RFQ, a public instant-quote portal, or another direct competitor number), and
+// buyer_disclosed (a customer states a benchmark to negotiate against -- real, but always
+// biased toward the buyer's interest, so it never upgrades past its own confidence tier no
+// matter how many times it is repeated).
+type MarketRateSource = "manual_rate_card" | "won_quote" | "lost_quote" | "competitor_backsolve" | "buyer_disclosed" | "cost_plus_floor";
+
+// How strong is this class's market evidence, independent of where it came from (the
+// "source" field). A single lost bid and a customer's negotiating-leverage benchmark are
+// both real, but neither is as solid as two or more independent numbers agreeing.
+type MarketRateConfidence = "unverified" | "single_data_point" | "buyer_disclosed" | "confirmed_multiple";
 
 type MarketRateCardEntry = {
   id: string;
   name: string;
   rateEurPerHour: number;
   source: MarketRateSource;
-  confidence: string;
+  confidence: MarketRateConfidence;
   notes: string;
   lastUpdated: string;
 };
+
+function marketConfidenceLabel(value: string) {
+  const labels: Record<string, string> = {
+    unverified: "Unverified / placeholder",
+    single_data_point: "Single data point",
+    buyer_disclosed: "Buyer-disclosed (soft ceiling)",
+    confirmed_multiple: "Confirmed (2+ sources)"
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
+}
+
+function marketConfidenceClass(value: string) {
+  if (value === "confirmed_multiple") return "confirmed";
+  if (value === "buyer_disclosed") return "buyerDisclosed";
+  if (value === "single_data_point") return "singlePoint";
+  return "unverified";
+}
+
+function MarketConfidenceInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <span className="marketConfidenceInput" title={marketConfidenceLabel(value)}>
+      <span className={`marketConfidenceDot ${marketConfidenceClass(value)}`} />
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="unverified">Unverified / placeholder</option>
+        <option value="single_data_point">Single data point</option>
+        <option value="buyer_disclosed">Buyer-disclosed (soft ceiling)</option>
+        <option value="confirmed_multiple">Confirmed (2+ sources)</option>
+      </select>
+    </span>
+  );
+}
 
 type MarketEvidenceRouteRow = {
   id: string;
@@ -836,11 +884,11 @@ function marketSellRateValue(machine: Pick<MachineClass, "market_sell_rate_eur_p
 }
 
 const DEFAULT_MARKET_RATE_CARD: MarketRateCardEntry[] = [
-  { id: "cnc", name: "CNC machining", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unknown", notes: "Use won/lost quote evidence to replace this placeholder.", lastUpdated: "" },
-  { id: "manual", name: "Manual / bench work", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unknown", notes: "General manual station pricing class.", lastUpdated: "" },
-  { id: "welding", name: "Welding / fabrication", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unknown", notes: "Separate from generic manual work when quotes support it.", lastUpdated: "" },
-  { id: "assembly", name: "Assembly / fitting", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unknown", notes: "Commercial assembly sell rate, not asset cost recovery.", lastUpdated: "" },
-  { id: "inspection", name: "Inspection / QC if billable", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unknown", notes: "Use only when inspection is sold separately.", lastUpdated: "" }
+  { id: "cnc", name: "CNC machining", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unverified", notes: "Use lost-bid or competitor evidence to replace this placeholder.", lastUpdated: "" },
+  { id: "manual", name: "Manual / bench work", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unverified", notes: "General manual station pricing class.", lastUpdated: "" },
+  { id: "welding", name: "Welding / fabrication", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unverified", notes: "Separate from generic manual work when quotes support it.", lastUpdated: "" },
+  { id: "assembly", name: "Assembly / fitting", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unverified", notes: "Commercial assembly sell rate, not asset cost recovery.", lastUpdated: "" },
+  { id: "inspection", name: "Inspection / QC if billable", rateEurPerHour: 0, source: "manual_rate_card", confidence: "unverified", notes: "Use only when inspection is sold separately.", lastUpdated: "" }
 ];
 
 function marketRateCardEntries(assumptions: Assumptions | null): MarketRateCardEntry[] {
@@ -850,7 +898,7 @@ function marketRateCardEntries(assumptions: Assumptions | null): MarketRateCardE
       ...entry,
       rateEurPerHour: Number.isFinite(entry.rateEurPerHour) ? entry.rateEurPerHour : 0,
       source: entry.source ?? "manual_rate_card",
-      confidence: entry.confidence ?? "unknown",
+      confidence: entry.confidence ?? "unverified",
       notes: entry.notes ?? "",
       lastUpdated: entry.lastUpdated ?? ""
     }));
@@ -860,6 +908,23 @@ function marketRateCardEntries(assumptions: Assumptions | null): MarketRateCardE
 
 function marketRateById(entries: MarketRateCardEntry[]) {
   return new Map(entries.map((entry) => [entry.id, entry]));
+}
+
+// A second independent real observation (same class, another lost bid/competitor number)
+// upgrades a class from "one data point" to "confirmed". Manual/cost-plus entries never earn
+// more than "unverified" this way, and a buyer's stated benchmark never earns more than its
+// own tier, however often it is repeated -- it stays a soft, buyer-biased ceiling.
+function nextMarketConfidence(existing: MarketRateCardEntry, source: MarketRateSource): MarketRateConfidence {
+  if (source === "buyer_disclosed") {
+    return "buyer_disclosed";
+  }
+  if (source === "manual_rate_card" || source === "cost_plus_floor") {
+    return "unverified";
+  }
+  if (existing.confidence === "single_data_point" || existing.confidence === "confirmed_multiple") {
+    return "confirmed_multiple";
+  }
+  return "single_data_point";
 }
 
 function inferredMarketRateClassId(id: string, name: string) {
@@ -1196,8 +1261,8 @@ function assumptionsFromProfile(profile: CompanyProfileState, assumptions: Assum
 
 function profitabilityCapacityDrivers(
   machine: MachineClass,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode
+  capacityMode: ProfitabilityCapacityMode,
+  scenarioUtilization?: number
 ) {
   const plannedHours = machine.planned_hours_per_month ?? 160;
   const availability = Math.max(
@@ -1211,7 +1276,9 @@ function profitabilityCapacityDrivers(
     0.01,
     capacityMode === "actual_current"
       ? machine.actual_utilization_percent ?? 1
-      : utilizationScenario
+      : capacityMode === "scenario"
+        ? scenarioUtilization ?? DEFAULT_TARGET_UTILIZATION_PERCENT
+        : machine.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT
   );
   return {
     plannedHours,
@@ -1223,22 +1290,24 @@ function profitabilityCapacityDrivers(
 
 // Profitability Calculator: "can we be profitable" independent of any single quote.
 // Current actual mode is wired directly to per-asset actual Availability/Utilization.
-// Target scenario mode keeps the uniform shop-wide Utilization stress test.
+// Target capacity mode is wired directly to per-asset target Availability/Utilization
+// (the same fields set on Resources). Scenario mode is the opt-in uniform-Utilization
+// what-if, only computed when the Compare checkbox is on.
 function profitabilityEffectiveHours(
   machine: MachineClass,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode = "target_scenario"
+  capacityMode: ProfitabilityCapacityMode = "target_capacity",
+  scenarioUtilization?: number
 ) {
-  return profitabilityCapacityDrivers(machine, utilizationScenario, capacityMode).hours;
+  return profitabilityCapacityDrivers(machine, capacityMode, scenarioUtilization).hours;
 }
 
 function profitabilityDirectCostMonth(
   assumptions: Assumptions | null,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode = "target_scenario"
+  capacityMode: ProfitabilityCapacityMode = "target_capacity",
+  scenarioUtilization?: number
 ) {
   return (assumptions?.machine_classes ?? []).reduce((sum, machine) => {
-    const hours = profitabilityEffectiveHours(machine, utilizationScenario, capacityMode);
+    const hours = profitabilityEffectiveHours(machine, capacityMode, scenarioUtilization);
     const fixedCost = machine.monthly_fixed_cost_eur ?? 0;
     const variableCost = machine.variable_cost_eur_per_hour ?? 0;
     return sum + fixedCost + variableCost * hours;
@@ -1262,7 +1331,7 @@ function laborMonthlyPayrollCost(labor: LaborClass, assumptions: Assumptions | n
 function targetProductiveHoursMonth(assumptions: Assumptions | null) {
   return (assumptions?.machine_classes ?? []).reduce(
     (sum, machine) => isSellableCapacityMachine(machine)
-      ? sum + profitabilityEffectiveHours(machine, machine.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT)
+      ? sum + profitabilityEffectiveHours(machine, "target_capacity")
       : sum,
     0
   );
@@ -1278,22 +1347,22 @@ function directPayrollPerTargetHour(assumptions: Assumptions | null) {
 // their machine cost is recovered across sellable assets as a support-cost allocation.
 function profitabilitySoldHoursMonth(
   assumptions: Assumptions | null,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode = "target_scenario"
+  capacityMode: ProfitabilityCapacityMode = "target_capacity",
+  scenarioUtilization?: number
 ) {
   return (assumptions?.machine_classes ?? []).reduce(
-    (sum, machine) => isSellableCapacityMachine(machine) ? sum + profitabilityEffectiveHours(machine, utilizationScenario, capacityMode) : sum,
+    (sum, machine) => isSellableCapacityMachine(machine) ? sum + profitabilityEffectiveHours(machine, capacityMode, scenarioUtilization) : sum,
     0
   );
 }
 
 function profitabilityProductiveHoursMonth(
   assumptions: Assumptions | null,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode = "target_scenario"
+  capacityMode: ProfitabilityCapacityMode = "target_capacity",
+  scenarioUtilization?: number
 ) {
   return (assumptions?.machine_classes ?? []).reduce(
-    (sum, machine) => sum + profitabilityEffectiveHours(machine, utilizationScenario, capacityMode),
+    (sum, machine) => sum + profitabilityEffectiveHours(machine, capacityMode, scenarioUtilization),
     0
   );
 }
@@ -1355,6 +1424,8 @@ type ProfitabilityRevenueBreakdownRow = {
   sharedAllocatedRate: number;
   baseRate: number;
   requiredSellRate: number;
+  targetSellRate: number;
+  compareScenarioSellRate: number | null;
   marketSellRate: number;
   hasMarketSellRate: boolean;
   sellRate: number;
@@ -1363,11 +1434,11 @@ type ProfitabilityRevenueBreakdownRow = {
 
 function profitabilityMachineBreakdownRows(
   assumptions: Assumptions | null,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode
+  capacityMode: ProfitabilityCapacityMode,
+  scenarioUtilization?: number
 ): ProfitabilityMachineBreakdownRow[] {
   const baseRows = (assumptions?.machine_classes ?? []).map((machine) => {
-    const targetHours = profitabilityEffectiveHours(machine, utilizationScenario, capacityMode);
+    const targetHours = profitabilityEffectiveHours(machine, capacityMode, scenarioUtilization);
     const fixedCostMonth = machine.monthly_fixed_cost_eur ?? 0;
     const variableCostMonth = (machine.variable_cost_eur_per_hour ?? 0) * targetHours;
     const directCostMonth = fixedCostMonth + variableCostMonth;
@@ -1400,10 +1471,10 @@ function profitabilitySellRateBreakdown(
   assumptions: Assumptions | null,
   marginPercent: number,
   riskPercent: number,
-  utilizationScenario: number,
-  capacityMode: ProfitabilityCapacityMode
+  capacityMode: ProfitabilityCapacityMode,
+  scenarioUtilization?: number
 ): ProfitabilitySellRateBreakdown {
-  const baseMachineRows = profitabilityMachineBreakdownRows(assumptions, utilizationScenario, capacityMode);
+  const baseMachineRows = profitabilityMachineBreakdownRows(assumptions, capacityMode, scenarioUtilization);
   const baseSellableRows = baseMachineRows.filter((row) => row.capacityRole === "sellable_capacity");
   const baseSupportRows = baseMachineRows.filter((row) => row.capacityRole !== "sellable_capacity");
   const targetHours = baseSellableRows.reduce((sum, row) => sum + row.targetHours, 0);
@@ -1518,23 +1589,43 @@ function profitabilitySellRateBreakdown(
   };
 }
 
+// Revenue/hours are always built on today's real Availability/Utilization ("actual_current").
+// targetBreakdown supplies a second, independent required-rate figure -- what this station
+// would need to charge if it ran at its own target Utilization/Availability from Resources --
+// so the two can be compared side by side without either one silently driving the other.
 function profitabilityRevenueBreakdownRows(
   assumptions: Assumptions | null,
-  utilizationScenario: number,
   breakdown: ProfitabilitySellRateBreakdown,
+  targetBreakdown: ProfitabilitySellRateBreakdown,
   marginPercent: number,
   riskPercent: number,
-  capacityMode: ProfitabilityCapacityMode
+  capacityMode: ProfitabilityCapacityMode,
+  compareScenarioBreakdown?: ProfitabilitySellRateBreakdown
 ): ProfitabilityRevenueBreakdownRow[] {
   const rowById = new Map(breakdown.sellableRows.map((row) => [row.id, row]));
+  const targetRowById = new Map(targetBreakdown.sellableRows.map((row) => [row.id, row]));
+  const compareRowById = new Map((compareScenarioBreakdown?.sellableRows ?? []).map((row) => [row.id, row]));
   return (assumptions?.machine_classes ?? []).filter(isSellableCapacityMachine).map((machine) => {
     const machineRow = rowById.get(machine.id);
-    const capacity = profitabilityCapacityDrivers(machine, utilizationScenario, capacityMode);
+    const targetMachineRow = targetRowById.get(machine.id);
+    const capacity = profitabilityCapacityDrivers(machine, capacityMode);
     const ownMachineRate = machineRow?.directRate ?? 0;
     const assignedPayrollRate = machineRow?.assignedPayrollRate ?? 0;
     const sharedAllocatedRate = machineRow?.sharedAllocatedRate ?? breakdown.sharedAllocatedRate;
     const baseRate = ownMachineRate + assignedPayrollRate + sharedAllocatedRate;
     const requiredSellRate = (baseRate * (1 + riskPercent)) / Math.max(0.01, 1 - marginPercent);
+    const targetBaseRate = (targetMachineRow?.directRate ?? 0)
+      + (targetMachineRow?.assignedPayrollRate ?? 0)
+      + (targetMachineRow?.sharedAllocatedRate ?? targetBreakdown.sharedAllocatedRate);
+    const targetSellRate = (targetBaseRate * (1 + riskPercent)) / Math.max(0.01, 1 - marginPercent);
+    let compareScenarioSellRate: number | null = null;
+    if (compareScenarioBreakdown) {
+      const compareMachineRow = compareRowById.get(machine.id);
+      const compareBaseRate = (compareMachineRow?.directRate ?? 0)
+        + (compareMachineRow?.assignedPayrollRate ?? 0)
+        + (compareMachineRow?.sharedAllocatedRate ?? compareScenarioBreakdown.sharedAllocatedRate);
+      compareScenarioSellRate = (compareBaseRate * (1 + riskPercent)) / Math.max(0.01, 1 - marginPercent);
+    }
     const marketSellRate = marketSellRateValue(machine);
     return {
       id: machine.id,
@@ -1548,6 +1639,8 @@ function profitabilityRevenueBreakdownRows(
       sharedAllocatedRate,
       baseRate,
       requiredSellRate,
+      compareScenarioSellRate,
+      targetSellRate,
       marketSellRate,
       hasMarketSellRate: marketSellRate > 0,
       sellRate: marketSellRate,
@@ -1587,20 +1680,27 @@ function payrollDoubleCountWarnings(assumptions: Assumptions | null): string[] {
   return warnings;
 }
 
-// Operating profit at one shop-wide Utilization value, using the same revenue and cost
-// rules as the bridge chart. Used for the break-even check and the sensitivity row.
+// Operating profit at one shop-wide, uniform Utilization value (holding target Availability),
+// using the same revenue and cost rules as the bridge chart. This is a pure sensitivity sweep
+// for the "other load levels" table and the break-even check below -- it does not read any
+// single asset's actual or target Utilization field.
 function profitabilityOperatingProfitAtUtilization(assumptions: Assumptions | null, utilizationScenario: number) {
+  const utilization = Math.max(0.01, utilizationScenario);
   let revenue = 0;
+  let variableCost = 0;
+  let fixedCostMonth = 0;
   (assumptions?.machine_classes ?? []).forEach((machine) => {
+    const plannedHours = machine.planned_hours_per_month ?? 160;
+    const availability = Math.max(0.01, availabilityValue(machine, "target_availability_percent"));
+    const hours = plannedHours * availability * utilization;
     if (isSellableCapacityMachine(machine)) {
-      revenue += profitabilityEffectiveHours(machine, utilizationScenario) * marketSellRateValue(machine);
+      revenue += hours * marketSellRateValue(machine);
     }
+    variableCost += hours * (machine.variable_cost_eur_per_hour ?? 0);
+    fixedCostMonth += machine.monthly_fixed_cost_eur ?? 0;
   });
   const materialMargin = revenue * profitabilityMaterialMarginPercent(assumptions);
-  const cost =
-    profitabilityDirectCostMonth(assumptions, utilizationScenario)
-    + directPayrollMonth(assumptions)
-    + totalMonthlyOverheadEur(assumptions);
+  const cost = fixedCostMonth + variableCost + directPayrollMonth(assumptions) + totalMonthlyOverheadEur(assumptions);
   return revenue + materialMargin - cost;
 }
 
@@ -1620,7 +1720,7 @@ function machineOperatorShareRate(machine: MachineClass, assumptions: Assumption
   }
   const sharedHours = assumptions.machine_classes
     .filter((item) => item.default_labor_class_id === laborId)
-    .reduce((sum, item) => sum + profitabilityEffectiveHours(item, item.target_utilization_percent ?? DEFAULT_TARGET_UTILIZATION_PERCENT), 0);
+    .reduce((sum, item) => sum + profitabilityEffectiveHours(item, "target_capacity"), 0);
   return laborMonthlyPayrollCost(labor, assumptions) / Math.max(1, sharedHours);
 }
 
@@ -1631,7 +1731,8 @@ function profitabilityBreakEvenUtilization(assumptions: Assumptions | null) {
   let fixedCostMonth = 0;
   let missingSellRate = false;
   machines.forEach((machine) => {
-    const hours = profitabilityEffectiveHours(machine, 1);
+    const availability = Math.max(0.01, availabilityValue(machine, "target_availability_percent"));
+    const hours = (machine.planned_hours_per_month ?? 160) * availability * 1;
     if (isSellableCapacityMachine(machine)) {
       const marketSellRate = marketSellRateValue(machine);
       if (marketSellRate <= 0) {
@@ -2080,6 +2181,8 @@ function App() {
   const [proveoutMinutes, setProveoutMinutes] = useState(30);
   const [programmingRate, setProgrammingRate] = useState(32);
   const [rateMode, setRateMode] = useState<RateMode>("target_competitive");
+  const [profitabilityCompareScenario, setProfitabilityCompareScenario] = useState(false);
+  const [profitabilityScenarioUtilization, setProfitabilityScenarioUtilization] = useState(0.7);
   const [selectedTemplateType, setSelectedTemplateType] = useState("milling_3_axis");
   const [quoteOperations, setQuoteOperations] = useState<QuoteOperation[]>([]);
   const [actualOperations, setActualOperations] = useState<ActualOperation[]>([]);
@@ -2090,8 +2193,6 @@ function App() {
   const [profileStatus, setProfileStatus] = useState("Loading company profiles...");
   const [expandedFixedCostHelpers, setExpandedFixedCostHelpers] = useState<Record<string, boolean>>({});
   const [expandedPortalDetails, setExpandedPortalDetails] = useState<Record<string, boolean>>({});
-  const [profitabilityUtilization, setProfitabilityUtilization] = useState(0.7);
-  const [profitabilityCapacityMode, setProfitabilityCapacityMode] = useState<ProfitabilityCapacityMode>("actual_current");
   // Reference-data sections start collapsed so pages read top-to-bottom during a
   // presentation without long scrolls; anything demo-critical stays open by default.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
@@ -2115,7 +2216,7 @@ function App() {
   const [marketEvidenceBoughtOutSell, setMarketEvidenceBoughtOutSell] = useState(0);
   const [marketEvidenceFixedCharges, setMarketEvidenceFixedCharges] = useState(0);
   const [marketEvidenceSolveClassId, setMarketEvidenceSolveClassId] = useState("__blended");
-  const [marketEvidenceSource, setMarketEvidenceSource] = useState<MarketRateSource>("won_quote");
+  const [marketEvidenceSource, setMarketEvidenceSource] = useState<MarketRateSource>("lost_quote");
   const [marketEvidenceRows, setMarketEvidenceRows] = useState<MarketEvidenceRouteRow[]>([
     { id: "market_route_row_1", marketRateClassId: "cnc", hours: 1 }
   ]);
@@ -3625,7 +3726,7 @@ function App() {
       name: "New pricing class",
       rateEurPerHour: 0,
       source: "manual_rate_card",
-      confidence: "company_estimate",
+      confidence: "unverified",
       notes: "",
       lastUpdated: new Date().toISOString().slice(0, 10)
     };
@@ -3657,31 +3758,6 @@ function App() {
     setMarketEvidenceRows((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
-  function loadCurrentQuoteRouteIntoMarketEvidence() {
-    if (!assumptions) return;
-    const startedQuantities = startedQuantitiesForOperations(quoteOperations, quantity);
-    const rows = quoteOperations.map((operation, index) => {
-      const machine = assumptions.machine_classes.find((item) => item.id === operation.machineClassId);
-      return {
-        id: `market_route_${operation.id}`,
-        marketRateClassId: machine ? machineMarketRateClassId(machine) : inferredMarketRateClassId(operation.operationType, operation.name),
-        hours: roundMoney(operationWorkCenterHours(operation, startedQuantities[index] ?? quantity))
-      };
-    }).filter((row) => row.hours > 0);
-    setMarketEvidenceRows(rows.length > 0 ? rows : [{ id: `market_route_row_${Date.now()}`, marketRateClassId: "cnc", hours: 1 }]);
-    if (displayTargetResult) {
-      setMarketEvidenceProductionCost(displayTargetResult.total_cost_eur);
-      setMarketEvidenceMaterialSell(displayTargetResult.material_cost_eur);
-      setMarketEvidenceBoughtOutSell(0);
-      setMarketEvidenceFixedCharges(displayTargetResult.engineering_cost_eur);
-      if (competitorUnitPriceEur && competitorUnitPriceEur > 0) {
-        setMarketEvidenceSellPrice(roundMoney(competitorUnitPriceEur * quantity));
-      } else {
-        setMarketEvidenceSellPrice(displayTargetResult.sell_price_eur);
-      }
-    }
-  }
-
   function applyImpliedMarketRateToCard(impliedRate: number | null) {
     if (!assumptions || impliedRate === null || !Number.isFinite(impliedRate) || impliedRate <= 0) {
       setAssumptionStatus("No positive implied rate to apply. Check sell price, deductions, and route hours.");
@@ -3698,7 +3774,7 @@ function App() {
       ...entries[index],
       rateEurPerHour: roundMoney(impliedRate),
       source: marketEvidenceSource,
-      confidence: marketEvidenceSource === "won_quote" ? "company_estimate" : "preliminary",
+      confidence: nextMarketConfidence(entries[index], marketEvidenceSource),
       lastUpdated: new Date().toISOString().slice(0, 10)
     };
     updateAssumptions({
@@ -3723,7 +3799,7 @@ function App() {
       ...entry,
       rateEurPerHour: roundMoney(impliedRate),
       source: marketEvidenceSource,
-      confidence: "preliminary",
+      confidence: nextMarketConfidence(entry, marketEvidenceSource),
       lastUpdated: today,
       notes: entry.notes || "Blended route rate copied for quick workflow test; replace with class-specific evidence."
     } : entry);
@@ -4891,8 +4967,15 @@ function App() {
                             ? `${money.format(routeWeightedRequiredRate)}/h cost-plus | no market rates entered`
                             : (
                               <>
-                                {money.format(routeWeightedMarketRate)}/h market | {money.format(routeComparableRequiredRate)}/h cost-plus |{" "}
-                                <span className={routeWeightedRateGap >= 0 ? "rateGood" : "rateBad"}>{formatRateGap(routeWeightedRateGap)}</span>
+                                {money.format(routeWeightedMarketRate)}/h market | {money.format(routeComparableRequiredRate)}/h cost-plus | market − cost-plus:{" "}
+                                <span
+                                  className={routeWeightedRateGap >= 0 ? "rateGood" : "rateBad"}
+                                  title={routeWeightedRateGap >= 0
+                                    ? "Market pays at or above this quote's cost-plus floor -- there is room in the price."
+                                    : "This quote's cost-plus floor is above what the market pays for these stations -- the quote is priced above the market rate."}
+                                >
+                                  {formatRateGap(routeWeightedRateGap)}
+                                </span>
                               </>
                             )}
                       </em>
@@ -4905,7 +4988,7 @@ function App() {
                         <span>Station</span>
                         <span title="Rate entered per station on the Market Rates page.">Market EUR/h</span>
                         <span title={`This quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk ${formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin ${formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a value for the numbers.`}>Cost-plus EUR/h</span>
-                        <span title="Market minus cost-plus: positive means the market pays above this quote's floor.">Difference</span>
+                        <span title="Market minus cost-plus: positive (green) means the market pays above this quote's floor; negative (red) means this quote is priced above what the market pays.">Market − Cost-plus</span>
                       </div>
                       {routeMarketRows.map((row) => {
                         const marketRate = marketSellRateValue(row.machine);
@@ -6026,15 +6109,15 @@ function App() {
               return (
                 <>
                   <section className="panel caseHero marketRateHero">
-                    <h2>Build Market Sell EUR/h From Evidence</h2>
-                    <p>Use this page to keep the commercial rate card separate from cost recovery. Product cost tells whether a market price is profitable; accepted/lost quote evidence tells what customers actually pay for route hours. After the rate card is credible, apply it to Profitability.</p>
+                    <h2>Market Rates — Competitive Ceiling, Not a Target</h2>
+                    <p>Required and Target EUR/h on the Profitability page already tell you what you need to charge -- your own cost, risk, and margin. This page answers a different question: is anyone actually willing to pay that? It exists to hold rates sourced from <strong>outside</strong> this tool's own pricing engine -- a lost bid, a competitor's price, a market benchmark -- never a number backsolved from our own accepted quotes, since that would just hand back our own cost-plus price and prove nothing about the market. Once a rate is credible, apply it to Profitability, where it is shown next to Required/Target EUR/h as the realism cutoff, not the number that decides the price.</p>
                   </section>
 
                   <section className="panel marketRatePanel">
                     <div className="sectionHeader wide">
                       <div>
                         <h2>Market Rate Card</h2>
-                        <p className="sectionHelp">These are external sell rates by work-center family. They are not derived from asset value. Use the source and confidence fields to separate real won-quote evidence from manual placeholders.</p>
+                        <p className="sectionHelp">These are external sell rates by work-center family, sourced from outside our own quotes -- not derived from asset value or our own cost-plus price. Use the source and confidence fields to separate real lost-bid/competitor evidence from manual placeholders; "Cost-plus floor only" openly marks a class with no market evidence yet, rather than inventing one.</p>
                       </div>
                       <div className="buttonRow marketRateActions">
                         <button className="secondaryButton" onClick={addMarketRateEntry}><Plus size={16} /> Add Class</button>
@@ -6060,13 +6143,13 @@ function App() {
                           <input value={entry.name} onChange={(event) => updateMarketRateEntry(index, "name", event.target.value)} />
                           <input type="number" min="0" value={entry.rateEurPerHour} onChange={(event) => updateMarketRateEntry(index, "rateEurPerHour", numericValue(event.target.value))} />
                           <select value={entry.source} onChange={(event) => updateMarketRateEntry(index, "source", event.target.value)}>
-                            <option value="manual_rate_card">Manual rate card</option>
-                            <option value="won_quote">Won quote backsolve</option>
-                            <option value="lost_quote">Lost quote backsolve</option>
+                            <option value="manual_rate_card">Manual / industry benchmark</option>
+                            <option value="lost_quote">Lost-bid backsolve</option>
                             <option value="competitor_backsolve">Competitor backsolve</option>
-                            <option value="cost_plus_floor">Cost-plus floor only</option>
+                            <option value="buyer_disclosed">Buyer-disclosed benchmark</option>
+                            <option value="cost_plus_floor">Cost-plus floor only (no evidence yet)</option>
                           </select>
-                          <DataStatusInput value={entry.confidence} onChange={(value) => updateMarketRateEntry(index, "confidence", value)} />
+                          <MarketConfidenceInput value={entry.confidence} onChange={(value) => updateMarketRateEntry(index, "confidence", value)} />
                           <input value={entry.lastUpdated} placeholder="YYYY-MM-DD" onChange={(event) => updateMarketRateEntry(index, "lastUpdated", event.target.value)} />
                           <input value={entry.notes} onChange={(event) => updateMarketRateEntry(index, "notes", event.target.value)} />
                           <button className="iconButton" onClick={() => removeMarketRateEntry(index)}><Trash2 size={16} /></button>
@@ -6079,23 +6162,22 @@ function App() {
                     <div className="panel marketRatePanel">
                       <div className="sectionHeader wide">
                         <div>
-                          <h2>Quote Evidence Backsolve</h2>
-                          <p className="sectionHelp">Enter a real accepted price, a lost target price, or a competitor price. Remove material, bought-out, and fixed charges to isolate conversion revenue, then solve the route EUR/h.</p>
+                          <h2>Competitor / Lost-Bid Evidence Backsolve</h2>
+                          <p className="sectionHelp">Enter a price we did NOT set ourselves. Real ways to get one: a lost bid (ask the customer informally what price/lead time won -- most will tell you); a blind or proxy RFQ sent through a broker or an arm's-length intermediary; a public instant-quote portal price for comparable work (Xometry, Protolabs, and similar); or a benchmark a multi-sourcing customer discloses to negotiate against (real, but always biased toward the buyer -- treat it as a soft ceiling, not a hard number). Remove material, bought-out, and fixed charges to isolate conversion revenue, then solve the route EUR/h. Route hours are entered by hand below -- there is no shortcut that pulls in this quote's own price, because that would just backsolve our own cost-plus rate and call it evidence.</p>
                         </div>
-                        <button className="secondaryButton" onClick={loadCurrentQuoteRouteIntoMarketEvidence}>Load Current Quote Route</button>
                       </div>
                       <div className="fieldGrid">
-                        <label>Product sell price, EUR<input type="number" min="0" value={marketEvidenceSellPrice} onChange={(event) => setMarketEvidenceSellPrice(numericValue(event.target.value))} /></label>
-                        <label>Product production cost, EUR<input type="number" min="0" value={marketEvidenceProductionCost} onChange={(event) => setMarketEvidenceProductionCost(numericValue(event.target.value))} /></label>
+                        <label>Competitor / lost-bid sell price, EUR<input type="number" min="0" value={marketEvidenceSellPrice} onChange={(event) => setMarketEvidenceSellPrice(numericValue(event.target.value))} /></label>
+                        <label>Our production cost for the same part, EUR<input type="number" min="0" value={marketEvidenceProductionCost} onChange={(event) => setMarketEvidenceProductionCost(numericValue(event.target.value))} /></label>
                         <label>Material sell amount, EUR<input type="number" min="0" value={marketEvidenceMaterialSell} onChange={(event) => setMarketEvidenceMaterialSell(numericValue(event.target.value))} /></label>
                         <label>Bought-out / outsourced sell amount, EUR<input type="number" min="0" value={marketEvidenceBoughtOutSell} onChange={(event) => setMarketEvidenceBoughtOutSell(numericValue(event.target.value))} /></label>
                         <label>Engineering / admin / batch charges, EUR<input type="number" min="0" value={marketEvidenceFixedCharges} onChange={(event) => setMarketEvidenceFixedCharges(numericValue(event.target.value))} /></label>
                         <label>Evidence source<select value={marketEvidenceSource} onChange={(event) => setMarketEvidenceSource(event.target.value as MarketRateSource)}>
-                          <option value="won_quote">Won quote / accepted order</option>
-                          <option value="lost_quote">Lost quote target</option>
-                          <option value="competitor_backsolve">Competitor backsolve</option>
-                          <option value="manual_rate_card">Manual management input</option>
-                          <option value="cost_plus_floor">Cost-plus floor only</option>
+                          <option value="lost_quote">Lost bid (we know what the winner charged)</option>
+                          <option value="competitor_backsolve">Competitor price (blind RFQ, proxy, or instant-quote portal)</option>
+                          <option value="buyer_disclosed">Buyer-disclosed benchmark (soft ceiling)</option>
+                          <option value="manual_rate_card">Manual / industry benchmark</option>
+                          <option value="cost_plus_floor">Cost-plus floor only (no evidence yet)</option>
                         </select></label>
                         <label>Solve residual for<select value={marketEvidenceSolveClassId} onChange={(event) => setMarketEvidenceSolveClassId(event.target.value)}>
                           <option value="__blended">Blended route</option>
@@ -6183,7 +6265,7 @@ function App() {
                     <div className="sectionHeader wide">
                       <div>
                         <h2>Asset Mapping to Profitability</h2>
-                        <p className="sectionHelp">Map every machine asset to a pricing class, then apply the card. Sellable assets receive their class EUR/h; support/internal assets receive 0 and remain recovered through the cost base. Applying also updates the currently loaded Company Profile asset sell rates; save the profile if that should persist there too.</p>
+                        <p className="sectionHelp">Map every machine asset to a pricing class, then apply the card. Sellable assets receive their class EUR/h; support/internal assets receive 0 and remain recovered through the cost base. Applying also updates the currently loaded Company Profile asset sell rates; save the profile if that should persist there too. This is the number Profitability shows next to Required/Target EUR/h -- the reality check on whether the market will actually pay what the cost model says we need.</p>
                         <p className="sectionHelp">Data flows one way: <strong>evidence → rate card → assets → Profitability</strong>. The buttons here only copy card rates onto assets -- they never change the card itself. If the Rate card check above is red, fix the card first ("Apply Implied Rate to Class" in the Backsolve section), then push the corrected card to assets here.</p>
                       </div>
                       <button className="primaryButton" onClick={applyMarketRateCardToProfitability}>Apply Rate Card to Assets</button>
@@ -6375,22 +6457,11 @@ function App() {
 
               <div className="panel">
                 <div className="sectionHeader"><h2>Capacity Basis</h2></div>
-                <p className="sectionHelp">Choose whether this page reads today's real asset load directly or runs a target-capacity what-if. Current actual mode uses each asset's actual Availability and Utilization from Profile/Resources, so changing those fields updates this bridge directly. Target scenario mode applies one uniform Utilization to each asset's target available hours for stress testing.</p>
-                <div className="modeSwitch" role="group" aria-label="Profitability capacity basis">
-                  <button type="button" className={`modeButton ${profitabilityCapacityMode === "actual_current" ? "active" : ""}`} onClick={() => setProfitabilityCapacityMode("actual_current")}>Current actual</button>
-                  <button type="button" className={`modeButton ${profitabilityCapacityMode === "target_scenario" ? "active" : ""}`} onClick={() => setProfitabilityCapacityMode("target_scenario")}>Target scenario</button>
-                </div>
+                <p className="sectionHelp">Revenue, cost, and the operating-profit bridge below are always built on today's real asset load: each asset's actual Availability and Utilization from Profile/Resources, so changing those fields updates this bridge directly. The Revenue capacity table further down also shows a Target EUR/h per station -- the same calculation run on each station's own target Utilization/Availability from Resources, for comparison only.</p>
                 <div className="fieldGrid capacityBasisGrid">
                   <label>
-                    {profitabilityCapacityMode === "actual_current" ? "Current weighted utilization %" : "Utilization scenario %"}
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      readOnly={profitabilityCapacityMode === "actual_current"}
-                      value={formatPercent(profitabilityCapacityMode === "actual_current" ? averageActualUtilization(assumptions) : profitabilityUtilization)}
-                      onChange={(event) => setProfitabilityUtilization(Math.max(0.01, numericValue(event.target.value, 70) / 100))}
-                    />
+                    Current weighted utilization %
+                    <input readOnly type="number" value={formatPercent(averageActualUtilization(assumptions))} />
                   </label>
                   <label>
                     Margin % (from Commercial Policy)
@@ -6415,46 +6486,86 @@ function App() {
                   </label>
                 </div>
                 <p className="sectionHelp">Hour-based revenue alone ignores the small handling markup quotes add on material and bought-out items. If that markup is real income for the shop, enter it here as a percent of revenue; leave 0 for the conservative hours-only view.</p>
-                {profitabilityCapacityMode === "target_scenario" ? (
-                  <div className="scenarioButtons">
-                    <button className="secondaryButton" onClick={() => setProfitabilityUtilization(averageActualUtilization(assumptions))}>Use current weighted load ({formatPercent(averageActualUtilization(assumptions))}%)</button>
-                    <button className="secondaryButton" onClick={() => setProfitabilityUtilization(1)}>Use 100% (fully booked)</button>
-                  </div>
+                <label className="compareScenarioToggle">
+                  <input type="checkbox" checked={profitabilityCompareScenario} onChange={(event) => setProfitabilityCompareScenario(event.target.checked)} />
+                  Compare against a uniform shop-wide Utilization scenario
+                </label>
+                {profitabilityCompareScenario ? (
+                  <>
+                    <p className="sectionHelp">Ad-hoc what-if only: applies one Utilization value to every asset's target Availability, for a quick "what if we only load to X% shop-wide" check. It adds a Scenario EUR/h column below and never changes Actual/Target EUR/h or the revenue bridge above.</p>
+                    <div className="fieldGrid capacityBasisGrid">
+                      <label>
+                        Utilization scenario %
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={formatPercent(profitabilityScenarioUtilization)}
+                          onChange={(event) => setProfitabilityScenarioUtilization(Math.max(0.01, numericValue(event.target.value, 70) / 100))}
+                        />
+                      </label>
+                    </div>
+                    <div className="scenarioButtons">
+                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(averageActualUtilization(assumptions))}>Use current weighted load ({formatPercent(averageActualUtilization(assumptions))}%)</button>
+                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(1)}>Use 100% (fully booked)</button>
+                    </div>
+                  </>
                 ) : null}
               </div>
             </section>
 
             {(() => {
-              const activeProfitabilityUtilization = profitabilityCapacityMode === "actual_current" ? averageActualUtilization(assumptions) : profitabilityUtilization;
-              const machineDirectCostMonth = profitabilityDirectCostMonth(assumptions, activeProfitabilityUtilization, profitabilityCapacityMode);
+              const capacityMode: ProfitabilityCapacityMode = "actual_current";
+              const machineDirectCostMonth = profitabilityDirectCostMonth(assumptions, capacityMode);
               const sellRateBreakdown = profitabilitySellRateBreakdown(
                 assumptions,
                 assumptions.commercial_policy.default_margin_percent,
                 assumptions.commercial_policy.risk_allowance_percent,
-                activeProfitabilityUtilization,
-                profitabilityCapacityMode
+                capacityMode
               );
+              const targetSellRateBreakdown = profitabilitySellRateBreakdown(
+                assumptions,
+                assumptions.commercial_policy.default_margin_percent,
+                assumptions.commercial_policy.risk_allowance_percent,
+                "target_capacity"
+              );
+              const compareScenarioSellRateBreakdown = profitabilityCompareScenario
+                ? profitabilitySellRateBreakdown(
+                  assumptions,
+                  assumptions.commercial_policy.default_margin_percent,
+                  assumptions.commercial_policy.risk_allowance_percent,
+                  "scenario",
+                  profitabilityScenarioUtilization
+                )
+                : undefined;
               const directPayroll = sellRateBreakdown.directPayroll;
               const overheadMonth = sellRateBreakdown.overheadMonth;
               const targetHoursMonth = sellRateBreakdown.targetHours;
-              const productiveHoursMonth = profitabilityProductiveHoursMonth(assumptions, activeProfitabilityUtilization, profitabilityCapacityMode);
-              const scenarioSoldHours = profitabilitySoldHoursMonth(assumptions, activeProfitabilityUtilization, profitabilityCapacityMode);
+              const productiveHoursMonth = profitabilityProductiveHoursMonth(assumptions, capacityMode);
+              const scenarioSoldHours = profitabilitySoldHoursMonth(assumptions, capacityMode);
               const revenueRows = profitabilityRevenueBreakdownRows(
                 assumptions,
-                activeProfitabilityUtilization,
                 sellRateBreakdown,
+                targetSellRateBreakdown,
                 assumptions.commercial_policy.default_margin_percent,
                 assumptions.commercial_policy.risk_allowance_percent,
-                profitabilityCapacityMode
+                capacityMode,
+                compareScenarioSellRateBreakdown
               );
               const revenueMonth = revenueRows.reduce((sum, row) => sum + row.revenue, 0);
               const requiredRevenueMonth = revenueRows.reduce((sum, row) => sum + row.scenarioHours * row.requiredSellRate, 0);
+              const targetRevenueMonth = revenueRows.reduce((sum, row) => sum + row.scenarioHours * row.targetSellRate, 0);
               const pricedSoldHours = revenueRows.reduce((sum, row) => sum + (row.hasMarketSellRate ? row.scenarioHours : 0), 0);
               const pricedRowCount = revenueRows.filter((row) => row.hasMarketSellRate).length;
               const missingSellRateCount = revenueRows.length - pricedRowCount;
               const hasCompleteSellRates = revenueRows.length > 0 && missingSellRateCount === 0;
               const weightedAverageSellRate = revenueMonth / Math.max(1, pricedSoldHours);
               const weightedAverageRequiredRate = requiredRevenueMonth / Math.max(1, scenarioSoldHours);
+              const weightedAverageTargetRate = targetRevenueMonth / Math.max(1, scenarioSoldHours);
+              const compareScenarioRevenueMonth = profitabilityCompareScenario
+                ? revenueRows.reduce((sum, row) => sum + row.scenarioHours * (row.compareScenarioSellRate ?? 0), 0)
+                : 0;
+              const weightedAverageCompareScenarioRate = compareScenarioRevenueMonth / Math.max(1, scenarioSoldHours);
               const materialMarginMonth = revenueMonth * profitabilityMaterialMarginPercent(assumptions);
               const operatingProfitMonth = revenueMonth + materialMarginMonth - machineDirectCostMonth - directPayroll - overheadMonth;
               const breakEvenUtilization = hasCompleteSellRates ? profitabilityBreakEvenUtilization(assumptions) : null;
@@ -6473,9 +6584,9 @@ function App() {
                     <p className="profitabilityWarning" key={warning}>{warning}</p>
                   ))}
                   <dl className="summary profitabilityInputs">
-                    <div><dt>{profitabilityCapacityMode === "actual_current" ? "Current productive hours/mo" : "Scenario productive hours/mo"}</dt><dd>{Math.round(productiveHoursMonth)} h</dd></div>
-                    <div><dt>{profitabilityCapacityMode === "actual_current" ? "Current sold hours/mo" : "Scenario sold hours/mo"}</dt><dd>{Math.round(scenarioSoldHours)} h</dd></div>
-                    <div><dt>Required cost-plus avg</dt><dd>{money.format(weightedAverageRequiredRate)}/h</dd></div>
+                    <div><dt>Current productive hours/mo</dt><dd>{Math.round(productiveHoursMonth)} h</dd></div>
+                    <div><dt>Current sold hours/mo</dt><dd>{Math.round(scenarioSoldHours)} h</dd></div>
+                    <div><dt>Actual cost-plus avg (weighted)</dt><dd>{money.format(weightedAverageRequiredRate)}/h</dd></div>
                     <div><dt>Market sell-rate coverage</dt><dd>{pricedRowCount}/{revenueRows.length} assets</dd></div>
                     <div><dt>Weighted market sell rate</dt><dd>{pricedSoldHours > 0 ? `${money.format(weightedAverageSellRate)}/h` : "Not set"}</dd></div>
                     <div><dt>Direct payroll/mo</dt><dd>{money.format(directPayroll)}</dd></div>
@@ -6498,24 +6609,24 @@ function App() {
                   </div>
                   <div className="profitabilityTableBlock">
                     <h3>Revenue capacity build-up</h3>
-                    <p className="sectionHelp">This table is the first bridge column as a sum of sellable-capacity asset rows only. Required EUR/h is the cost-plus floor from machine cost, assigned payroll, shared recovery, risk, and margin using the selected capacity basis. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.</p>
-                    <div className="diagnosticTable profitabilityRevenueTable">
-                      <div className="tableHead profitabilityRevenueHead"><span>Asset</span><span>Scenario h/mo</span><span>Machine EUR/h</span><span>Payroll EUR/h</span><span>Shared recovery/h</span><span>Base EUR/h</span><span>Required EUR/h</span><span>Market sell EUR/h</span><span>Revenue/mo</span></div>
+                    <p className="sectionHelp">This table is the first bridge column as a sum of sellable-capacity asset rows only. Actual EUR/h is today's cost-plus floor: machine cost, assigned payroll, shared recovery, risk, and margin at each asset's actual Availability/Utilization -- it can run high while a station sits under-loaded. Target EUR/h is the same formula at each asset's own target Availability/Utilization from Resources -- the floor once that station reaches its designed load, and the number to compare against Market. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.</p>
+                    <div className={`diagnosticTable profitabilityRevenueTable ${profitabilityCompareScenario ? "hasCompareScenario" : ""}`}>
+                      <div className="tableHead profitabilityRevenueHead"><span>Asset</span><span>Actual h/mo</span><span>Machine EUR/h</span><span>Payroll EUR/h</span><span>Shared recovery/h</span><span>Base EUR/h</span><span>Actual EUR/h</span><span>Target EUR/h</span>{profitabilityCompareScenario ? <span>Scenario EUR/h</span> : null}<span>Market sell EUR/h</span><span>Revenue/mo</span></div>
                       {revenueRows.map((row) => {
                         const marketRateClass = !row.hasMarketSellRate
                           ? "rateMissing"
-                          : row.marketSellRate >= row.requiredSellRate
+                          : row.marketSellRate >= row.targetSellRate
                             ? "rateGood"
                             : row.marketSellRate < row.baseRate
                               ? "rateBad"
                               : "rateWarning";
                         const marketRateTitle = !row.hasMarketSellRate
                           ? "No market sell rate set."
-                          : row.marketSellRate >= row.requiredSellRate
-                            ? "Market rate meets or exceeds the required cost-plus rate."
+                          : row.marketSellRate >= row.targetSellRate
+                            ? "Market rate meets or exceeds the required rate at target Utilization/Availability."
                             : row.marketSellRate < row.baseRate
                               ? "Market rate is below base cost recovery before risk and margin."
-                              : "Market rate covers base cost but misses the required risk and margin target.";
+                              : "Market rate covers base cost but misses the required risk and margin target once the station reaches its target Utilization/Availability.";
                         return (
                         <div className="tableRow profitabilityRevenueRow" key={row.id}>
                           <span>{row.name}</span>
@@ -6525,20 +6636,24 @@ function App() {
                           <span>{money.format(row.sharedAllocatedRate)}/h</span>
                           <span>{money.format(row.baseRate)}/h</span>
                           <span>{money.format(row.requiredSellRate)}/h</span>
+                          <span>{money.format(row.targetSellRate)}/h</span>
+                          {profitabilityCompareScenario ? <span>{row.compareScenarioSellRate !== null ? `${money.format(row.compareScenarioSellRate)}/h` : "--"}</span> : null}
                           <span className={marketRateClass} title={marketRateTitle}>{row.hasMarketSellRate ? `${money.format(row.marketSellRate)}/h` : "Not set"}</span>
                           <span>{row.hasMarketSellRate ? money.format(row.revenue) : "--"}</span>
                         </div>
                         );
                       })}
                       <div className="tableRow profitabilityRevenueRow profitabilityTotalRow">
-                        <span>{hasCompleteSellRates ? "Total market revenue capacity" : "Known priced revenue"}</span>
+                        <span title="Rate columns below are hour-weighted averages across sellable stations.">{hasCompleteSellRates ? "Total (hour-weighted avg)" : "Known priced revenue (hour-weighted avg)"}</span>
                         <span>{Math.round(scenarioSoldHours)} h</span>
                         <span></span>
                         <span></span>
                         <span></span>
                         <span></span>
-                        <span>{money.format(weightedAverageRequiredRate)}/h required avg</span>
-                        <span>{hasCompleteSellRates ? `${money.format(weightedAverageSellRate)}/h avg` : `${pricedRowCount}/${revenueRows.length} set`}</span>
+                        <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageRequiredRate)}/h</span>
+                        <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageTargetRate)}/h</span>
+                        {profitabilityCompareScenario ? <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageCompareScenarioRate)}/h</span> : null}
+                        <span title="Hour-weighted average across sellable stations.">{hasCompleteSellRates ? `${money.format(weightedAverageSellRate)}/h` : `${pricedRowCount}/${revenueRows.length} set`}</span>
                         <span>{hasCompleteSellRates ? money.format(revenueMonth) : `${money.format(revenueMonth)} known`}</span>
                       </div>
                     </div>
@@ -6591,7 +6706,7 @@ function App() {
                           const profitAt = profitabilityOperatingProfitAtUtilization(assumptions, utilization);
                           return (
                             <div className="tableRow sensitivityRow" key={utilization}>
-                              <span>{formatPercent(utilization)}%{Math.abs(utilization - activeProfitabilityUtilization) < 0.005 ? (profitabilityCapacityMode === "actual_current" ? " (current actual avg)" : " (current scenario)") : ""}</span>
+                              <span>{formatPercent(utilization)}%{Math.abs(utilization - averageActualUtilization(assumptions)) < 0.005 ? " (current actual avg)" : ""}</span>
                               <span className={profitAt >= 0 ? "decisionGood" : "decisionBad"}>{money.format(profitAt)}</span>
                             </div>
                           );

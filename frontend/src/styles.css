@@ -1982,38 +1982,20 @@ input[readonly] {
   flex-wrap: wrap;
 }
 
-.modeSwitch {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: 14px;
-  border: 1px solid #a9b3bd;
-  border-radius: 8px;
-  background: #eef2f5;
-}
-
-.modeButton {
-  min-height: 34px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #34404a;
-  padding: 0 12px;
+.compareScenarioToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-weight: 700;
+  color: #2f3a44;
   cursor: pointer;
 }
 
-.modeButton.active {
-  background: #ffffff;
-  color: #17212b;
-  box-shadow: 0 1px 4px rgba(18, 28, 38, 0.14);
-}
-
-.modeButton:hover {
-  background: #dde5ec;
-}
-
-.modeButton.active:hover {
-  background: #ffffff;
+.compareScenarioToggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .profitBridgeLegend {
@@ -2557,6 +2539,49 @@ input[readonly] {
   background: #8f9aa5;
 }
 
+.marketConfidenceInput {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.marketConfidenceInput select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.marketConfidenceDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(32 37 43 / 28%);
+  display: inline-block;
+  flex: none;
+}
+
+.marketConfidenceDot.confirmed {
+  background: #2f8f4e;
+}
+
+.marketConfidenceDot.singlePoint {
+  background: #d6a529;
+}
+
+.marketConfidenceDot.buyerDisclosed {
+  background: #2f6fbd;
+}
+
+.marketConfidenceDot.unverified {
+  background: #8f9aa5;
+}
+
 .marketRatePage {
   display: grid;
   gap: 20px;
@@ -2631,12 +2656,12 @@ input[readonly] {
   grid-template-columns:
     minmax(180px, 1fr)
     minmax(100px, 0.45fr)
-    minmax(150px, 0.72fr)
-    minmax(130px, 0.58fr)
-    minmax(120px, 0.54fr)
+    minmax(150px, 0.68fr)
+    minmax(210px, 0.85fr)
+    minmax(120px, 0.5fr)
     minmax(220px, 1.1fr)
     48px;
-  min-width: 980px;
+  min-width: 1060px;
 }
 
 .marketRouteHead,
@@ -2928,9 +2953,10 @@ input[readonly] {
     minmax(108px, 0.55fr)
     minmax(88px, 0.45fr)
     minmax(98px, 0.5fr)
+    minmax(98px, 0.5fr)
     minmax(116px, 0.58fr)
     minmax(110px, 0.56fr);
-  min-width: 1020px;
+  min-width: 1120px;
   gap: 0;
 }
 
@@ -2974,16 +3000,56 @@ input[readonly] {
 .profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(7),
 .profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(8),
 .profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(9),
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(10),
 .profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(7),
 .profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(8),
-.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9) {
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(10) {
   background: #cbd8e0;
 }
 
-.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(8),
 .profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(9),
-.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(8),
-.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9) {
+.profitabilityRevenueTable .profitabilityRevenueHead > span:nth-child(10),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(9),
+.profitabilityRevenueTable .profitabilityRevenueRow > span:nth-child(10) {
+  background: #c3d2dc;
+  font-weight: 800;
+}
+
+.profitabilityRevenueTable.hasCompareScenario > .profitabilityRevenueHead,
+.profitabilityRevenueTable.hasCompareScenario > .profitabilityRevenueRow {
+  grid-template-columns:
+    minmax(150px, 1.1fr)
+    minmax(82px, 0.42fr)
+    minmax(90px, 0.46fr)
+    minmax(90px, 0.46fr)
+    minmax(108px, 0.55fr)
+    minmax(88px, 0.45fr)
+    minmax(98px, 0.5fr)
+    minmax(98px, 0.5fr)
+    minmax(98px, 0.5fr)
+    minmax(116px, 0.58fr)
+    minmax(110px, 0.56fr);
+  min-width: 1220px;
+}
+
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(7),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(8),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(9),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(10),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(11),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(7),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(8),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(9),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(10),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(11) {
+  background: #cbd8e0;
+}
+
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(10),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueHead > span:nth-child(11),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(10),
+.profitabilityRevenueTable.hasCompareScenario .profitabilityRevenueRow > span:nth-child(11) {
   background: #c3d2dc;
   font-weight: 800;
 }
@@ -3065,28 +3131,6 @@ input[readonly] {
 
 .capacityBasisGrid input {
   align-self: end;
-}
-
-.modeSwitch {
-  background: #d4dbe2;
-  border-color: #98a4af;
-}
-
-.modeButton {
-  background: #c8d0d8;
-  color: #2f3a44;
-  font-weight: 700;
-}
-
-.modeButton.active {
-  background: #aeb8c2;
-  color: #17212b;
-  box-shadow: inset 0 0 0 1px #87939f;
-}
-
-.modeButton:hover,
-.modeButton.active:hover {
-  background: #b9c3cc;
 }
 
 .breakEvenCallout {
