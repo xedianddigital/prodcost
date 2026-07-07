@@ -101,7 +101,26 @@ Interpretation:
 - If market price is below required sell price but above true cost, it may still contribute to overhead or fill spare capacity.
 - If market price is below true production cost, accepting it creates a loss unless there is a specific strategic reason.
 
-### 4. Asset Mapping to Profitability
+### 4. Basket Evidence Solver
+
+Use this section instead of the single-quote backsolve when you want to bootstrap or cross-check a whole rate card from several real competitor quotes at once, rather than sanity-checking one order.
+
+The single-quote backsolve above only works if you already trust every other class's card rate -- it subtracts their assumed revenue and solves the one remaining class as a residual. It cannot bootstrap a card from zero, and it cannot separate a fixed per-order engineering/admin charge from an hourly rate, because a single order gives you only one equation.
+
+The basket solver fits one shared batch/engineering charge plus one market EUR/h per pricing class jointly across every row, by least squares. More rows than pricing classes used lets the fixed charge and the hourly rates come out separately instead of being tangled together.
+
+How to build a basket:
+
+1. Upload a competitor quote PDF and click **Extract Line Items**. This reads the PDF's embedded text and asks an LLM to pull out supplier, date, currency, and each line item's part name, quantity, unit price, and line total -- never a guess, only what is explicitly present in the text. Fields not found come back blank for you to fill in.
+   - This pass is text-only: it works for digital/native PDFs. A scanned or image-only PDF will extract nothing; add that row manually instead. (A vision-model fallback for scanned quotes is a documented future addition, not built yet.)
+2. Or click **Add Row Manually** to start a row from scratch.
+3. For every row, fill in (or correct) the quantity, the total sell price for the full row quantity (not per-piece), and your own **material sell estimate** -- the competitor's PDF will not reliably itemize this, so it's always your estimate from your own routings/BOM, same as the backsolve panel above.
+4. Add one route-hours entry per pricing class the row actually used, with total hours for the row's full quantity (same convention as "How To Enter Route Hours" above).
+5. Click **Save** on a row once it looks right, so it persists across sessions.
+6. Once you have more solvable rows (quantity, sell price, material estimate, and route hours all present) than pricing classes in use, click **Solve Basket**. Review the solved batch charge and per-class EUR/h, and check for any row flagged "off-model" -- a large residual there means that row doesn't fit the shared model well (mixed evidence quality, a misclassified operation, or a genuine outlier) and is worth a second look before trusting the card.
+7. Click **Apply Solved Rates to Card** to write the solved per-class rates into the Market Rate Card above (only classes with a positive solved rate are touched). Then **Save Rate Card** as usual to persist.
+
+### 5. Asset Mapping to Profitability
 
 Map each machine asset to a pricing class.
 

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.assumptions import router as assumptions_router
 from app.api.company_profiles import router as company_profiles_router
 from app.api.erp import router as erp_router
+from app.api.market_evidence import router as market_evidence_router
 from app.api.quote_drafts import router as quote_drafts_router
 from app.api.quotes import router as quotes_router
 
@@ -13,6 +14,7 @@ app.include_router(company_profiles_router, prefix="/api")
 app.include_router(quotes_router, prefix="/api")
 app.include_router(quote_drafts_router, prefix="/api")
 app.include_router(erp_router, prefix="/api")
+app.include_router(market_evidence_router, prefix="/api")
 
 
 @app.get("/health")

@@ -92,6 +92,18 @@ textarea {
   color: #b7e3ef;
 }
 
+.languageToggle {
+  flex-shrink: 0;
+}
+
+.languageToggle .mode {
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
 .workspace {
   padding: 28px;
   display: grid;
@@ -379,6 +391,7 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .primaryButton {
@@ -400,6 +413,23 @@ textarea:focus {
 
 .secondaryButton:hover {
   background: #b1bac4;
+}
+
+/* Latvian button/label text runs ~10-20% longer than English on average (and up to ~60%
+   longer for some multi-word phrases). Shrinking font-size and padding slightly in LV mode
+   claws back most of that so buttons wrap to extra rows/lines at the same rate in both
+   languages, instead of the page layout shifting when the language is switched. */
+.lang-lv .primaryButton,
+.lang-lv .secondaryButton {
+  font-size: 12.5px;
+  padding-left: 11px;
+  padding-right: 11px;
+  gap: 6px;
+}
+
+.lang-lv .navItem {
+  font-size: 13.5px;
+  gap: 8px;
 }
 
 .linkButton {
@@ -2685,6 +2715,48 @@ input[readonly] {
     minmax(150px, 0.58fr)
     minmax(100px, 0.4fr);
   min-width: 920px;
+}
+
+.marketBasketTable {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.marketBasketHead,
+.marketBasketRow {
+  grid-template-columns:
+    minmax(180px, 1.1fr)
+    minmax(90px, 0.4fr)
+    minmax(130px, 0.55fr)
+    minmax(130px, 0.55fr)
+    minmax(220px, 1fr)
+    minmax(140px, 0.6fr)
+    minmax(120px, 0.5fr);
+  min-width: 1050px;
+}
+
+.marketBasketRow {
+  align-items: start;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.marketBasketRowMain {
+  display: grid;
+  gap: 4px;
+}
+
+.marketBasketHoursCell {
+  display: grid;
+  gap: 6px;
+}
+
+.marketBasketHourRow {
+  display: grid;
+  grid-template-columns: 1fr 80px 28px;
+  gap: 6px;
+  align-items: center;
 }
 
 .marketRateCardRow,

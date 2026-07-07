@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { LANGUAGE_STORAGE_KEY, Language, translate } from "./i18n";
 import {
   BookOpen,
   Building2,
@@ -435,12 +436,12 @@ type MarketRateCardEntry = {
   lastUpdated: string;
 };
 
-function marketConfidenceLabel(value: string) {
+function marketConfidenceLabel(value: string, lang: Language) {
   const labels: Record<string, string> = {
-    unverified: "Unverified / placeholder",
-    single_data_point: "Single data point",
-    buyer_disclosed: "Buyer-disclosed (soft ceiling)",
-    confirmed_multiple: "Confirmed (2+ sources)"
+    unverified: translate("Unverified / placeholder", lang),
+    single_data_point: translate("Single data point", lang),
+    buyer_disclosed: translate("Buyer-disclosed (soft ceiling)", lang),
+    confirmed_multiple: translate("Confirmed (2+ sources)", lang)
   };
   return labels[value] ?? value.replace(/_/g, " ");
 }
@@ -452,15 +453,15 @@ function marketConfidenceClass(value: string) {
   return "unverified";
 }
 
-function MarketConfidenceInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function MarketConfidenceInput({ value, onChange, lang }: { value: string; onChange: (value: string) => void; lang: Language }) {
   return (
-    <span className="marketConfidenceInput" title={marketConfidenceLabel(value)}>
+    <span className="marketConfidenceInput" title={marketConfidenceLabel(value, lang)}>
       <span className={`marketConfidenceDot ${marketConfidenceClass(value)}`} />
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="unverified">Unverified / placeholder</option>
-        <option value="single_data_point">Single data point</option>
-        <option value="buyer_disclosed">Buyer-disclosed (soft ceiling)</option>
-        <option value="confirmed_multiple">Confirmed (2+ sources)</option>
+        <option value="unverified">{translate("Unverified / placeholder", lang)}</option>
+        <option value="single_data_point">{translate("Single data point", lang)}</option>
+        <option value="buyer_disclosed">{translate("Buyer-disclosed (soft ceiling)", lang)}</option>
+        <option value="confirmed_multiple">{translate("Confirmed (2+ sources)", lang)}</option>
       </select>
     </span>
   );
@@ -471,6 +472,164 @@ type MarketEvidenceRouteRow = {
   marketRateClassId: string;
   hours: number;
 };
+
+type BasketRow = {
+  id: string;
+  source: "pdf_extraction" | "manual";
+  pdfFilename: string | null;
+  supplier: string | null;
+  quoteDate: string | null;
+  currency: string | null;
+  partName: string;
+  quantity: number | null;
+  unitPriceEur: number | null;
+  lineTotalEur: number | null;
+  materialSellEur: number | null;
+  routeHours: MarketEvidenceRouteRow[];
+  notes: string;
+};
+
+// Server persists snake_case; the UI works in camelCase, matching the rest of this file's
+// convention for assumptions/company-profile payloads.
+function basketRowFromApi(row: any): BasketRow {
+  return {
+    id: row.id,
+    source: row.source,
+    pdfFilename: row.pdf_filename ?? null,
+    supplier: row.supplier ?? null,
+    quoteDate: row.quote_date ?? null,
+    currency: row.currency ?? null,
+    partName: row.part_name ?? "",
+    quantity: row.quantity ?? null,
+    unitPriceEur: row.unit_price_eur ?? null,
+    lineTotalEur: row.line_total_eur ?? null,
+    materialSellEur: row.material_sell_eur ?? null,
+    routeHours: (row.route_hours ?? []).map((entry: any, index: number) => ({
+      id: `${row.id}_hours_${index}`,
+      marketRateClassId: entry.market_rate_class_id,
+      hours: entry.hours
+    })),
+    notes: row.notes ?? ""
+  };
+}
+
+function basketRowToApiPayload(row: BasketRow) {
+  return {
+    source: row.source,
+    pdf_filename: row.pdfFilename,
+    supplier: row.supplier,
+    quote_date: row.quoteDate,
+    currency: row.currency,
+    part_name: row.partName,
+    quantity: row.quantity,
+    unit_price_eur: row.unitPriceEur,
+    line_total_eur: row.lineTotalEur,
+    material_sell_eur: row.materialSellEur,
+    route_hours: row.routeHours.map((entry) => ({
+      market_rate_class_id: entry.marketRateClassId,
+      hours: entry.hours
+    })),
+    notes: row.notes
+  };
+}
+
+function basketRowTotalSellEur(row: BasketRow): number | null {
+  if (row.lineTotalEur != null) return row.lineTotalEur;
+  if (row.unitPriceEur != null && row.quantity != null) return row.unitPriceEur * row.quantity;
+  return null;
+}
+
+function basketRowIsSolvable(row: BasketRow): boolean {
+  const total = basketRowTotalSellEur(row);
+  const hoursSum = row.routeHours.reduce((sum, entry) => sum + Math.max(0, entry.hours || 0), 0);
+  return (
+    row.quantity != null &&
+    row.quantity > 0 &&
+    total != null &&
+    row.materialSellEur != null &&
+    hoursSum > 0
+  );
+}
+
+// Solves a small linear least-squares system Ax = b via Gaussian elimination with partial
+// pivoting on the normal equations (A^T A) x = A^T b. No linear-algebra dependency exists in
+// this frontend (only react/lucide-react) and the systems here are tiny (a handful of pricing
+// classes plus one batch-charge unknown), so a hand-rolled solver is simplest.
+function solveLeastSquares(designMatrix: number[][], target: number[]): number[] | null {
+  const unknownCount = designMatrix[0]?.length ?? 0;
+  if (unknownCount === 0) return null;
+
+  const ata: number[][] = Array.from({ length: unknownCount }, () => new Array(unknownCount).fill(0));
+  const atb: number[] = new Array(unknownCount).fill(0);
+
+  for (let rowIndex = 0; rowIndex < designMatrix.length; rowIndex++) {
+    const row = designMatrix[rowIndex];
+    for (let i = 0; i < unknownCount; i++) {
+      atb[i] += row[i] * target[rowIndex];
+      for (let j = 0; j < unknownCount; j++) {
+        ata[i][j] += row[i] * row[j];
+      }
+    }
+  }
+
+  // Gaussian elimination with partial pivoting on the augmented [ata | atb] system.
+  const augmented = ata.map((row, i) => [...row, atb[i]]);
+  for (let col = 0; col < unknownCount; col++) {
+    let pivotRow = col;
+    for (let row = col + 1; row < unknownCount; row++) {
+      if (Math.abs(augmented[row][col]) > Math.abs(augmented[pivotRow][col])) pivotRow = row;
+    }
+    if (Math.abs(augmented[pivotRow][col]) < 1e-9) return null;
+    [augmented[col], augmented[pivotRow]] = [augmented[pivotRow], augmented[col]];
+
+    for (let row = 0; row < unknownCount; row++) {
+      if (row === col) continue;
+      const factor = augmented[row][col] / augmented[col][col];
+      for (let k = col; k <= unknownCount; k++) {
+        augmented[row][k] -= factor * augmented[col][k];
+      }
+    }
+  }
+
+  return augmented.map((row, i) => row[unknownCount] / row[i]);
+}
+
+type BasketSolveResult = {
+  batchChargeEur: number;
+  ratesByClassId: Record<string, number>;
+  residualsByRowId: Record<string, number>;
+};
+
+function solveBasketRates(rows: BasketRow[]): BasketSolveResult | null {
+  const solvableRows = rows.filter(basketRowIsSolvable);
+  const classIds = Array.from(
+    new Set(solvableRows.flatMap((row) => row.routeHours.map((entry) => entry.marketRateClassId)))
+  );
+  if (solvableRows.length === 0 || classIds.length === 0 || solvableRows.length < classIds.length + 1) return null;
+
+  const designMatrix = solvableRows.map((row) => {
+    const hoursByClass = new Map(row.routeHours.map((entry) => [entry.marketRateClassId, entry.hours]));
+    return [1, ...classIds.map((classId) => hoursByClass.get(classId) ?? 0)];
+  });
+  const target = solvableRows.map((row) => basketRowTotalSellEur(row)! - row.materialSellEur!);
+
+  const solution = solveLeastSquares(designMatrix, target);
+  if (!solution) return null;
+
+  const [batchChargeEur, ...classRates] = solution;
+  const ratesByClassId: Record<string, number> = {};
+  classIds.forEach((classId, index) => {
+    ratesByClassId[classId] = classRates[index];
+  });
+
+  const residualsByRowId: Record<string, number> = {};
+  solvableRows.forEach((row, index) => {
+    const predicted = designMatrix[index].reduce((sum, coeff, i) => sum + coeff * solution[i], 0);
+    residualsByRowId[row.id] = target[index] - predicted;
+  });
+
+  return { batchChargeEur, ratesByClassId, residualsByRowId };
+}
 
 type CalibrationCandidate = {
   operationType: string;
@@ -564,14 +723,14 @@ function normalizeDisplayDate(value: string) {
   return trimmed;
 }
 
-function dataStatusLabel(value: string) {
+function dataStatusLabel(value: string, lang: Language) {
   const labels: Record<string, string> = {
-    measured: "Measured",
-    company_estimate: "Company approved",
-    industry_estimate: "Generic estimate",
-    public_proxy: "Public proxy",
-    portal_preliminary: "Preliminary",
-    unknown: "Unknown"
+    measured: translate("Measured", lang),
+    company_estimate: translate("Company approved", lang),
+    industry_estimate: translate("Generic estimate", lang),
+    public_proxy: translate("Public proxy", lang),
+    portal_preliminary: translate("Preliminary", lang),
+    unknown: translate("Unknown", lang)
   };
   return labels[value] ?? value.replace(/_/g, " ");
 }
@@ -584,10 +743,10 @@ function dataStatusClass(value: string) {
   return "unknown";
 }
 
-function DataStatusInput({ value }: { value: string; onChange: (value: string) => void }) {
-  const label = dataStatusLabel(value);
+function DataStatusInput({ value, lang }: { value: string; onChange: (value: string) => void; lang: Language }) {
+  const label = dataStatusLabel(value, lang);
   return (
-    <span className="dataStatusInput" title={label} aria-label={`Data status: ${label}`}>
+    <span className="dataStatusInput" title={label} aria-label={`${translate("Data status", lang)}: ${label}`}>
       <span className={`dataStatusDot ${dataStatusClass(value)}`} />
     </span>
   );
@@ -1960,8 +2119,9 @@ function ProfitBridgeChart({
   directPayroll,
   overhead,
   operatingProfit,
-  revenueLabel = "Revenue capacity",
-  resultLabel
+  revenueLabel,
+  resultLabel,
+  lang
 }: {
   revenue: number;
   machineDirectCost: number;
@@ -1970,7 +2130,10 @@ function ProfitBridgeChart({
   operatingProfit: number;
   revenueLabel?: string;
   resultLabel?: string;
+  lang: Language;
 }) {
+  const t = (text: string) => translate(text, lang);
+  const revenueLabelText = revenueLabel ?? t("Revenue capacity");
   const chartHeight = 220;
   const afterMachineCost = revenue - machineDirectCost;
   const afterDirectPayroll = afterMachineCost - directPayroll;
@@ -1998,39 +2161,39 @@ function ProfitBridgeChart({
   return (
     <div className="profitBridge">
       <div className="profitBridgeLegend">
-        <span><span className="swatch add" /> Adds</span>
-        <span><span className="swatch subtract" /> Subtracts</span>
-        <span><span className="swatch result-good" /> Result (profit)</span>
-        <span><span className="swatch result-bad" /> Result (loss)</span>
+        <span><span className="swatch add" /> {t("Adds")}</span>
+        <span><span className="swatch subtract" /> {t("Subtracts")}</span>
+        <span><span className="swatch result-good" /> {t("Result (profit)")}</span>
+        <span><span className="swatch result-bad" /> {t("Result (loss)")}</span>
       </div>
       <div className="profitBridgeChart" style={{ height: chartHeight }}>
         <div className="profitBridgeZeroLine" style={{ top: zeroLinePx }} />
         <div className="profitBridgeColumn">
           <div className="profitBridgeBar add" style={{ top: revenueSeg.top, height: revenueSeg.height }} />
           <span className="profitBridgeValue" style={{ top: revenueSeg.top - 20 }}>{money.format(revenue)}</span>
-          <span className="profitBridgeLabel">{revenueLabel}</span>
+          <span className="profitBridgeLabel">{revenueLabelText}</span>
         </div>
         <div className="profitBridgeColumn">
           <div className="profitBridgeBar subtract" style={{ top: machineCostSeg.top, height: machineCostSeg.height }} />
           <span className="profitBridgeValue" style={{ top: machineCostSeg.top - 20 }}>-{money.format(machineDirectCost)}</span>
-          <span className="profitBridgeLabel">Machine direct cost</span>
+          <span className="profitBridgeLabel">{t("Machine direct cost")}</span>
         </div>
         <div className="profitBridgeColumn">
           <div className="profitBridgeBar subtract" style={{ top: directPayrollSeg.top, height: directPayrollSeg.height }} />
           <span className="profitBridgeValue" style={{ top: directPayrollSeg.top - 20 }}>-{money.format(directPayroll)}</span>
-          <span className="profitBridgeLabel">Direct payroll/mo</span>
+          <span className="profitBridgeLabel">{t("Direct payroll/mo")}</span>
         </div>
         <div className="profitBridgeColumn">
           <div className="profitBridgeBar subtract" style={{ top: overheadSeg.top, height: overheadSeg.height }} />
           <span className="profitBridgeValue" style={{ top: overheadSeg.top - 20 }}>-{money.format(overhead)}</span>
-          <span className="profitBridgeLabel">Overhead</span>
+          <span className="profitBridgeLabel">{t("Overhead")}</span>
         </div>
         <div className="profitBridgeColumn">
           <div className={`profitBridgeBar ${isProfit ? "result-good" : "result-bad"}`} style={{ top: totalSeg.top, height: totalSeg.height }} />
           <span className="profitBridgeValue" style={{ top: totalSeg.top - 20 }}>{money.format(operatingProfit)}</span>
           <span className="profitBridgeLabel">
             {isProfit ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {resultLabel ?? (isProfit ? "Operating profit" : "Operating loss")}
+            {resultLabel ?? (isProfit ? t("Operating profit") : t("Operating loss"))}
           </span>
         </div>
       </div>
@@ -2051,7 +2214,8 @@ function PrintableQuote({
   rfqReference,
   stockName,
   targetResult,
-  validityDate
+  validityDate,
+  lang
 }: {
   assumptions: Assumptions | null;
   customerName: string;
@@ -2066,39 +2230,41 @@ function PrintableQuote({
   stockName: string;
   targetResult: QuoteResult | null;
   validityDate: string;
+  lang: Language;
 }) {
   const generatedAt = new Date().toLocaleString("en-GB");
+  const t = (text: string) => translate(text, lang);
 
   return (
     <section className="printPage">
       <header className="printHeader">
         <div>
-          <h1>{quoteNumber || "Customer Offer"}</h1>
-          <p>{partName} | Quantity {quantity}</p>
-          <p>{customerName || "No customer entered"}{rfqReference ? ` | RFQ ${rfqReference}` : ""}</p>
+          <h1>{quoteNumber || t("Customer Offer")}</h1>
+          <p>{partName} | {t("Quantity")} {quantity}</p>
+          <p>{customerName || t("No customer entered")}{rfqReference ? ` | ${t("RFQ")} ${rfqReference}` : ""}</p>
         </div>
         <div className="printMeta">
-          <span>Generated {generatedAt}</span>
-          <span>Valid until {validityDate || "not set"}</span>
-          <span>Delivery {deliveryEstimate || "not set"}</span>
-          <span>{paymentTerms || "Payment terms not set"}</span>
-          <span>Customer Offer</span>
-          <span>Formula {assumptions?.formula_version ?? "costing.v0.2"}</span>
+          <span>{t("Generated")} {generatedAt}</span>
+          <span>{t("Valid until")} {validityDate || t("not set")}</span>
+          <span>{t("Delivery")} {deliveryEstimate || t("not set")}</span>
+          <span>{paymentTerms || t("Payment terms not set")}</span>
+          <span>{t("Customer Offer")}</span>
+          <span>{t("Formula")} {assumptions?.formula_version ?? "costing.v0.2"}</span>
         </div>
       </header>
 
       <section className="printSummaryGrid">
-        <div><span>Material stock</span><strong>{stockName}</strong></div>
-        <div><span>Target sell price</span><strong>{targetResult ? money.format(targetResult.sell_price_eur) : "Not calculated"}</strong></div>
-        <div><span>Target unit price</span><strong>{targetResult ? money.format(targetResult.unit_sell_price_eur) : "Not calculated"}</strong></div>
-        <div><span>Missing-tool cost (separate from outsourced)</span><strong>{targetResult ? money.format(targetResult.missing_tool_cost_eur) : "Not calculated"}</strong></div>
+        <div><span>{t("Material stock")}</span><strong>{stockName}</strong></div>
+        <div><span>{t("Target sell price")}</span><strong>{targetResult ? money.format(targetResult.sell_price_eur) : t("Not calculated")}</strong></div>
+        <div><span>{t("Target unit price")}</span><strong>{targetResult ? money.format(targetResult.unit_sell_price_eur) : t("Not calculated")}</strong></div>
+        <div><span>{t("Missing-tool cost (separate from outsourced)")}</span><strong>{targetResult ? money.format(targetResult.missing_tool_cost_eur) : t("Not calculated")}</strong></div>
       </section>
 
       <section className="printSection">
-        <h2>Quantity Pricing</h2>
+        <h2>{t("Quantity Pricing")}</h2>
         <table>
           <thead>
-            <tr><th>Qty, pcs</th><th>Total price, EUR</th><th>Unit price, EUR/pc</th></tr>
+            <tr><th>{t("Qty, pcs")}</th><th>{t("Total price, EUR")}</th><th>{t("Unit price, EUR/pc")}</th></tr>
           </thead>
           <tbody>
             {quantityBreakResults.map((item) => (
@@ -2113,9 +2279,9 @@ function PrintableQuote({
       </section>
 
       <section className="printSection">
-        <h2>Route</h2>
+        <h2>{t("Route")}</h2>
         <table>
-          <thead><tr><th>Operation</th><th>Machine</th><th>Labor</th><th>Setup, min</th><th>Cycle, min/part</th></tr></thead>
+          <thead><tr><th>{t("Operation")}</th><th>{t("Machine")}</th><th>{t("Labor")}</th><th>{t("Setup, min")}</th><th>{t("Cycle, min/part")}</th></tr></thead>
           <tbody>
             {quoteOperations.map((operation) => (
               <tr key={operation.id}>
@@ -2131,14 +2297,22 @@ function PrintableQuote({
       </section>
 
       <section className="printSection">
-        <h2>Commercial Notes</h2>
-        <p>This offer is based on the supplied RFQ information and current assumptions. Internal cost breakdowns and accounting-rate comparison are intentionally excluded.</p>
+        <h2>{t("Commercial Notes")}</h2>
+        <p>{t("This offer is based on the supplied RFQ information and current assumptions. Internal cost breakdowns and accounting-rate comparison are intentionally excluded.")}</p>
       </section>
     </section>
   );
 }
 
 function App() {
+  const [language, setLanguage] = useState<Language>(
+    () => (localStorage.getItem(LANGUAGE_STORAGE_KEY) as Language | null) ?? "en"
+  );
+  useEffect(() => {
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+  const t = (text: string) => translate(text, language);
+
   const [activeView, setActiveView] = useState<View>("profile");
   // The quote starts empty on purpose: nothing on the page should look like real data
   // until the user enters it or explicitly loads the demo RFQ / an ERP part / a draft.
@@ -2220,6 +2394,11 @@ function App() {
   const [marketEvidenceRows, setMarketEvidenceRows] = useState<MarketEvidenceRouteRow[]>([
     { id: "market_route_row_1", marketRateClassId: "cnc", hours: 1 }
   ]);
+  const [basketRows, setBasketRows] = useState<BasketRow[]>([]);
+  const [basketStatus, setBasketStatus] = useState("");
+  const [basketSolveResult, setBasketSolveResult] = useState<BasketSolveResult | null>(null);
+  const [basketPdfFile, setBasketPdfFile] = useState<File | null>(null);
+  const [basketExtracting, setBasketExtracting] = useState(false);
   const [assumptionStatus, setAssumptionStatus] = useState("Loading assumptions...");
   const [pendingCalibration, setPendingCalibration] = useState<CalibrationCandidate[] | null>(null);
   const [calibrationConfirmations, setCalibrationConfirmations] = useState<Record<string, boolean>>({});
@@ -2293,6 +2472,32 @@ function App() {
     }
 
     loadDrafts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBasketRows() {
+      try {
+        const response = await fetch("/api/market-evidence/basket-rows");
+        if (!response.ok) {
+          throw new Error(`Basket row list returned ${response.status}`);
+        }
+        const data = (await response.json()) as any[];
+        if (!cancelled) {
+          setBasketRows(data.map(basketRowFromApi));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBasketStatus(error instanceof Error ? error.message : "Failed to load basket rows");
+        }
+      }
+    }
+
+    loadBasketRows();
     return () => {
       cancelled = true;
     };
@@ -3810,6 +4015,179 @@ function App() {
     setAssumptionStatus(`Copied blended ${money.format(impliedRate)}/h to ${usedClassIds.length} route pricing class${usedClassIds.length === 1 ? "" : "es"}. Bind the card to the loaded profile before applying to Profitability.`);
   }
 
+  function addBasketRow(draft?: Partial<BasketRow>) {
+    const firstClass = assumptions ? marketRateCardEntries(assumptions)[0]?.id ?? "cnc" : "cnc";
+    const localId = `basket_draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setBasketRows((current) => [
+      ...current,
+      {
+        id: localId,
+        source: "manual",
+        pdfFilename: null,
+        supplier: null,
+        quoteDate: null,
+        currency: null,
+        partName: "",
+        quantity: null,
+        unitPriceEur: null,
+        lineTotalEur: null,
+        materialSellEur: null,
+        routeHours: [{ id: `${localId}_hours_0`, marketRateClassId: firstClass, hours: 0 }],
+        notes: "",
+        ...draft
+      }
+    ]);
+  }
+
+  function updateBasketRow(index: number, field: keyof BasketRow, value: unknown) {
+    setBasketRows((current) => replaceArrayItem(current, index, { ...current[index], [field]: value }));
+  }
+
+  function addBasketRowHourEntry(rowIndex: number) {
+    const firstClass = assumptions ? marketRateCardEntries(assumptions)[0]?.id ?? "cnc" : "cnc";
+    setBasketRows((current) => replaceArrayItem(current, rowIndex, {
+      ...current[rowIndex],
+      routeHours: [
+        ...current[rowIndex].routeHours,
+        { id: `${current[rowIndex].id}_hours_${Date.now()}`, marketRateClassId: firstClass, hours: 0 }
+      ]
+    }));
+  }
+
+  function updateBasketRowHourEntry(rowIndex: number, hourIndex: number, field: keyof MarketEvidenceRouteRow, value: string | number) {
+    setBasketRows((current) => {
+      const row = current[rowIndex];
+      const nextHours = replaceArrayItem(row.routeHours, hourIndex, { ...row.routeHours[hourIndex], [field]: value });
+      return replaceArrayItem(current, rowIndex, { ...row, routeHours: nextHours });
+    });
+  }
+
+  function removeBasketRowHourEntry(rowIndex: number, hourIndex: number) {
+    setBasketRows((current) => {
+      const row = current[rowIndex];
+      return replaceArrayItem(current, rowIndex, {
+        ...row,
+        routeHours: row.routeHours.filter((_, i) => i !== hourIndex)
+      });
+    });
+  }
+
+  async function saveBasketRow(index: number) {
+    const row = basketRows[index];
+    try {
+      const isNew = row.id.startsWith("basket_draft_");
+      const response = await fetch(
+        isNew ? "/api/market-evidence/basket-rows" : `/api/market-evidence/basket-rows/${row.id}`,
+        {
+          method: isNew ? "POST" : "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(basketRowToApiPayload(row))
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`Basket row save returned ${response.status}`);
+      }
+      const saved = basketRowFromApi(await response.json());
+      setBasketRows((current) => replaceArrayItem(current, index, saved));
+      setBasketStatus(`Saved ${saved.partName || "row"}.`);
+    } catch (error) {
+      setBasketStatus(error instanceof Error ? error.message : "Basket row save failed");
+    }
+  }
+
+  async function deleteBasketRow(index: number) {
+    const row = basketRows[index];
+    try {
+      if (!row.id.startsWith("basket_draft_")) {
+        const response = await fetch(`/api/market-evidence/basket-rows/${row.id}`, { method: "DELETE" });
+        if (!response.ok) {
+          throw new Error(`Basket row delete returned ${response.status}`);
+        }
+      }
+      setBasketRows((current) => current.filter((_, i) => i !== index));
+      setBasketSolveResult(null);
+      setBasketStatus("Row removed.");
+    } catch (error) {
+      setBasketStatus(error instanceof Error ? error.message : "Basket row delete failed");
+    }
+  }
+
+  async function extractBasketPdf() {
+    if (!basketPdfFile) {
+      setBasketStatus("Choose a PDF first.");
+      return;
+    }
+    setBasketExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", basketPdfFile);
+      const response = await fetch("/api/market-evidence/extract-quote", { method: "POST", body: formData });
+      if (!response.ok) {
+        throw new Error(`Quote extraction returned ${response.status}`);
+      }
+      const extraction = await response.json() as {
+        supplier: string | null;
+        quote_date: string | null;
+        currency: string | null;
+        batch_charge_eur: number | null;
+        line_items: { part_name: string | null; quantity: number | null; unit_price: number | null; line_total: number | null }[];
+      };
+      const items = extraction.line_items.length > 0 ? extraction.line_items : [{ part_name: null, quantity: null, unit_price: null, line_total: null }];
+      for (const item of items) {
+        addBasketRow({
+          source: "pdf_extraction",
+          pdfFilename: basketPdfFile.name,
+          supplier: extraction.supplier,
+          quoteDate: extraction.quote_date,
+          currency: extraction.currency,
+          partName: item.part_name ?? "",
+          quantity: item.quantity,
+          unitPriceEur: item.unit_price,
+          lineTotalEur: item.line_total
+        });
+      }
+      setBasketStatus(`Extracted ${items.length} line item${items.length === 1 ? "" : "s"} from ${basketPdfFile.name}. Review and fill in material estimate + route hours before solving.`);
+      setBasketPdfFile(null);
+    } catch (error) {
+      setBasketStatus(error instanceof Error ? error.message : "Quote extraction failed");
+    } finally {
+      setBasketExtracting(false);
+    }
+  }
+
+  function solveBasket() {
+    const result = solveBasketRates(basketRows);
+    if (!result) {
+      setBasketStatus("Not enough solvable rows yet. Each row needs quantity, sell price, material estimate, and route hours; you need more solvable rows than pricing classes used.");
+      setBasketSolveResult(null);
+      return;
+    }
+    setBasketSolveResult(result);
+    setBasketStatus(`Solved across ${basketRows.filter(basketRowIsSolvable).length} rows.`);
+  }
+
+  function applyBasketRatesToCard() {
+    if (!assumptions || !basketSolveResult) {
+      setAssumptionStatus("Solve the basket before applying rates to the card.");
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = marketRateCardEntries(assumptions).map((entry) => {
+      const solvedRate = basketSolveResult.ratesByClassId[entry.id];
+      if (solvedRate === undefined || !Number.isFinite(solvedRate) || solvedRate <= 0) return entry;
+      return {
+        ...entry,
+        rateEurPerHour: roundMoney(solvedRate),
+        source: "competitor_backsolve" as MarketRateSource,
+        confidence: nextMarketConfidence(entry, "competitor_backsolve"),
+        lastUpdated: today
+      };
+    });
+    updateAssumptions({ ...assumptions, market_rate_card: entries });
+    const appliedCount = Object.values(basketSolveResult.ratesByClassId).filter((rate) => Number.isFinite(rate) && rate > 0).length;
+    setAssumptionStatus(`Applied solved rates to ${appliedCount} pricing class${appliedCount === 1 ? "" : "es"} from basket evidence. Save Rate Card to persist.`);
+  }
+
   function bindMarketRateCardToLoadedProfile() {
     if (!assumptions || !companyProfile?.profileId) {
       setAssumptionStatus("Load a saved Company Profile before binding a market rate card.");
@@ -4637,7 +5015,7 @@ function App() {
   const totalMissingToolCost = roundMoney(missingToolChecks.reduce((sum, item) => sum + item.quoteCostEur, 0));
 
   return (
-    <main className="appShell">
+    <main className={`appShell lang-${language}`}>
       <aside className="sidebar">
         <div className="brand">
           <Factory size={24} />
@@ -4646,91 +5024,91 @@ function App() {
         <nav className="nav">
           <button
             className={`navItem ${activeView === "profile" ? "active" : ""}`}
-            title="Company profile"
+            title={t("Company profile")}
             onClick={() => setActiveView("profile")}
           >
             <Building2 size={18} />
-            <span>Profile</span>
+            <span>{t("Profile")}</span>
           </button>
           <button
             className={`navItem ${activeView === "resources" ? "active" : ""}`}
-            title="Resources"
+            title={t("Resources")}
             onClick={() => setActiveView("resources")}
           >
             <LibraryBig size={18} />
-            <span>Resources</span>
+            <span>{t("Resources")}</span>
           </button>
           <button
             className={`navItem ${activeView === "quote" ? "active" : ""}`}
-            title="Quote builder"
+            title={t("Quote builder")}
             onClick={() => setActiveView("quote")}
           >
             <Calculator size={18} />
-            <span>Quote</span>
+            <span>{t("Quote")}</span>
           </button>
           <button
             className={`navItem ${activeView === "market_rates" ? "active" : ""}`}
-            title="Market rate builder"
+            title={t("Market rate builder")}
             onClick={() => setActiveView("market_rates")}
           >
             <Gauge size={18} />
-            <span>Market Rates</span>
+            <span>{t("Market Rates")}</span>
           </button>
           <button
             className={`navItem ${activeView === "scenarios" ? "active" : ""}`}
-            title="Scenarios"
+            title={t("Scenarios")}
             onClick={() => setActiveView("scenarios")}
           >
             <SplitSquareVertical size={18} />
-            <span>Scenarios</span>
+            <span>{t("Scenarios")}</span>
           </button>
           <button
             className={`navItem ${activeView === "profitability" ? "active" : ""}`}
-            title="Can we be profitable?"
+            title={t("Can we be profitable?")}
             onClick={() => setActiveView("profitability")}
           >
             <TrendingUp size={18} />
-            <span>Profitability</span>
+            <span>{t("Profitability")}</span>
           </button>
           <button
             className={`navItem ${activeView === "business_case" ? "active" : ""}`}
-            title="Business case"
+            title={t("Business case")}
             onClick={() => setActiveView("business_case")}
           >
             <Gauge size={18} />
-            <span>Case</span>
+            <span>{t("Case")}</span>
           </button>
           <button
             className={`navItem ${activeView === "guide" ? "active" : ""}`}
-            title="Principles and terminology guide"
+            title={t("Principles and terminology guide")}
             onClick={() => setActiveView("guide")}
           >
             <BookOpen size={18} />
-            <span>Guide</span>
+            <span>{t("Guide")}</span>
           </button>
           <button
             className={`navItem ${activeView === "methods" ? "active" : ""}`}
-            title="Costing methods: the one this tool uses and the alternatives"
+            title={t("Costing methods: the one this tool uses and the alternatives")}
             onClick={() => setActiveView("methods")}
           >
             <LibraryBig size={18} />
-            <span>Methods</span>
+            <span>{t("Methods")}</span>
           </button>
           <button
             className={`navItem clientNavItem ${activeView === "client_portal" ? "active" : ""}`}
-            title="Client RFQ portal"
+            title={t("Client RFQ portal")}
             onClick={() => setActiveView("client_portal")}
           >
             <Upload size={18} />
-            <span>Client</span>
+            <span>{t("Client")}</span>
           </button>
           <button
             className={`navItem clientNavItem ${activeView === "print" ? "active" : ""}`}
-            title="Printable quote"
+            title={t("Printable quote")}
             onClick={() => setActiveView("print")}
           >
             <Save size={18} />
-            <span>Print</span>
+            <span>{t("Print")}</span>
           </button>
         </nav>
       </aside>
@@ -4738,8 +5116,12 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h1>{activeView === "resources" ? "Assumptions" : activeView === "profile" ? "Company Profile" : activeView === "market_rates" ? "Market Rates" : activeView === "client_portal" ? "Client Portal" : activeView === "scenarios" ? "Scenarios" : activeView === "print" ? "Printable Quote" : activeView === "business_case" ? "Business Case" : activeView === "guide" ? "Principles Guide" : activeView === "methods" ? "Costing Methods" : activeView === "profitability" ? "Profitability" : "Quote Builder"}</h1>
-            <p>Operation-based CNC cost estimate with editable Latvian starter assumptions.</p>
+            <h1>{t(activeView === "resources" ? "Assumptions" : activeView === "profile" ? "Company Profile" : activeView === "market_rates" ? "Market Rates" : activeView === "client_portal" ? "Client Portal" : activeView === "scenarios" ? "Scenarios" : activeView === "print" ? "Printable Quote" : activeView === "business_case" ? "Business Case" : activeView === "guide" ? "Principles Guide" : activeView === "methods" ? "Costing Methods" : activeView === "profitability" ? "Profitability" : "Quote Builder")}</h1>
+            <p>{t("Operation-based CNC cost estimate with editable Latvian starter assumptions.")}</p>
+          </div>
+          <div className="modeGroup languageToggle">
+            <button className={`mode ${language === "en" ? "active" : ""}`} onClick={() => setLanguage("en")}>EN</button>
+            <button className={`mode ${language === "lv" ? "active" : ""}`} onClick={() => setLanguage("lv")}>LV</button>
           </div>
         </header>
 
@@ -4747,19 +5129,19 @@ function App() {
           <>
             <section className={`costingBasisStrip ${loadedProfileNotApplied ? "warning" : ""}`}>
               <div>
-                <span>Quote costing basis</span>
+                <span>{t("Quote costing basis")}</span>
                 <strong>{activeCostingBasisName}</strong>
                 <p>
                   {loadedProfileNotApplied
                     ? `Loaded Profile is ${loadedProfileName}, but it has not been applied to costing yet. Quote calculations are still using ${activeCostingBasisName}.`
-                    : "This is the active company assumptions set used for Quote calculations."}
+                    : t("This is the active company assumptions set used for Quote calculations.")}
                 </p>
               </div>
               <div className="costingBasisActions">
                 {loadedProfileNotApplied ? (
-                  <button className="primaryButton" onClick={applyCompanyProfileToAssumptions}>Apply Loaded Profile</button>
+                  <button className="primaryButton" onClick={applyCompanyProfileToAssumptions}>{t("Apply Loaded Profile")}</button>
                 ) : (
-                  <button className="secondaryButton" onClick={() => setActiveView("profile")}>Open Profile</button>
+                  <button className="secondaryButton" onClick={() => setActiveView("profile")}>{t("Open Profile")}</button>
                 )}
               </div>
             </section>
@@ -4767,27 +5149,27 @@ function App() {
             <section className="panel erpPanel">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>ERP Connection Demo</h2>
-                  <p className="sectionHelp">Import BOM, route, material, and customer context from a sample ERP adapter. Use the demo RFQ only when you want a complete sample quote.</p>
+                  <h2>{t("ERP Connection Demo")}</h2>
+                  <p className="sectionHelp">{t("Import BOM, route, material, and customer context from a sample ERP adapter. Use the demo RFQ only when you want a complete sample quote.")}</p>
                 </div>
                 <div className="buttonRow"><Database size={18} />{sectionToggle("erp_demo", true)}</div>
               </div>
               {isSectionOpen("erp_demo", true) ? (
               <>
               <div className="erpControls">
-                <label>ERP part<select value={selectedErpPartId} onChange={(event) => setSelectedErpPartId(event.target.value)}>
-                  <option value="">Select ERP part</option>
+                <label>{t("ERP part")}<select value={selectedErpPartId} onChange={(event) => setSelectedErpPartId(event.target.value)}>
+                  <option value="">{t("Select ERP part")}</option>
                   {erpParts.map((part) => (
                     <option key={part.id} value={part.id}>{part.part_number} rev {part.revision} - {part.name} ({part.customer_name})</option>
                   ))}
                 </select></label>
-                <button className="primaryButton" onClick={importErpRfq}><Database size={16} /> Import ERP Data</button>
-                <button className="secondaryButton" onClick={sendCustomerOfferToErp}><Send size={16} /> Send Offer Data to ERP</button>
-                <button className="secondaryButton" onClick={loadDemoRfq}><Calculator size={16} /> Load Demo RFQ</button>
+                <button className="primaryButton" onClick={importErpRfq}><Database size={16} /> {t("Import ERP Data")}</button>
+                <button className="secondaryButton" onClick={sendCustomerOfferToErp}><Send size={16} /> {t("Send Offer Data to ERP")}</button>
+                <button className="secondaryButton" onClick={loadDemoRfq}><Calculator size={16} /> {t("Load Demo RFQ")}</button>
               </div>
               <div className="erpStatusGrid">
                 <p className="statusText">{erpStatus}</p>
-                <p className="statusText">{erpSource ? `Source: ${erpSource.partNumber} rev ${erpSource.revision}, imported ${new Date(erpSource.importedAt).toLocaleString("en-GB")}` : "Source: manual quote or demo RFQ"}</p>
+                <p className="statusText">{erpSource ? `Source: ${erpSource.partNumber} rev ${erpSource.revision}, imported ${new Date(erpSource.importedAt).toLocaleString("en-GB")}` : t("Source: manual quote or demo RFQ")}</p>
                 {lastErpOffer ? <p className="statusText">Last ERP CO: {lastErpOffer.id} ({lastErpOffer.status})</p> : null}
               </div>
               </>
@@ -4797,23 +5179,23 @@ function App() {
             <section className="panel draftPanel">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Quote Drafts</h2>
-                  <p className="sectionHelp">Save the current quote to reopen it later, or export/print it. A saved draft keeps the route, both prices, and a snapshot of the assumptions used.</p>
+                  <h2>{t("Quote Drafts")}</h2>
+                  <p className="sectionHelp">{t("Save the current quote to reopen it later, or export/print it. A saved draft keeps the route, both prices, and a snapshot of the assumptions used.")}</p>
                 </div>
                 <div className="buttonRow draftControls">
                   {isSectionOpen("quote_drafts") ? (
                     <>
                       <select value={draftId ?? ""} onChange={(event) => loadQuoteDraft(event.target.value)}>
-                        <option value="">Select draft</option>
+                        <option value="">{t("Select draft")}</option>
                         {drafts.map((draft) => (
                           <option key={draft.id} value={draft.id}>{draft.name}</option>
                         ))}
                       </select>
-                      <button className="primaryButton" onClick={saveQuoteDraft}><Save size={16} /> Save Draft</button>
-                      <button className="secondaryButton" onClick={() => exportQuoteDraft("json")}>Export JSON</button>
-                      <button className="secondaryButton" onClick={() => exportQuoteDraft("csv")}>Export CSV</button>
-                      <button className="secondaryButton" onClick={() => setActiveView("print")}>Print</button>
-                      <button className="iconButton" title="Delete selected draft" onClick={deleteQuoteDraft}><Trash2 size={18} /></button>
+                      <button className="primaryButton" onClick={saveQuoteDraft}><Save size={16} /> {t("Save Draft")}</button>
+                      <button className="secondaryButton" onClick={() => exportQuoteDraft("json")}>{t("Export JSON")}</button>
+                      <button className="secondaryButton" onClick={() => exportQuoteDraft("csv")}>{t("Export CSV")}</button>
+                      <button className="secondaryButton" onClick={() => setActiveView("print")}>{t("Print")}</button>
+                      <button className="iconButton" title={t("Delete selected draft")} onClick={deleteQuoteDraft}><Trash2 size={18} /></button>
                     </>
                   ) : null}
                   {sectionToggle("quote_drafts")}
@@ -4825,25 +5207,25 @@ function App() {
             <section className="resourceIntroGrid quoteIntroGrid">
               <div className="panel inputPanel">
                 <div className="sectionHeader">
-                  <h2>RFQ</h2>
+                  <h2>{t("RFQ")}</h2>
                   <Gauge size={18} />
                 </div>
-                <p className="sectionHelp">The customer request being priced: who is asking, which part, how many pieces, and what raw material it starts from. Everything below builds on these inputs.</p>
+                <p className="sectionHelp">{t("The customer request being priced: who is asking, which part, how many pieces, and what raw material it starts from. Everything below builds on these inputs.")}</p>
                 <div className="fieldGrid">
-                  <label>Part<input value={partName} onChange={(event) => setPartName(event.target.value)} /></label>
-                  <label>Customer<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
-                  <label>RFQ/reference<input value={rfqReference} onChange={(event) => setRfqReference(event.target.value)} /></label>
-                  <label>Quote number<input value={quoteNumber} onChange={(event) => setQuoteNumber(event.target.value)} /></label>
-                  <label>Validity date<input value={validityDate} inputMode="numeric" placeholder="dd.mm.yyyy" onChange={(event) => setValidityDate(event.target.value)} /></label>
-                  <label>Delivery estimate<input value={deliveryEstimate} onChange={(event) => setDeliveryEstimate(event.target.value)} /></label>
-                  <label>Payment terms<input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} /></label>
-                  <label>Quantity, pcs<input type="number" min="1" value={quantity} onChange={(event) => setQuantity(Math.max(1, numericValue(event.target.value, 1)))} /></label>
-                  <label>Quantity breaks, pcs<input value={quantityBreakText} onChange={(event) => setQuantityBreakText(event.target.value)} /></label>
-                  <label>Material library<select value={selectedMaterialId} onChange={(event) => selectMaterial(event.target.value)}><option value="">Manual material</option>{(assumptions?.material_examples ?? []).map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}</select></label>
-                  <label>Stock piece<input value={stockName} onChange={(event) => { setSelectedMaterialId(""); setStockName(event.target.value); }} /></label>
-                  <label>Stock cost, EUR/piece<input type="number" min="0" value={stockCost} onChange={(event) => { setSelectedMaterialId(""); setStockCost(numericValue(event.target.value)); }} /></label>
-                  <label>Stock pieces, pcs<input type="number" min="0.01" step="0.01" value={stockPieces} onChange={(event) => setStockPieces(Math.max(0.01, numericValue(event.target.value, 1)))} /></label>
-                  <label>Scrap recovery, EUR<input type="number" min="0" value={scrapRecovery} onChange={(event) => setScrapRecovery(numericValue(event.target.value))} /></label>
+                  <label>{t("Part")}<input value={partName} onChange={(event) => setPartName(event.target.value)} /></label>
+                  <label>{t("Customer")}<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
+                  <label>{t("RFQ/reference")}<input value={rfqReference} onChange={(event) => setRfqReference(event.target.value)} /></label>
+                  <label>{t("Quote number")}<input value={quoteNumber} onChange={(event) => setQuoteNumber(event.target.value)} /></label>
+                  <label>{t("Validity date")}<input value={validityDate} inputMode="numeric" placeholder="dd.mm.yyyy" onChange={(event) => setValidityDate(event.target.value)} /></label>
+                  <label>{t("Delivery estimate")}<input value={deliveryEstimate} onChange={(event) => setDeliveryEstimate(event.target.value)} /></label>
+                  <label>{t("Payment terms")}<input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} /></label>
+                  <label>{t("Quantity, pcs")}<input type="number" min="1" value={quantity} onChange={(event) => setQuantity(Math.max(1, numericValue(event.target.value, 1)))} /></label>
+                  <label>{t("Quantity breaks, pcs")}<input value={quantityBreakText} onChange={(event) => setQuantityBreakText(event.target.value)} /></label>
+                  <label>{t("Material library")}<select value={selectedMaterialId} onChange={(event) => selectMaterial(event.target.value)}><option value="">{t("Manual material")}</option>{(assumptions?.material_examples ?? []).map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}</select></label>
+                  <label>{t("Stock piece")}<input value={stockName} onChange={(event) => { setSelectedMaterialId(""); setStockName(event.target.value); }} /></label>
+                  <label>{t("Stock cost, EUR/piece")}<input type="number" min="0" value={stockCost} onChange={(event) => { setSelectedMaterialId(""); setStockCost(numericValue(event.target.value)); }} /></label>
+                  <label>{t("Stock pieces, pcs")}<input type="number" min="0.01" step="0.01" value={stockPieces} onChange={(event) => setStockPieces(Math.max(0.01, numericValue(event.target.value, 1)))} /></label>
+                  <label>{t("Scrap recovery, EUR")}<input type="number" min="0" value={scrapRecovery} onChange={(event) => setScrapRecovery(numericValue(event.target.value))} /></label>
                 </div>
                 {(() => {
                   const selectedMaterial = assumptions?.material_examples.find((material) => material.id === selectedMaterialId);
@@ -4869,23 +5251,23 @@ function App() {
                   const stockFormatLabel = !selectedMaterial
                     ? null
                     : isPerPieceBlank
-                      ? "Per-piece blank (casting, forging, or pre-cut purchase) -- no cutting division needed"
+                      ? t("Per-piece blank (casting, forging, or pre-cut purchase) -- no cutting division needed")
                       : isPlate
                         ? `Plate ${selectedMaterial.stock_length_mm} x ${selectedMaterial.stock_width_mm} mm`
                         : `${shape.replace("_", " ")} ${selectedMaterial.stock_length_mm} mm${kerfMm > 0 ? `, saw kerf ${kerfMm} mm per cut` : ""}`;
                   return (
                     <div className="cutoffHelperBlock">
-                      <p className="sectionHelp"><strong>Cutoff Calculator.</strong> Raw stock comes in fixed sizes and a part rarely divides into it evenly -- the unusable remainder is a real cost. Enter the blank size one part needs; the calculator converts it into whole stock pieces to buy. {stockFormatLabel ? <>Selected stock: <strong>{stockFormatLabel}</strong>.</> : "Select a Material library item with stock dimensions to enable it."}</p>
+                      <p className="sectionHelp"><strong>{t("Cutoff Calculator.")}</strong> {t("Raw stock comes in fixed sizes and a part rarely divides into it evenly -- the unusable remainder is a real cost. Enter the blank size one part needs; the calculator converts it into whole stock pieces to buy.")} {stockFormatLabel ? <>{t("Selected stock:")} <strong>{stockFormatLabel}</strong>.</> : t("Select a Material library item with stock dimensions to enable it.")}</p>
                       <div className="fixedCostHelper cutoffHelper">
                         {!isPerPieceBlank ? (
                           <label>
-                            {isPlate ? "Blank length, mm" : "Cut length per part, mm"}
+                            {isPlate ? t("Blank length, mm") : t("Cut length per part, mm")}
                             <input type="number" min="1" value={cutLengthMm} onChange={(event) => setCutLengthMm(Math.max(1, numericValue(event.target.value, 100)))} />
                           </label>
                         ) : null}
                         {isPlate ? (
                           <label>
-                            Blank width, mm
+                            {t("Blank width, mm")}
                             <input type="number" min="1" value={cutWidthMm} onChange={(event) => setCutWidthMm(Math.max(1, numericValue(event.target.value, 100)))} />
                           </label>
                         ) : null}
@@ -4898,8 +5280,8 @@ function App() {
                                   : `Suggested: ${suggested} stock piece(s) for ${quantity} pcs`
                                     + (blanksPerUnit !== null ? ` (${blanksPerUnit} blank${blanksPerUnit === 1 ? "" : "s"} per stock unit)` : "")
                                     + (materialUsedShare !== null ? `, ~${Math.round(Math.min(1, materialUsedShare) * 100)}% of purchased material used` : "")
-                                : "Enter the blank size above to calculate"
-                              : "Select a Material library item to enable the cutoff calculator"}
+                                : t("Enter the blank size above to calculate")
+                              : t("Select a Material library item to enable the cutoff calculator")}
                           </div>
                           <button
                             type="button"
@@ -4907,11 +5289,11 @@ function App() {
                             disabled={suggested === null}
                             onClick={() => { if (suggested !== null) setStockPieces(suggested); }}
                           >
-                            Apply
+                            {t("Apply")}
                           </button>
                         </div>
                       </div>
-                      {isPlate ? <p className="sectionHelp">Plate is a rough area estimate at 82% nesting efficiency -- an honest approximation, not true 2D nesting software.</p> : null}
+                      {isPlate ? <p className="sectionHelp">{t("Plate is a rough area estimate at 82% nesting efficiency -- an honest approximation, not true 2D nesting software.")}</p> : null}
                     </div>
                   );
                 })()}
@@ -4919,50 +5301,50 @@ function App() {
 
               <div className="panel resultPanel">
                 <div className="sectionHeader wide summaryHeader">
-                  <h2>Quote Summary</h2>
-                  <div className="modeGroup compactMode" aria-label="Rate mode">
-                    <button className={`mode ${rateMode === "target_competitive" ? "active" : ""}`} onClick={() => setRateMode("target_competitive")}>Target</button>
-                    <button className={`mode ${rateMode === "accounting_full_cost" ? "active" : ""}`} onClick={() => setRateMode("accounting_full_cost")}>Accounting</button>
+                  <h2>{t("Quote Summary")}</h2>
+                  <div className="modeGroup compactMode" aria-label={t("Rate mode")}>
+                    <button className={`mode ${rateMode === "target_competitive" ? "active" : ""}`} onClick={() => setRateMode("target_competitive")}>{t("Target")}</button>
+                    <button className={`mode ${rateMode === "accounting_full_cost" ? "active" : ""}`} onClick={() => setRateMode("accounting_full_cost")}>{t("Accounting")}</button>
                   </div>
                 </div>
                 {apiError ? <p className="errorText">{apiError}</p> : null}
                 <dl className="summary">
-                  <div><dt>Production cost, EUR</dt><dd>{selectedResult ? money.format(selectedResult.total_cost_eur) : "..."}</dd></div>
-                  <div><dt>Engineering/CAM operation, EUR</dt><dd>{selectedResult ? money.format(selectedResult.engineering_cost_eur) : "..."}</dd></div>
-                  <div><dt>Own work (margin applies), EUR</dt><dd>{selectedResult ? money.format(selectedResult.conversion_side_cost_eur ?? 0) : "..."}</dd></div>
-                  <div><dt>Material/bought-out pass-through, EUR</dt><dd>{selectedResult ? `${money.format(selectedResult.pass_through_cost_eur ?? 0)} + ${money.format(selectedResult.material_markup_eur ?? 0)} handling markup` : "..."}</dd></div>
-                  <div><dt>Sell price, EUR</dt><dd>{selectedResult ? money.format(selectedResult.sell_price_eur) : "..."}</dd></div>
-                  <div><dt>Unit price, EUR/pc</dt><dd>{selectedResult ? money.format(selectedResult.unit_sell_price_eur) : "..."}</dd></div>
-                  <div><dt>Machine rate source</dt><dd>{rateMode === "accounting_full_cost" ? "Accounting cost rates from Resources" : "Target cost rates from Resources"}</dd></div>
-                  <div><dt>Commercial multiplier</dt><dd>{selectedResult ? `×${selectedResult.commercial_multiplier.toFixed(2)} (sell price / raw cost subtotal)` : "..."}</dd></div>
+                  <div><dt>{t("Production cost, EUR")}</dt><dd>{selectedResult ? money.format(selectedResult.total_cost_eur) : "..."}</dd></div>
+                  <div><dt>{t("Engineering/CAM operation, EUR")}</dt><dd>{selectedResult ? money.format(selectedResult.engineering_cost_eur) : "..."}</dd></div>
+                  <div><dt>{t("Own work (margin applies), EUR")}</dt><dd>{selectedResult ? money.format(selectedResult.conversion_side_cost_eur ?? 0) : "..."}</dd></div>
+                  <div><dt>{t("Material/bought-out pass-through, EUR")}</dt><dd>{selectedResult ? `${money.format(selectedResult.pass_through_cost_eur ?? 0)} + ${money.format(selectedResult.material_markup_eur ?? 0)} handling markup` : "..."}</dd></div>
+                  <div><dt>{t("Sell price, EUR")}</dt><dd>{selectedResult ? money.format(selectedResult.sell_price_eur) : "..."}</dd></div>
+                  <div><dt>{t("Unit price, EUR/pc")}</dt><dd>{selectedResult ? money.format(selectedResult.unit_sell_price_eur) : "..."}</dd></div>
+                  <div><dt>{t("Machine rate source")}</dt><dd>{rateMode === "accounting_full_cost" ? t("Accounting cost rates from Resources") : t("Target cost rates from Resources")}</dd></div>
+                  <div><dt>{t("Commercial multiplier")}</dt><dd>{selectedResult ? `×${selectedResult.commercial_multiplier.toFixed(2)} (sell price / raw cost subtotal)` : "..."}</dd></div>
                 </dl>
                 <div className="scenarioStrip quoteSummaryScenarioStrip">
                   <div>
-                    <span className="scenarioLabel">Target price, EUR</span>
+                    <span className="scenarioLabel">{t("Target price, EUR")}</span>
                     <strong>{displayTargetResult ? money.format(displayTargetResult.sell_price_eur) : "..."}</strong>
-                    <span className="scenarioHint">Cost-plus target price from Resources rates.</span>
+                    <span className="scenarioHint">{t("Cost-plus target price from Resources rates.")}</span>
                   </div>
                   <div>
-                    <span className="scenarioLabel">Accounting price, EUR</span>
+                    <span className="scenarioLabel">{t("Accounting price, EUR")}</span>
                     <strong>{displayAccountingResult ? money.format(displayAccountingResult.sell_price_eur) : "..."}</strong>
-                    <span className="scenarioHint">Current full-cost-rate price.</span>
+                    <span className="scenarioHint">{t("Current full-cost-rate price.")}</span>
                   </div>
                   <div>
-                    <span className="scenarioLabel">Accounting premium, EUR</span>
+                    <span className="scenarioLabel">{t("Accounting premium, EUR")}</span>
                     <strong>{displayAccountingResult && displayTargetResult ? money.format(priceGap) : "..."}</strong>
-                    <span className="scenarioHint">Accounting minus target.</span>
+                    <span className="scenarioHint">{t("Accounting minus target.")}</span>
                   </div>
                 </div>
 
                 <div className="quoteMarketRateCard">
                   <div className="quoteMarketRateHeader">
                     <div>
-                      <strong>Route rate check</strong>
+                      <strong>{t("Route rate check")}</strong>
                     </div>
                     <div className="quoteMarketRateActions">
                       <em>
                         {routeMarketRows.length === 0
-                          ? "No route machines"
+                          ? t("No route machines")
                           : routeSavedRateRows.length === 0
                             ? `${money.format(routeWeightedRequiredRate)}/h cost-plus | no market rates entered`
                             : (
@@ -4979,16 +5361,16 @@ function App() {
                               </>
                             )}
                       </em>
-                      <button type="button" className="secondaryButton" onClick={() => setActiveView("market_rates")}>Edit Market Rates</button>
+                      <button type="button" className="secondaryButton" onClick={() => setActiveView("market_rates")}>{t("Edit Market Rates")}</button>
                     </div>
                   </div>
                   {routeMarketRows.length > 0 ? (
                     <div className="quoteMarketRateRows">
                       <div className="quoteMarketRateRow quoteMarketRateHeadRow">
-                        <span>Station</span>
-                        <span title="Rate entered per station on the Market Rates page.">Market EUR/h</span>
-                        <span title={`This quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk ${formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin ${formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a value for the numbers.`}>Cost-plus EUR/h</span>
-                        <span title="Market minus cost-plus: positive (green) means the market pays above this quote's floor; negative (red) means this quote is priced above what the market pays.">Market − Cost-plus</span>
+                        <span>{t("Station")}</span>
+                        <span title={t("Rate entered per station on the Market Rates page.")}>{t("Market EUR/h")}</span>
+                        <span title={`This quote's cost-plus rate for the station's routed time: (machine target rate incl. overhead share × machine h + labor rate × labor h + scrap allowance) × (1 + risk ${formatPercent(commercialPolicy.risk_allowance_percent)}%) ÷ (1 − margin ${formatPercent(commercialPolicy.default_margin_percent)}%), divided by the station's route hours. Hover a value for the numbers.`}>{t("Cost-plus EUR/h")}</span>
+                        <span title={t("Market minus cost-plus: positive (green) means the market pays above this quote's floor; negative (red) means this quote is priced above what the market pays.")}>{t("Market − Cost-plus")}</span>
                       </div>
                       {routeMarketRows.map((row) => {
                         const marketRate = marketSellRateValue(row.machine);
@@ -4999,24 +5381,24 @@ function App() {
                           <div className="quoteMarketRateRow" key={row.machine.id}>
                             <span>
                               {row.machine.name}
-                              {row.isSupportStation ? <em className="supportStationTag" title="Support capacity: this station does not sell hours, so no market rate is expected. Cost-plus still shows what this quote charges for its routed time.">support</em> : null}
+                              {row.isSupportStation ? <em className="supportStationTag" title={t("Support capacity: this station does not sell hours, so no market rate is expected. Cost-plus still shows what this quote charges for its routed time.")}>{t("support")}</em> : null}
                               <small>{row.hours.toFixed(1)} route h</small>
                             </span>
                             <strong title={row.isSupportStation
-                              ? "Support stations are not sold by the hour, so they have no market rate."
-                              : "Market sell rate entered for this station on the Market Rates page."}>
-                              {marketRate > 0 ? `${money.format(marketRate)}/h` : row.isSupportStation ? "Support" : "Not set"}
+                              ? t("Support stations are not sold by the hour, so they have no market rate.")
+                              : t("Market sell rate entered for this station on the Market Rates page.")}>
+                              {marketRate > 0 ? `${money.format(marketRate)}/h` : row.isSupportStation ? t("Support") : t("Not set")}
                             </strong>
                             <em title={costPlusFormulaTitle}>{money.format(row.quoteRequiredRate)}/h</em>
                             <strong
                               className={`rateGapCell ${rateGap === null ? "rateMissing" : rateGap >= 0 ? "rateGood" : "rateBad"}`}
                               title={rateGap === null
                                 ? row.isSupportStation
-                                  ? "Support station: no market rate applies, so there is no difference to show."
-                                  : "No market rate entered for this station, so no difference can be shown."
+                                  ? t("Support station: no market rate applies, so there is no difference to show.")
+                                  : t("No market rate entered for this station, so no difference can be shown.")
                                 : rateGap >= 0
-                                  ? "Market rate is at or above this quote's cost-plus rate."
-                                  : "Market rate is below this quote's cost-plus rate: this station's hours sell under the cost-plus floor."}
+                                  ? t("Market rate is at or above this quote's cost-plus rate.")
+                                  : t("Market rate is below this quote's cost-plus rate: this station's hours sell under the cost-plus floor.")}
                             >
                               {rateGap === null ? "--" : formatRateGap(rateGap)}
                             </strong>
@@ -5025,26 +5407,26 @@ function App() {
                       })}
                     </div>
                   ) : (
-                    <p>Add at least one route operation with a machine to show market sell-rate references.</p>
+                    <p>{t("Add at least one route operation with a machine to show market sell-rate references.")}</p>
                   )}
                 </div>
 
-                <p className="sectionHelp">Target and Accounting are cost-plus prices from Resources rates. The route check compares the market rates entered on the Market Rates page with this quote's cost-plus rate per station; it does not replace the quote price.</p>
+                <p className="sectionHelp">{t("Target and Accounting are cost-plus prices from Resources rates. The route check compares the market rates entered on the Market Rates page with this quote's cost-plus rate per station; it does not replace the quote price.")}</p>
               </div>
             </section>
 
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Quantity Breaks</h2>
-                  <p className="sectionHelp">Unit prices show how setup and CAM costs amortize across batch sizes. Material quantity is recomputed per break, not frozen at the main quantity. Rows marked * have no cutoff data for the selected material, so their stock pieces were scaled proportionally instead of cutoff-optimized.</p>
+                  <h2>{t("Quantity Breaks")}</h2>
+                  <p className="sectionHelp">{t("Unit prices show how setup and CAM costs amortize across batch sizes. Material quantity is recomputed per break, not frozen at the main quantity. Rows marked * have no cutoff data for the selected material, so their stock pieces were scaled proportionally instead of cutoff-optimized.")}</p>
                 </div>
               </div>
               <div className="operationTable">
-                <div className="tableHead quantityBreakHead"><span>Qty, pcs</span><span>Target total, EUR</span><span>Target unit, EUR/pc</span><span>Accounting total, EUR</span><span>Accounting unit, EUR/pc</span><span>Premium, EUR/pc</span></div>
+                <div className="tableHead quantityBreakHead"><span>{t("Qty, pcs")}</span><span>{t("Target total, EUR")}</span><span>{t("Target unit, EUR/pc")}</span><span>{t("Accounting total, EUR")}</span><span>{t("Accounting unit, EUR/pc")}</span><span>{t("Premium, EUR/pc")}</span></div>
                 {quantityBreakResults.map((item) => (
                   <div className="tableRow quantityBreakRow" key={item.quantity}>
-                    <span>{item.quantity}{item.materialScaledLinearly ? <em className="scaledNote" title="No cutoff data for this material: stock pieces were scaled linearly from the main quantity, not cutoff-optimized.">*</em> : null}</span>
+                    <span>{item.quantity}{item.materialScaledLinearly ? <em className="scaledNote" title={t("No cutoff data for this material: stock pieces were scaled linearly from the main quantity, not cutoff-optimized.")}>*</em> : null}</span>
                     <span>{money.format(item.target.sell_price_eur)}</span>
                     <span>{money.format(item.target.unit_sell_price_eur)}</span>
                     <span>{money.format(item.accounting.sell_price_eur)}</span>
@@ -5058,21 +5440,21 @@ function App() {
             <section className="quoteGrid">
               <div className="panel">
                 <div className="sectionHeader">
-                  <h2>STEP and CAM</h2>
+                  <h2>{t("STEP and CAM")}</h2>
                   <Upload size={18} />
                 </div>
-                <p className="sectionHelp">A new part needs a machining program (CAM) and a prove-out before production can start -- real engineering hours that belong in the price. "Prove-out" is the supervised first run on the machine: verifying the program, offsets, and fixturing, and measuring the first article until a good part comes off. A repeat part reuses most of that work and is cheaper. The 3D file is stored for reference only; its geometry is not parsed automatically.</p>
+                <p className="sectionHelp">{t('A new part needs a machining program (CAM) and a prove-out before production can start -- real engineering hours that belong in the price. "Prove-out" is the supervised first run on the machine: verifying the program, offsets, and fixturing, and measuring the first article until a good part comes off. A repeat part reuses most of that work and is cheaper. The 3D file is stored for reference only; its geometry is not parsed automatically.')}</p>
                 <div className="uploadBox">
                   <input id="cad-file" type="file" accept=".step,.stp" onChange={(event) => setCadFile(event.target.files?.[0] ?? null)} />
-                  <label className="uploadLabel" htmlFor="cad-file">{cadFile ? cadFile.name : "Select .step or .stp file"}</label>
+                  <label className="uploadLabel" htmlFor="cad-file">{cadFile ? cadFile.name : t("Select .step or .stp file")}</label>
                 </div>
                 <label className="checkRow">
                   <input type="checkbox" checked={isNewPart} onChange={(event) => setIsNewPart(event.target.checked)} />
-                  <span>New part, CAM program required</span>
+                  <span>{t("New part, CAM program required")}</span>
                 </label>
                 <div className="fieldGrid compact">
                   <label>
-                    Complexity
+                    {t("Complexity")}
                     <select value={camComplexity} onChange={(event) => {
                       const next = event.target.value;
                       setCamComplexity(next);
@@ -5082,24 +5464,24 @@ function App() {
                         if (typeof minutes === "number") setProgrammingMinutes(minutes);
                       }
                     }}>
-                      <option value="simple">Simple</option>
-                      <option value="medium">Medium</option>
-                      <option value="complex">Complex</option>
+                      <option value="simple">{t("Simple")}</option>
+                      <option value="medium">{t("Medium")}</option>
+                      <option value="complex">{t("Complex")}</option>
                     </select>
                   </label>
-                  <label>CAM rate, EUR/h<input type="number" min="0" value={programmingRate} onChange={(event) => setProgrammingRate(numericValue(event.target.value))} /></label>
-                  <label>Programming, min<input type="number" min="0" value={programmingMinutes} onChange={(event) => setProgrammingMinutes(numericValue(event.target.value))} /></label>
-                  <label>Prove-out, min<input type="number" min="0" value={proveoutMinutes} onChange={(event) => setProveoutMinutes(numericValue(event.target.value))} /></label>
+                  <label>{t("CAM rate, EUR/h")}<input type="number" min="0" value={programmingRate} onChange={(event) => setProgrammingRate(numericValue(event.target.value))} /></label>
+                  <label>{t("Programming, min")}<input type="number" min="0" value={programmingMinutes} onChange={(event) => setProgrammingMinutes(numericValue(event.target.value))} /></label>
+                  <label>{t("Prove-out, min")}<input type="number" min="0" value={proveoutMinutes} onChange={(event) => setProveoutMinutes(numericValue(event.target.value))} /></label>
                 </div>
               </div>
 
               <div className="panel">
-                <div className="sectionHeader"><h2>Assumptions</h2></div>
+                <div className="sectionHeader"><h2>{t("Assumptions")}</h2></div>
                 <ul className="noteList">
-                  <li>{isNewPart ? "Full CAM cost is included." : `Existing CAM program reuse reduces CAM cost by ${formatPercent(reusableProgramPercent)}%.`}</li>
-                  <li>STEP geometry is stored as metadata; geometry parsing is a later estimator layer.</li>
-                  <li>{rateMode === "target_competitive" ? "Target machine rates are used for quote pricing." : "Accounting full-cost machine rates are used for quote pricing."}</li>
-                  <li>{missingToolChecks.length > 0 ? `Missing tools add ${money.format(totalMissingToolCost)} as operation batch cost.` : "Required tools are available or no tool requirements are set."}</li>
+                  <li>{isNewPart ? t("Full CAM cost is included.") : `${t("Existing CAM program reuse reduces CAM cost by")} ${formatPercent(reusableProgramPercent)}%.`}</li>
+                  <li>{t("STEP geometry is stored as metadata; geometry parsing is a later estimator layer.")}</li>
+                  <li>{rateMode === "target_competitive" ? t("Target machine rates are used for quote pricing.") : t("Accounting full-cost machine rates are used for quote pricing.")}</li>
+                  <li>{missingToolChecks.length > 0 ? `${t("Missing tools add")} ${money.format(totalMissingToolCost)} ${t("as operation batch cost.")}` : t("Required tools are available or no tool requirements are set.")}</li>
                   {selectedResult?.warnings.map((warning) => <li key={warning}>{warning}</li>)}
                 </ul>
               </div>
@@ -5108,15 +5490,15 @@ function App() {
             <section className="operations camOperationPanel">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Engineering Operation</h2>
-                  <p className="sectionHelp">CAM/programming is shown as a route step because it consumes skilled labor before production starts. Repeat parts keep the same row but apply reusable-program reduction.</p>
+                  <h2>{t("Engineering Operation")}</h2>
+                  <p className="sectionHelp">{t("CAM/programming is shown as a route step because it consumes skilled labor before production starts. Repeat parts keep the same row but apply reusable-program reduction.")}</p>
                 </div>
               </div>
               <div className="operationTable">
-                <div className="tableHead camOperationHead"><span>Operation</span><span>Basis</span><span>Gross min</span><span>Reusable reduction</span><span>Cost, EUR</span></div>
+                <div className="tableHead camOperationHead"><span>{t("Operation")}</span><span>{t("Basis")}</span><span>{t("Gross min")}</span><span>{t("Reusable reduction")}</span><span>{t("Cost, EUR")}</span></div>
                 <div className="tableRow camOperationRow">
-                  <span>{isNewPart ? "New-part CAM/programming" : "Repeat-part CAM review"}</span>
-                  <span>{camComplexity} complexity at {money.format(programmingRate)}/h</span>
+                  <span>{isNewPart ? t("New-part CAM/programming") : t("Repeat-part CAM review")}</span>
+                  <span>{t(camComplexity === "simple" ? "Simple" : camComplexity === "medium" ? "Medium" : "Complex")} {t("complexity at")} {money.format(programmingRate)}/h</span>
                   <span>{programmingMinutes + proveoutMinutes}</span>
                   <span>{formatPercent(reusableProgramPercent)}%</span>
                   <span>{displayTargetResult ? money.format(displayTargetResult.engineering_cost_eur) : "..."}</span>
@@ -5127,8 +5509,8 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Operations</h2>
-                  <p className="sectionHelp">The production route: each step the part goes through, with its machine and labor time. Rates are pulled from the selected machine and labor classes. Labor minutes mean minutes a person is actually occupied by this step -- if one operator runs three machines at once, enter roughly a third of the machine time per operation, and for hands-on work (deburring, assembly) labor time can exceed machine time. Entering full labor time next to full machine time for the same person double-charges that hour. An attendance floor protects the other direction: charged labor minutes are never below machine minutes × the station's operator attendance share (1 for a dedicated operator), so under-entered labor cannot leak operator salary out of the price.</p>
+                  <h2>{t("Operations")}</h2>
+                  <p className="sectionHelp">{t("The production route: each step the part goes through, with its machine and labor time. Rates are pulled from the selected machine and labor classes. Labor minutes mean minutes a person is actually occupied by this step -- if one operator runs three machines at once, enter roughly a third of the machine time per operation, and for hands-on work (deburring, assembly) labor time can exceed machine time. Entering full labor time next to full machine time for the same person double-charges that hour. An attendance floor protects the other direction: charged labor minutes are never below machine minutes × the station's operator attendance share (1 for a dedicated operator), so under-entered labor cannot leak operator salary out of the price.")}</p>
                 </div>
                 <div className="buttonRow addOperationControls">
                   <select value={selectedTemplateType} onChange={(event) => setSelectedTemplateType(event.target.value)}>
@@ -5136,13 +5518,13 @@ function App() {
                       <option key={template.operation_type} value={template.operation_type}>{operationLabel(template.operation_type)}</option>
                     ))}
                   </select>
-                  <button className="primaryButton" onClick={addOperation}><Plus size={16} /> Add</button>
+                  <button className="primaryButton" onClick={addOperation}><Plus size={16} /> {t("Add")}</button>
                 </div>
               </div>
 
               <div className="operationEditor">
                 <div className="operationEditorHead">
-                  <span>Operation</span><span>Resources</span><span>Setup, min</span><span>Cycle, min/part</span><span>Variable, EUR</span><span>Scrap, %</span><span></span>
+                  <span>{t("Operation")}</span><span>{t("Resources")}</span><span>{t("Setup, min")}</span><span>{t("Cycle, min/part")}</span><span>{t("Variable, EUR")}</span><span>{t("Scrap, %")}</span><span></span>
                 </div>
                 {quoteOperations.map((operation, index) => {
                   const selectedMachineRate = machineRate(operation.machineClassId, rateMode);
@@ -5150,30 +5532,30 @@ function App() {
                   return (
                     <div className="operationEditorRow" key={operation.id}>
                       <div className="stackedFields">
-                        <label>Template<select value={operation.operationType} onChange={(event) => changeOperationTemplate(index, event.target.value)}>{(assumptions?.operation_templates ?? []).map((template) => <option key={template.operation_type} value={template.operation_type}>{operationLabel(template.operation_type)}</option>)}</select></label>
-                        <label>Name<input value={operation.name} onChange={(event) => updateQuoteOperation(index, { name: event.target.value })} /></label>
+                        <label>{t("Template")}<select value={operation.operationType} onChange={(event) => changeOperationTemplate(index, event.target.value)}>{(assumptions?.operation_templates ?? []).map((template) => <option key={template.operation_type} value={template.operation_type}>{operationLabel(template.operation_type)}</option>)}</select></label>
+                        <label>{t("Name")}<input value={operation.name} onChange={(event) => updateQuoteOperation(index, { name: event.target.value })} /></label>
                       </div>
                       <div className="stackedFields">
-                        <label>Machine<select value={operation.machineClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { machineClassId: event.target.value || null })}><option value="">No machine</option>{(assumptions?.machine_classes ?? []).map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
-                        <label>Labor<select value={operation.laborClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { laborClassId: event.target.value || null })}><option value="">No labor</option>{(assumptions?.labor_classes ?? []).map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select></label>
-                        <span className="rateHint">{money.format(selectedMachineRate)}/h {rateMode === "accounting_full_cost" ? "accounting" : "target"} machine cost rate, {money.format(selectedLaborRate)}/h labor</span>
+                        <label>{t("Machine")}<select value={operation.machineClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { machineClassId: event.target.value || null })}><option value="">{t("No machine")}</option>{(assumptions?.machine_classes ?? []).map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
+                        <label>{t("Labor")}<select value={operation.laborClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { laborClassId: event.target.value || null })}><option value="">{t("No labor")}</option>{(assumptions?.labor_classes ?? []).map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select></label>
+                        <span className="rateHint">{money.format(selectedMachineRate)}/h {rateMode === "accounting_full_cost" ? t("accounting") : t("target")} {t("machine cost rate,")} {money.format(selectedLaborRate)}/h {t("labor")}</span>
                       </div>
                       <div className="miniGrid">
-                        <label>Machine, min<input type="number" min="0" value={operation.setupMachineMinutes} onChange={(event) => updateQuoteOperation(index, { setupMachineMinutes: numericValue(event.target.value) })} /></label>
-                        <label>Labor, min<input type="number" min="0" value={operation.setupLaborMinutes} onChange={(event) => updateQuoteOperation(index, { setupLaborMinutes: numericValue(event.target.value) })} /></label>
+                        <label>{t("Machine, min")}<input type="number" min="0" value={operation.setupMachineMinutes} onChange={(event) => updateQuoteOperation(index, { setupMachineMinutes: numericValue(event.target.value) })} /></label>
+                        <label>{t("Labor, min")}<input type="number" min="0" value={operation.setupLaborMinutes} onChange={(event) => updateQuoteOperation(index, { setupLaborMinutes: numericValue(event.target.value) })} /></label>
                       </div>
                       <div className="miniGrid">
-                        <label>Machine, min/part<input type="number" min="0" value={operation.runMachineMinutesPerPart} onChange={(event) => updateQuoteOperation(index, { runMachineMinutesPerPart: numericValue(event.target.value) })} /></label>
-                        <label>Labor, min/part<input type="number" min="0" value={operation.runLaborMinutesPerPart} onChange={(event) => updateQuoteOperation(index, { runLaborMinutesPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Machine, min/part")}<input type="number" min="0" value={operation.runMachineMinutesPerPart} onChange={(event) => updateQuoteOperation(index, { runMachineMinutesPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Labor, min/part")}<input type="number" min="0" value={operation.runLaborMinutesPerPart} onChange={(event) => updateQuoteOperation(index, { runLaborMinutesPerPart: numericValue(event.target.value) })} /></label>
                       </div>
                       <div className="miniGrid">
-                        <label>Tool, EUR/part<input type="number" min="0" value={operation.toolingCostPerPart} onChange={(event) => updateQuoteOperation(index, { toolingCostPerPart: numericValue(event.target.value) })} /></label>
-                        <label>Cons., EUR/part<input type="number" min="0" value={operation.consumablesCostPerPart} onChange={(event) => updateQuoteOperation(index, { consumablesCostPerPart: numericValue(event.target.value) })} /></label>
-                        <label>Out, EUR/part<input type="number" min="0" value={operation.outsourcedCostPerPart} onChange={(event) => updateQuoteOperation(index, { outsourcedCostPerPart: numericValue(event.target.value) })} /></label>
-                        <label>Out, EUR/batch<input type="number" min="0" value={operation.outsourcedBatchCost} onChange={(event) => updateQuoteOperation(index, { outsourcedBatchCost: numericValue(event.target.value) })} /></label>
+                        <label>{t("Tool, EUR/part")}<input type="number" min="0" value={operation.toolingCostPerPart} onChange={(event) => updateQuoteOperation(index, { toolingCostPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Cons., EUR/part")}<input type="number" min="0" value={operation.consumablesCostPerPart} onChange={(event) => updateQuoteOperation(index, { consumablesCostPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Out, EUR/part")}<input type="number" min="0" value={operation.outsourcedCostPerPart} onChange={(event) => updateQuoteOperation(index, { outsourcedCostPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Out, EUR/batch")}<input type="number" min="0" value={operation.outsourcedBatchCost} onChange={(event) => updateQuoteOperation(index, { outsourcedBatchCost: numericValue(event.target.value) })} /></label>
                       </div>
-                      <label>Scrap, %<input type="number" min="0" max="100" value={formatPercent(operation.scrapAllowancePercent)} onChange={(event) => updateQuoteOperation(index, { scrapAllowancePercent: numericValue(event.target.value) / 100 })} /></label>
-                      <button className="iconButton" title="Remove operation" onClick={() => removeOperation(index)}><Trash2 size={18} /></button>
+                      <label>{t("Scrap, %")}<input type="number" min="0" max="100" value={formatPercent(operation.scrapAllowancePercent)} onChange={(event) => updateQuoteOperation(index, { scrapAllowancePercent: numericValue(event.target.value) / 100 })} /></label>
+                      <button className="iconButton" title={t("Remove operation")} onClick={() => removeOperation(index)}><Trash2 size={18} /></button>
                     </div>
                   );
                 })}
@@ -5183,25 +5565,25 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Tool Check</h2>
-                  <p className="sectionHelp">Required tools are matched against Resources tool inventory. Missing tool charges are added as operation batch cost.</p>
+                  <h2>{t("Tool Check")}</h2>
+                  <p className="sectionHelp">{t("Required tools are matched against Resources tool inventory. Missing tool charges are added as operation batch cost.")}</p>
                 </div>
-                <strong>{missingToolChecks.length > 0 ? money.format(totalMissingToolCost) : "All available"}</strong>
+                <strong>{missingToolChecks.length > 0 ? money.format(totalMissingToolCost) : t("All available")}</strong>
               </div>
               <div className="toolCheckTable">
-                <div className="tableHead toolCheckHead"><span>Operation</span><span>Requirement</span><span>Status</span><span>Charge mode</span><span>Quote cost</span></div>
+                <div className="tableHead toolCheckHead"><span>{t("Operation")}</span><span>{t("Requirement")}</span><span>{t("Status")}</span><span>{t("Charge mode")}</span><span>{t("Quote cost")}</span></div>
                 {currentToolChecks.length === 0 ? (
-                  <div className="tableRow toolCheckRow"><span>No tool requirements set for this route.</span><span></span><span></span><span></span><span></span></div>
+                  <div className="tableRow toolCheckRow"><span>{t("No tool requirements set for this route.")}</span><span></span><span></span><span></span><span></span></div>
                 ) : currentToolChecks.map((item) => (
                   <div className={`tableRow toolCheckRow ${item.status === "missing" ? "missingTool" : ""}`} key={`${item.operation.id}-${item.requirement.id}`}>
                     <span>{item.operation.name}</span>
                     <span>{toolRequirementLabel(item.requirement)}</span>
-                    <span>{item.status === "available" ? `Available: ${item.matchedTool?.name}` : "Missing / not enough quantity"}</span>
+                    <span>{item.status === "available" ? `${t("Available:")} ${item.matchedTool?.name}` : t("Missing / not enough quantity")}</span>
                     <div className="miniGrid">
                       <select value={item.requirement.chargeMode} onChange={(event) => updateToolRequirement(item.operation.id, item.requirement.id, { chargeMode: event.target.value as ToolChargeMode })}>
-                        <option value="charge_full">Charge full</option>
-                        <option value="amortize">Amortize</option>
-                        <option value="included">Ignore/include</option>
+                        <option value="charge_full">{t("Charge full")}</option>
+                        <option value="amortize">{t("Amortize")}</option>
+                        <option value="included">{t("Ignore/include")}</option>
                       </select>
                       <input type="number" min="1" value={item.requirement.amortizationQuantity} onChange={(event) => updateToolRequirement(item.operation.id, item.requirement.id, { amortizationQuantity: Math.max(1, numericValue(event.target.value, 1)) })} />
                     </div>
@@ -5213,10 +5595,10 @@ function App() {
 
             {selectedResult ? (
               <section className="operations">
-                <div className="sectionHeader wide"><h2>Cost Breakdown</h2></div>
-                <p className="sectionHelp">Every euro of the production cost, line by line: material, engineering, then each route operation. If a price looks high, this table shows which line is responsible.</p>
+                <div className="sectionHeader wide"><h2>{t("Cost Breakdown")}</h2></div>
+                <p className="sectionHelp">{t("Every euro of the production cost, line by line: material, engineering, then each route operation. If a price looks high, this table shows which line is responsible.")}</p>
                 <div className="operationTable">
-                  <div className="tableHead breakdownHead"><span>Line</span><span>Total</span><span>Unit</span></div>
+                  <div className="tableHead breakdownHead"><span>{t("Line")}</span><span>{t("Total")}</span><span>{t("Unit")}</span></div>
                   {selectedResult.lines.map((line) => (
                     <div className="tableRow breakdownRow" key={line.code}>
                       <span>{line.label}</span><span>{money.format(line.cost_eur)}</span><span>{money.format(line.unit_cost_eur)}</span>
@@ -5229,18 +5611,18 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Actuals Feedback</h2>
-                  <p className="sectionHelp">After production, compare real setup/cycle times against what was quoted, and feed the difference back into the operation templates so the next quote starts from measured reality. In a live installation these numbers would flow in from the ERP's operation confirmations automatically; this manual table is the demo stand-in for that connection. Collapsed by default -- open it when presenting the calibration loop.</p>
+                  <h2>{t("Actuals Feedback")}</h2>
+                  <p className="sectionHelp">{t("After production, compare real setup/cycle times against what was quoted, and feed the difference back into the operation templates so the next quote starts from measured reality. In a live installation these numbers would flow in from the ERP's operation confirmations automatically; this manual table is the demo stand-in for that connection. Collapsed by default -- open it when presenting the calibration loop.")}</p>
                 </div>
                 <div className="buttonRow">
-                  {isSectionOpen("actuals_feedback") ? <button className="secondaryButton" onClick={applyActualsToTemplates}>Apply to Templates</button> : null}
+                  {isSectionOpen("actuals_feedback") ? <button className="secondaryButton" onClick={applyActualsToTemplates}>{t("Apply to Templates")}</button> : null}
                   {sectionToggle("actuals_feedback")}
                 </div>
               </div>
               {isSectionOpen("actuals_feedback") ? (
               <>
               <div className="actualsTable">
-                <div className="tableHead actualsHead"><span>Operation</span><span>Actual setup, min</span><span>Actual cycle, min/part</span><span>Scrap, %</span><span>Quoted, EUR</span><span>Actual, EUR</span><span>Variance, EUR</span><span>Notes</span></div>
+                <div className="tableHead actualsHead"><span>{t("Operation")}</span><span>{t("Actual setup, min")}</span><span>{t("Actual cycle, min/part")}</span><span>{t("Scrap, %")}</span><span>{t("Quoted, EUR")}</span><span>{t("Actual, EUR")}</span><span>{t("Variance, EUR")}</span><span>{t("Notes")}</span></div>
                 {quoteOperations.map((operation) => {
                   const actual = ensureActualForOperation(operation);
                   const quotedCost = operationCost(operation, rateMode);
@@ -5249,12 +5631,12 @@ function App() {
                     <div className="tableRow actualsRow" key={operation.id}>
                       <span>{operation.name}</span>
                       <div className="miniGrid">
-                        <label>Machine<input type="number" min="0" value={actual.actualSetupMachineMinutes} onChange={(event) => updateActualOperation(operation.id, { actualSetupMachineMinutes: numericValue(event.target.value) })} /></label>
-                        <label>Labor<input type="number" min="0" value={actual.actualSetupLaborMinutes} onChange={(event) => updateActualOperation(operation.id, { actualSetupLaborMinutes: numericValue(event.target.value) })} /></label>
+                        <label>{t("Machine")}<input type="number" min="0" value={actual.actualSetupMachineMinutes} onChange={(event) => updateActualOperation(operation.id, { actualSetupMachineMinutes: numericValue(event.target.value) })} /></label>
+                        <label>{t("Labor")}<input type="number" min="0" value={actual.actualSetupLaborMinutes} onChange={(event) => updateActualOperation(operation.id, { actualSetupLaborMinutes: numericValue(event.target.value) })} /></label>
                       </div>
                       <div className="miniGrid">
-                        <label>Machine<input type="number" min="0" value={actual.actualRunMachineMinutesPerPart} onChange={(event) => updateActualOperation(operation.id, { actualRunMachineMinutesPerPart: numericValue(event.target.value) })} /></label>
-                        <label>Labor<input type="number" min="0" value={actual.actualRunLaborMinutesPerPart} onChange={(event) => updateActualOperation(operation.id, { actualRunLaborMinutesPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Machine")}<input type="number" min="0" value={actual.actualRunMachineMinutesPerPart} onChange={(event) => updateActualOperation(operation.id, { actualRunMachineMinutesPerPart: numericValue(event.target.value) })} /></label>
+                        <label>{t("Labor")}<input type="number" min="0" value={actual.actualRunLaborMinutesPerPart} onChange={(event) => updateActualOperation(operation.id, { actualRunLaborMinutesPerPart: numericValue(event.target.value) })} /></label>
                       </div>
                       <div className="actualsSingleField"><span aria-hidden="true"></span><input type="number" min="0" max="100" value={formatPercent(actual.actualScrapPercent)} onChange={(event) => updateActualOperation(operation.id, { actualScrapPercent: numericValue(event.target.value) / 100 })} /></div>
                       <span className="actualsAlignedValue">{money.format(quotedCost)}</span>
@@ -5267,15 +5649,15 @@ function App() {
               </div>
               {pendingCalibration && pendingCalibration.length > 0 ? (
                 <div className="panel calibrationReview">
-                  <div className="sectionHeader"><h2>Confirm Calibration</h2></div>
-                  <p className="sectionHelp">Calibration is per operation type, not per part family: this updates the shared template for every part that uses this operation type. Applied as a running weighted mean (old value weighted by its sample count, capped at {CALIBRATION_MAX_SAMPLE_COUNT}), not a flat overwrite -- one odd job can no longer swing the default outright.</p>
+                  <div className="sectionHeader"><h2>{t("Confirm Calibration")}</h2></div>
+                  <p className="sectionHelp">{t("Calibration is per operation type, not per part family: this updates the shared template for every part that uses this operation type. Applied as a running weighted mean (old value weighted by its sample count, capped at")} {CALIBRATION_MAX_SAMPLE_COUNT}{t("), not a flat overwrite -- one odd job can no longer swing the default outright.")}</p>
                   {pendingCalibration.map((candidate) => (
                     <div className="calibrationCard" key={candidate.operationType}>
-                      <strong>{operationLabel(candidate.operationType)} (sample count {candidate.newSampleCount})</strong>
+                      <strong>{operationLabel(candidate.operationType)} {t("(sample count")} {candidate.newSampleCount})</strong>
                       <div className="calibrationFieldGrid">
                         {candidate.fieldChanges.map((change) => (
                           <span key={change.key} className={change.deviates ? "calibrationDeviates" : ""}>
-                            {change.label}: {change.oldValue} -&gt; {change.newValue}{change.deviates ? " (>=3x deviation)" : ""}
+                            {change.label}: {change.oldValue} -&gt; {change.newValue}{change.deviates ? t(" (>=3x deviation)") : ""}
                           </span>
                         ))}
                       </div>
@@ -5286,14 +5668,14 @@ function App() {
                             checked={calibrationConfirmations[candidate.operationType] ?? false}
                             onChange={(event) => setCalibrationConfirmations((current) => ({ ...current, [candidate.operationType]: event.target.checked }))}
                           />
-                          I confirm this large deviation from the current template is correct.
+                          {t("I confirm this large deviation from the current template is correct.")}
                         </label>
                       ) : null}
                     </div>
                   ))}
                   <div className="buttonRow">
-                    <button className="primaryButton" onClick={confirmCalibration}>Confirm &amp; Apply</button>
-                    <button className="secondaryButton" onClick={cancelCalibration}>Cancel</button>
+                    <button className="primaryButton" onClick={confirmCalibration}>{t("Confirm & Apply")}</button>
+                    <button className="secondaryButton" onClick={cancelCalibration}>{t("Cancel")}</button>
                   </div>
                 </div>
               ) : null}
@@ -5308,23 +5690,23 @@ function App() {
             <section className="panel portalHeaderPanel">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Client RFQ Intake</h2>
-                  <p className="sectionHelp">Customer-facing demo: clients upload STEP models and drawings/specifications, define order requirements, and receive one preliminary estimate before manual confirmation.</p>
+                  <h2>{t("Client RFQ Intake")}</h2>
+                  <p className="sectionHelp">{t("Customer-facing demo: clients upload STEP models and drawings/specifications, define order requirements, and receive one preliminary estimate before manual confirmation.")}</p>
                 </div>
-                <button className="primaryButton" onClick={calculatePortalEstimates}><Calculator size={16} /> Calculate Preliminary Estimate</button>
+                <button className="primaryButton" onClick={calculatePortalEstimates}><Calculator size={16} /> {t("Calculate Preliminary Estimate")}</button>
               </div>
               <div className="portalNotice">
-                <strong>STEP alone is not enough for a reliable manufacturing price.</strong>
-                <span>We also need drawing/specification data for tolerances, material, threads, surface finish, heat treatment, inspection reports, and delivery expectations. Missing information widens the estimate range and lowers confidence.</span>
+                <strong>{t("STEP alone is not enough for a reliable manufacturing price.")}</strong>
+                <span>{t("We also need drawing/specification data for tolerances, material, threads, surface finish, heat treatment, inspection reports, and delivery expectations. Missing information widens the estimate range and lowers confidence.")}</span>
               </div>
               <div className="fieldGrid compact">
-                <label>Customer/company<input value={portalCustomerName} onChange={(event) => setPortalCustomerName(event.target.value)} /></label>
-                <label>Contact/email<input value={portalContact} onChange={(event) => setPortalContact(event.target.value)} /></label>
-                <label>Upload STEP files<input type="file" multiple accept=".step,.stp" onChange={(event) => addPortalFiles(event.target.files)} /></label>
-                <label>RFQ status<input readOnly value="Preliminary estimate, manual confirmation required" /></label>
+                <label>{t("Customer/company")}<input value={portalCustomerName} onChange={(event) => setPortalCustomerName(event.target.value)} /></label>
+                <label>{t("Contact/email")}<input value={portalContact} onChange={(event) => setPortalContact(event.target.value)} /></label>
+                <label>{t("Upload STEP files")}<input type="file" multiple accept=".step,.stp" onChange={(event) => addPortalFiles(event.target.files)} /></label>
+                <label>{t("RFQ status")}<input readOnly value={t("Preliminary estimate, manual confirmation required")} /></label>
               </div>
               <div className="buttonRow portalButtons">
-                <button className="secondaryButton" onClick={addBlankPortalPart}><Plus size={16} /> Add Part Manually</button>
+                <button className="secondaryButton" onClick={addBlankPortalPart}><Plus size={16} /> {t("Add Part Manually")}</button>
               </div>
               <p className="statusText">{portalStatus}</p>
             </section>
@@ -5332,12 +5714,12 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>RFQ Parts</h2>
-                  <p className="sectionHelp">The client sees requirements and one preliminary estimate. Internal target/accounting rates, stock-piece quantity, and complexity assumptions stay hidden.</p>
+                  <h2>{t("RFQ Parts")}</h2>
+                  <p className="sectionHelp">{t("The client sees requirements and one preliminary estimate. Internal target/accounting rates, stock-piece quantity, and complexity assumptions stay hidden.")}</p>
                 </div>
               </div>
               <div className="portalPartTable">
-                <div className="tableHead portalPartHead"><span>Files and quantity</span><span>Manufacturing requirements</span><span>Material and finish</span><span>Readiness</span><span>Preliminary estimate</span><span></span></div>
+                <div className="tableHead portalPartHead"><span>{t("Files and quantity")}</span><span>{t("Manufacturing requirements")}</span><span>{t("Material and finish")}</span><span>{t("Readiness")}</span><span>{t("Preliminary estimate")}</span><span></span></div>
                 {portalParts.map((part) => {
                   const estimate = portalEstimates[part.id];
                   const issues = estimate?.readinessIssues ?? portalReadinessIssues(part);
@@ -5345,42 +5727,42 @@ function App() {
                   return (
                     <div className="tableRow portalPartRow" key={part.id}>
                       <div className="stackedFields">
-                        <label>Part name<input value={part.partName} onChange={(event) => updatePortalPart(part.id, { partName: event.target.value })} /></label>
-                        <label>STEP model<input value={part.fileName || "Missing STEP model"} readOnly /></label>
-                        <label>Drawing/spec file<input type="file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg" onChange={(event) => {
+                        <label>{t("Part name")}<input value={part.partName} onChange={(event) => updatePortalPart(part.id, { partName: event.target.value })} /></label>
+                        <label>{t("STEP model")}<input value={part.fileName || t("Missing STEP model")} readOnly /></label>
+                        <label>{t("Drawing/spec file")}<input type="file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg" onChange={(event) => {
                           const file = event.target.files?.[0];
                           if (file) updatePortalPart(part.id, { drawingFileName: file.name, drawingSizeBytes: file.size });
                         }} /></label>
-                        {part.drawingFileName ? <span className="rateHint">Drawing/spec: {part.drawingFileName}</span> : <span className="rateHint warningHint">Drawing/spec missing</span>}
+                        {part.drawingFileName ? <span className="rateHint">{t("Drawing/spec:")} {part.drawingFileName}</span> : <span className="rateHint warningHint">{t("Drawing/spec missing")}</span>}
                         <div className="miniGrid">
-                          <label>Order qty, pcs<input type="number" min="1" value={part.quantity} onChange={(event) => updatePortalPart(part.id, { quantity: Math.max(1, numericValue(event.target.value, 1)) })} /></label>
-                          <label>Annual qty, pcs<input type="number" min="0" value={part.annualVolume} onChange={(event) => updatePortalPart(part.id, { annualVolume: Math.max(0, numericValue(event.target.value, 0)) })} /></label>
+                          <label>{t("Order qty, pcs")}<input type="number" min="1" value={part.quantity} onChange={(event) => updatePortalPart(part.id, { quantity: Math.max(1, numericValue(event.target.value, 1)) })} /></label>
+                          <label>{t("Annual qty, pcs")}<input type="number" min="0" value={part.annualVolume} onChange={(event) => updatePortalPart(part.id, { annualVolume: Math.max(0, numericValue(event.target.value, 0)) })} /></label>
                         </div>
                       </div>
                       <div className="stackedFields">
-                        <label>Tolerance requirement<select value={part.toleranceRequirement} onChange={(event) => updatePortalPart(part.id, { toleranceRequirement: event.target.value as PortalPart["toleranceRequirement"] })}>
-                          <option value="standard">General standard tolerances</option>
-                          <option value="drawing">According to drawing</option>
-                          <option value="custom">Custom / tight tolerances</option>
+                        <label>{t("Tolerance requirement")}<select value={part.toleranceRequirement} onChange={(event) => updatePortalPart(part.id, { toleranceRequirement: event.target.value as PortalPart["toleranceRequirement"] })}>
+                          <option value="standard">{t("General standard tolerances")}</option>
+                          <option value="drawing">{t("According to drawing")}</option>
+                          <option value="custom">{t("Custom / tight tolerances")}</option>
                         </select></label>
-                        <label>Inspection/documentation<select value={part.documentationRequirement} onChange={(event) => updatePortalPart(part.id, { documentationRequirement: event.target.value as PortalPart["documentationRequirement"] })}>
-                          <option value="standard">Standard inspection</option>
-                          <option value="dimensional_report">Dimensional report</option>
-                          <option value="full_fai">Full FAI / first article</option>
+                        <label>{t("Inspection/documentation")}<select value={part.documentationRequirement} onChange={(event) => updatePortalPart(part.id, { documentationRequirement: event.target.value as PortalPart["documentationRequirement"] })}>
+                          <option value="standard">{t("Standard inspection")}</option>
+                          <option value="dimensional_report">{t("Dimensional report")}</option>
+                          <option value="full_fai">{t("Full FAI / first article")}</option>
                         </select></label>
-                        <label>Threads/inserts<select value={part.threadOrInsertRequirement} onChange={(event) => updatePortalPart(part.id, { threadOrInsertRequirement: event.target.value as PortalPart["threadOrInsertRequirement"] })}>
-                          <option value="unknown">Unknown / see drawing</option>
-                          <option value="none">No</option>
-                          <option value="yes">Yes</option>
+                        <label>{t("Threads/inserts")}<select value={part.threadOrInsertRequirement} onChange={(event) => updatePortalPart(part.id, { threadOrInsertRequirement: event.target.value as PortalPart["threadOrInsertRequirement"] })}>
+                          <option value="unknown">{t("Unknown / see drawing")}</option>
+                          <option value="none">{t("No")}</option>
+                          <option value="yes">{t("Yes")}</option>
                         </select></label>
-                        <label>Delivery need<select value={part.deliveryRequirement} onChange={(event) => updatePortalPart(part.id, { deliveryRequirement: event.target.value as PortalPart["deliveryRequirement"] })}>
-                          <option value="standard">Standard lead time</option>
-                          <option value="expedite">Expedite if possible</option>
-                          <option value="date_critical">Date critical</option>
+                        <label>{t("Delivery need")}<select value={part.deliveryRequirement} onChange={(event) => updatePortalPart(part.id, { deliveryRequirement: event.target.value as PortalPart["deliveryRequirement"] })}>
+                          <option value="standard">{t("Standard lead time")}</option>
+                          <option value="expedite">{t("Expedite if possible")}</option>
+                          <option value="date_critical">{t("Date critical")}</option>
                         </select></label>
                       </div>
                       <div className="stackedFields">
-                        <label>Material<select value={part.materialId} onChange={(event) => {
+                        <label>{t("Material")}<select value={part.materialId} onChange={(event) => {
                           const material = assumptions?.material_examples.find((item) => item.id === event.target.value);
                           updatePortalPart(part.id, {
                             materialId: event.target.value,
@@ -5389,32 +5771,32 @@ function App() {
                             stockCost: material?.stock_piece_cost_eur ?? part.stockCost
                           });
                         }}>
-                          <option value="">Manual material / specified on drawing</option>
+                          <option value="">{t("Manual material / specified on drawing")}</option>
                           {(assumptions?.material_examples ?? []).map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
                         </select></label>
-                        <label>Material note<input value={part.materialRequirement} placeholder="e.g. EN AW-6082 T6, S355, AISI 304" onChange={(event) => updatePortalPart(part.id, { materialId: "", materialRequirement: event.target.value, stockName: event.target.value || part.stockName })} /></label>
+                        <label>Material note<input value={part.materialRequirement} placeholder={t("e.g. EN AW-6082 T6, S355, AISI 304")} onChange={(event) => updatePortalPart(part.id, { materialId: "", materialRequirement: event.target.value, stockName: event.target.value || part.stockName })} /></label>
                         <div className="miniGrid">
-                          <label>Cut length, mm<input type="number" min="1" value={part.cutLengthMm} onChange={(event) => updatePortalPart(part.id, { cutLengthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
+                          <label>{t("Cut length, mm")}<input type="number" min="1" value={part.cutLengthMm} onChange={(event) => updatePortalPart(part.id, { cutLengthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
                           {portalSelectedMaterial(part)?.stock_shape === "plate" ? (
-                            <label>Cut width, mm<input type="number" min="1" value={part.cutWidthMm} onChange={(event) => updatePortalPart(part.id, { cutWidthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
+                            <label>{t("Cut width, mm")}<input type="number" min="1" value={part.cutWidthMm} onChange={(event) => updatePortalPart(part.id, { cutWidthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
                           ) : null}
                         </div>
-                        <label>Surface finish / treatment<input value={part.surfaceFinish} onChange={(event) => updatePortalPart(part.id, { surfaceFinish: event.target.value })} /></label>
-                        <label>Notes<textarea value={part.notes} onChange={(event) => updatePortalPart(part.id, { notes: event.target.value })} /></label>
+                        <label>{t("Surface finish / treatment")}<input value={part.surfaceFinish} onChange={(event) => updatePortalPart(part.id, { surfaceFinish: event.target.value })} /></label>
+                        <label>{t("Notes")}<textarea value={part.notes} onChange={(event) => updatePortalPart(part.id, { notes: event.target.value })} /></label>
                       </div>
                       <div className="portalReadinessBox">
-                        <strong>{issues.length === 0 ? "Ready for review" : "Needs information"}</strong>
-                        <span>Internal complexity estimate: {operationLabel(inferredComplexity)}</span>
-                        <span>Internal stock pieces required: {portalStockPiecesRequired(part)} (from cut length/width vs. stock dimensions)</span>
+                        <strong>{issues.length === 0 ? t("Ready for review") : t("Needs information")}</strong>
+                        <span>{t("Internal complexity estimate:")} {operationLabel(inferredComplexity)}</span>
+                        <span>{t("Internal stock pieces required:")} {portalStockPiecesRequired(part)} {t("(from cut length/width vs. stock dimensions)")}</span>
                         {issues.length > 0 ? (
                           <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-                        ) : <span>No major RFQ gaps detected.</span>}
+                        ) : <span>{t("No major RFQ gaps detected.")}</span>}
                         <button
                           type="button"
                           className="linkButton"
                           onClick={() => setExpandedPortalDetails((current) => ({ ...current, [part.id]: !(current[part.id] ?? false) }))}
                         >
-                          {expandedPortalDetails[part.id] ? "Hide internal pricing detail" : "Show internal pricing detail"}
+                          {expandedPortalDetails[part.id] ? t("Hide internal pricing detail") : t("Show internal pricing detail")}
                         </button>
                         {expandedPortalDetails[part.id] ? (() => {
                           const factors = portalAdjustmentFactors(part);
@@ -5429,29 +5811,29 @@ function App() {
                           return (
                             <div className="portalInternalDetail">
                               <div>
-                                <strong>Rate mode: Target (assumes {formatPercent(averageTargetUtilization(assumptions))}% shop Utilization scenario)</strong>
-                                <span>This preliminary price uses the Target rate, not today's Accounting rate. It is an aspiration, not current capacity.</span>
+                                <strong>{t("Rate mode: Target (assumes")} {formatPercent(averageTargetUtilization(assumptions))}% {t("shop Utilization scenario)")}</strong>
+                                <span>{t("This preliminary price uses the Target rate, not today's Accounting rate. It is an aspiration, not current capacity.")}</span>
                               </div>
                               {accountingSellPrice !== undefined && accountingGapPercent !== null ? (
                                 <div className={accountingGapPercent > 25 ? "warningHint" : ""}>
-                                  <strong>Accounting cross-check: {money.format(accountingSellPrice)}</strong>
-                                  <span>{accountingGapPercent}% above the Target price shown to the client, reflecting today's actual Utilization. A large gap means today's real capacity cannot yet support this price without more orders.</span>
+                                  <strong>{t("Accounting cross-check:")} {money.format(accountingSellPrice)}</strong>
+                                  <span>{accountingGapPercent}% {t("above the Target price shown to the client, reflecting today's actual Utilization. A large gap means today's real capacity cannot yet support this price without more orders.")}</span>
                                 </div>
                               ) : null}
                               <div>
-                                <strong>Adjustment factors applied</strong>
-                                <span>Complexity ({factors.complexity}) x{factors.complexityFactor.toFixed(2)}, Tolerance x{factors.toleranceFactor.toFixed(2)}, QC x{factors.qcFactor.toFixed(2)}, Delivery x{factors.deliveryFactor.toFixed(2)} -- combined x{factors.combined.toFixed(2)} (QC x{factors.qcFactor.toFixed(2)} applies to inspection operations only, not included in "combined"). These are heuristic placeholders, not calibrated against actuals.</span>
+                                <strong>{t("Adjustment factors applied")}</strong>
+                                <span>{t("Complexity")} ({factors.complexity}) x{factors.complexityFactor.toFixed(2)}, {t("Tolerance")} x{factors.toleranceFactor.toFixed(2)}, {t("QC")} x{factors.qcFactor.toFixed(2)}, {t("Delivery")} x{factors.deliveryFactor.toFixed(2)} -- {t("combined")} x{factors.combined.toFixed(2)} ({t('QC x{qc} applies to inspection operations only, not included in "combined".').replace("{qc}", factors.qcFactor.toFixed(2))}) {t("These are heuristic placeholders, not calibrated against actuals.")}</span>
                               </div>
                               <div>
-                                <strong>Tool check: {missingTools.length === 0 ? "all required tools available" : `${missingTools.length} missing`}</strong>
+                                <strong>{t("Tool check:")} {missingTools.length === 0 ? t("all required tools available") : `${missingTools.length} ${t("missing")}`}</strong>
                                 {missingTools.length > 0 ? (
                                   <ul>{missingTools.map((check) => <li key={check.requirement.id}>{toolRequirementLabel(check.requirement)}: {money.format(check.costEur)}</li>)}</ul>
                                 ) : null}
                               </div>
                               {repeatSavings !== null ? (
                                 <div>
-                                  <strong>Repeat-order CAM savings estimate: {money.format(repeatSavings)}</strong>
-                                  <span>Informational only, based on declared annual volume -- this order still carries full new-part CAM cost above.</span>
+                                  <strong>{t("Repeat-order CAM savings estimate:")} {money.format(repeatSavings)}</strong>
+                                  <span>{t("Informational only, based on declared annual volume -- this order still carries full new-part CAM cost above.")}</span>
                                 </div>
                               ) : null}
                             </div>
@@ -5459,15 +5841,15 @@ function App() {
                         })() : null}
                       </div>
                       <div className="portalResultBox">
-                        <span>Indicative unit price</span>
+                        <span>{t("Indicative unit price")}</span>
                         <strong>{estimate ? `${money.format(estimate.lowUnitEur)} - ${money.format(estimate.highUnitEur)}` : "..."}</strong>
-                        <span>Estimated order total</span>
+                        <span>{t("Estimated order total")}</span>
                         <strong>{estimate ? `${money.format(estimate.lowTotalEur)} - ${money.format(estimate.highTotalEur)}` : "..."}</strong>
-                        <small>{estimate ? estimate.confidence : "Not calculated"}</small>
-                        <small className="portalDisclaimer">Preliminary estimate only, subject to engineering confirmation. The confirmed price may differ materially from this range once drawing, material, tolerance, tooling, and capacity are reviewed.</small>
-                        <button type="button" className="secondaryButton" onClick={() => sendPortalPartToQuoteBuilder(part)}>Send to Quote Builder</button>
+                        <small>{estimate ? estimate.confidence : t("Not calculated")}</small>
+                        <small className="portalDisclaimer">{t("Preliminary estimate only, subject to engineering confirmation. The confirmed price may differ materially from this range once drawing, material, tolerance, tooling, and capacity are reviewed.")}</small>
+                        <button type="button" className="secondaryButton" onClick={() => sendPortalPartToQuoteBuilder(part)}>{t("Send to Quote Builder")}</button>
                       </div>
-                      <button className="iconButton" title="Remove part" onClick={() => removePortalPart(part.id)}><Trash2 size={18} /></button>
+                      <button className="iconButton" title={t("Remove part")} onClick={() => removePortalPart(part.id)}><Trash2 size={18} /></button>
                     </div>
                   );
                 })}
@@ -5476,19 +5858,19 @@ function App() {
 
             <section className="scenarioStrip portalTotals">
               <div>
-                <span className="scenarioLabel">Parts</span>
+                <span className="scenarioLabel">{t("Parts")}</span>
                 <strong>{portalParts.length}</strong>
-                <span className="scenarioHint">Uploaded or manually entered.</span>
+                <span className="scenarioHint">{t("Uploaded or manually entered.")}</span>
               </div>
               <div>
-                <span className="scenarioLabel">Estimated total, EUR</span>
+                <span className="scenarioLabel">{t("Estimated total, EUR")}</span>
                 <strong>{Object.values(portalEstimates).length > 0 ? `${money.format(Object.values(portalEstimates).reduce((sum, item) => sum + item.lowTotalEur, 0))} - ${money.format(Object.values(portalEstimates).reduce((sum, item) => sum + item.highTotalEur, 0))}` : "..."}</strong>
-                <span className="scenarioHint">Single preliminary range shown to the client.</span>
+                <span className="scenarioHint">{t("Single preliminary range shown to the client.")}</span>
               </div>
               <div>
-                <span className="scenarioLabel">Confidence</span>
-                <strong>{Object.values(portalEstimates).some((item) => item.readinessIssues.length > 0) ? "Needs review" : Object.values(portalEstimates).length > 0 ? "Review-ready" : "Not calculated"}</strong>
-                <span className="scenarioHint">Final CO requires engineering and material confirmation.</span>
+                <span className="scenarioLabel">{t("Confidence")}</span>
+                <strong>{Object.values(portalEstimates).some((item) => item.readinessIssues.length > 0) ? t("Needs review") : Object.values(portalEstimates).length > 0 ? t("Review-ready") : t("Not calculated")}</strong>
+                <span className="scenarioHint">{t("Final CO requires engineering and material confirmation.")}</span>
               </div>
             </section>
           </section>
@@ -5509,63 +5891,63 @@ function App() {
                 <>
                   <section className="panel profileHero">
                     <div>
-                      <h2>Build Company Cost Profile</h2>
-                      <p className="sectionHelp">Assemble the company-level cost base that feeds real quotes: production assets, low-value inventory reserve, process-specific employees, indirect payroll, facility, utilities, insurance, and other overhead. Indirect payroll is calculated from employee rows marked Overhead; low-value inventory is entered below as total value plus replacement cycle. Applying this profile updates the same assumptions used by Quote, Scenarios, Resources, and Profitability.</p>
+                      <h2>{t("Build Company Cost Profile")}</h2>
+                      <p className="sectionHelp">{t("Assemble the company-level cost base that feeds real quotes: production assets, low-value inventory reserve, process-specific employees, indirect payroll, facility, utilities, insurance, and other overhead. Indirect payroll is calculated from employee rows marked Overhead; low-value inventory is entered below as total value plus replacement cycle. Applying this profile updates the same assumptions used by Quote, Scenarios, Resources, and Profitability.")}</p>
                     </div>
                     <div className="profileActions">
                       <select value={companyProfile.profileId ?? ""} onChange={(event) => loadCompanyProfile(event.target.value)}>
-                        <option value="">Generic starter profile (unsaved)</option>
+                        <option value="">{t("Generic starter profile (unsaved)")}</option>
                         {companyProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                       </select>
-                      <button className="primaryButton" onClick={saveCompanyProfile}><Save size={16} /> Save Profile</button>
-                      <button className="secondaryButton" onClick={applyCompanyProfileToAssumptions}>Apply to Costing</button>
-                      <button className="iconButton" title="Delete selected profile" onClick={deleteCompanyProfile}><Trash2 size={18} /></button>
+                      <button className="primaryButton" onClick={saveCompanyProfile}><Save size={16} /> {t("Save Profile")}</button>
+                      <button className="secondaryButton" onClick={applyCompanyProfileToAssumptions}>{t("Apply to Costing")}</button>
+                      <button className="iconButton" title={t("Delete selected profile")} onClick={deleteCompanyProfile}><Trash2 size={18} /></button>
                     </div>
                     <p className="statusText">{profileStatus}</p>
                   </section>
 
                   <section className="profileSummaryStrip">
-                    <div><span className="scenarioLabel">Asset fixed cost/mo</span><strong>{money.format(assetFixedCost)}</strong><span className="scenarioHint">Depreciation plus known fixed asset costs.</span></div>
-                    <div><span className="scenarioLabel">Direct payroll/mo</span><strong>{money.format(directPayroll)}</strong><span className="scenarioHint">Becomes labor classes for route costing.</span></div>
-                    <div><span className="scenarioLabel">Overhead/mo</span><strong>{money.format(totalProfileOverhead)}</strong><span className="scenarioHint">Entered overhead + overhead payroll + inventory reserve.</span></div>
-                    <div><span className="scenarioLabel">Profile output</span><strong>{companyProfile.assets.length} assets / {directEmployees.length} labor / {profileMaterials(companyProfile).length} materials</strong><span className="scenarioHint">Applied into Resources assumptions.</span></div>
+                    <div><span className="scenarioLabel">{t("Asset fixed cost/mo")}</span><strong>{money.format(assetFixedCost)}</strong><span className="scenarioHint">{t("Depreciation plus known fixed asset costs.")}</span></div>
+                    <div><span className="scenarioLabel">{t("Direct payroll/mo")}</span><strong>{money.format(directPayroll)}</strong><span className="scenarioHint">{t("Becomes labor classes for route costing.")}</span></div>
+                    <div><span className="scenarioLabel">{t("Overhead/mo")}</span><strong>{money.format(totalProfileOverhead)}</strong><span className="scenarioHint">{t("Entered overhead + overhead payroll + inventory reserve.")}</span></div>
+                    <div><span className="scenarioLabel">{t("Profile output")}</span><strong>{companyProfile.assets.length} {t("assets")} / {directEmployees.length} {t("labor positions")} / {profileMaterials(companyProfile).length} {t("materials")}</strong><span className="scenarioHint">{t("Applied into Resources assumptions.")}</span></div>
                   </section>
 
                   <section className="panel">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Company Identity and Inventory Reserve</h2>
-                        <p className="sectionHelp">Enter low-value inventory here: fixtures, gauges, small tools, benches, carts, hand tools, and other shop items that support production but are not tied to one order. The tool spreads the total value over the replacement cycle and adds the monthly reserve to overhead.</p>
+                        <h2>{t("Company Identity and Inventory Reserve")}</h2>
+                        <p className="sectionHelp">{t("Enter low-value inventory here: fixtures, gauges, small tools, benches, carts, hand tools, and other shop items that support production but are not tied to one order. The tool spreads the total value over the replacement cycle and adds the monthly reserve to overhead.")}</p>
                       </div>
                     </div>
                     <div className="fieldGrid">
-                      <label>Profile/company name<input value={companyProfile.companyName} onChange={(event) => updateCompanyProfile({ companyName: event.target.value })} /></label>
-                      <label>Total low-value inventory value, EUR<input type="number" min="0" value={companyProfile.lowValueInventoryTotalEur} onChange={(event) => updateCompanyProfile({ lowValueInventoryTotalEur: numericValue(event.target.value) })} /></label>
-                      <label>Refresh/replacement cycle, months<input type="number" min="1" value={companyProfile.lowValueInventoryRefreshMonths} onChange={(event) => updateCompanyProfile({ lowValueInventoryRefreshMonths: Math.max(1, numericValue(event.target.value, 24)) })} /></label>
-                      <label>Monthly overhead reserve<input readOnly value={money.format(lowValueReserve)} /></label>
+                      <label>{t("Profile/company name")}<input value={companyProfile.companyName} onChange={(event) => updateCompanyProfile({ companyName: event.target.value })} /></label>
+                      <label>{t("Total low-value inventory value, EUR")}<input type="number" min="0" value={companyProfile.lowValueInventoryTotalEur} onChange={(event) => updateCompanyProfile({ lowValueInventoryTotalEur: numericValue(event.target.value) })} /></label>
+                      <label>{t("Refresh/replacement cycle, months")}<input type="number" min="1" value={companyProfile.lowValueInventoryRefreshMonths} onChange={(event) => updateCompanyProfile({ lowValueInventoryRefreshMonths: Math.max(1, numericValue(event.target.value, 24)) })} /></label>
+                      <label>{t("Monthly overhead reserve")}<input readOnly value={money.format(lowValueReserve)} /></label>
                     </div>
                   </section>
 
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Production Assets</h2>
-                        <p className="sectionHelp">Each asset becomes a machine class. Fixed cost is derived from purchase price, useful life, salvage %, and known recurring asset cost. Capacity inputs drive Accounting vs Target EUR/h; Market sell EUR/h is the explicit commercial rate used by Profitability revenue.</p>
-                        <p className="sectionHelp"><strong>How to enter machines bought years ago:</strong> this is an economic cost model, not a bookkeeping ledger, so enter each asset as it stands <em>today</em> — its current replacement or resale value as "purchase price" and its <em>remaining</em> useful years as "useful life", not the original invoice from 2015. A machine that is fully written off in accounting is not free: it still wears, and one day it must be replaced — give it a modest current value over a short remaining life (or its estimated annual maintenance-plus-replacement reserve as recurring cost). Pricing off zero-cost old machines is how a shop wins orders today and cannot afford the replacement tomorrow.</p>
+                        <h2>{t("Production Assets")}</h2>
+                        <p className="sectionHelp">{t("Each asset becomes a machine class. Fixed cost is derived from purchase price, useful life, salvage %, and known recurring asset cost. Capacity inputs drive Accounting vs Target EUR/h; Market sell EUR/h is the explicit commercial rate used by Profitability revenue.")}</p>
+                        <p className="sectionHelp"><strong>{t("How to enter machines bought years ago:")}</strong> {t("this is an economic cost model, not a bookkeeping ledger, so enter each asset as it stands today — its current replacement or resale value as \"purchase price\" and its remaining useful years as \"useful life\", not the original invoice from 2015. A machine that is fully written off in accounting is not free: it still wears, and one day it must be replaced — give it a modest current value over a short remaining life (or its estimated annual maintenance-plus-replacement reserve as recurring cost). Pricing off zero-cost old machines is how a shop wins orders today and cannot afford the replacement tomorrow.")}</p>
                       </div>
-                      <button className="primaryButton" onClick={addProfileAsset}><Plus size={16} /> Add Asset</button>
+                      <button className="primaryButton" onClick={addProfileAsset}><Plus size={16} /> {t("Add Asset")}</button>
                     </div>
                     <div className="profileAssetTables">
                       <div className="profileAssetTableBlock">
-                        <h3>Asset Cost and Commercial Role</h3>
+                        <h3>{t("Asset Cost and Commercial Role")}</h3>
                         <div className="resourceTable profileAssetTable profileAssetCostTable">
-                          <div className="tableHead profileAssetCostHead"><span>Asset</span><span>Capacity role</span><span>Payroll role</span><span>Purchase EUR</span><span>Life</span><span>Salvage %</span><span>Other fixed/mo</span><span>Fixed/mo</span><span>Variable EUR/h</span><span>Market sell EUR/h</span><span></span></div>
+                          <div className="tableHead profileAssetCostHead"><span>{t("Asset")}</span><span>{t("Capacity role")}</span><span>{t("Payroll role")}</span><span>{t("Purchase EUR")}</span><span>{t("Life")}</span><span>{t("Salvage %")}</span><span>{t("Other fixed/mo")}</span><span>{t("Fixed/mo")}</span><span>{t("Variable EUR/h")}</span><span>{t("Market sell EUR/h")}</span><span></span></div>
                           {companyProfile.assets.map((asset, index) => (
                             <div className="tableRow profileAssetCostRow" key={asset.id}>
                               <input value={asset.name} onChange={(event) => updateProfileAsset(index, "name", event.target.value)} />
                               <select value={assetCapacityRole(asset)} onChange={(event) => updateProfileAsset(index, "capacityRole", event.target.value as AssetCapacityRole)}>
-                                <option value="sellable_capacity">Sellable capacity</option>
-                                <option value="support_internal">Support / internal flow</option>
+                                <option value="sellable_capacity">{t("Sellable capacity")}</option>
+                                <option value="support_internal">{t("Support / internal flow")}</option>
                               </select>
                               <select value={assetPrimaryLaborClassId(asset)} onChange={(event) => updateProfileAsset(index, "primaryLaborClassId", event.target.value)}>
                                 {companyProfile.employees.filter((employee) => employee.directLabor).map((employee) => <option key={employee.id} value={employee.id}>{employee.position}</option>)}
@@ -5584,9 +5966,9 @@ function App() {
                       </div>
 
                       <div className="profileAssetTableBlock">
-                        <h3>Capacity Planning</h3>
+                        <h3>{t("Capacity Planning")}</h3>
                         <div className="resourceTable profileAssetTable profileAssetCapacityTable">
-                          <div className="tableHead profileAssetCapacityHead"><span>Asset</span><span>Hours/mo</span><span>Actual availability %</span><span>Actual utilization %</span><span>Target availability %</span><span>Target utilization %</span><span>Loaded kW</span></div>
+                          <div className="tableHead profileAssetCapacityHead"><span>{t("Asset")}</span><span>{t("Hours/mo")}</span><span>{t("Actual availability %")}</span><span>{t("Actual utilization %")}</span><span>{t("Target availability %")}</span><span>{t("Target utilization %")}</span><span>{t("Loaded kW")}</span></div>
                           {companyProfile.assets.map((asset, index) => (
                             <div className="tableRow profileAssetCapacityRow" key={`${asset.id}-capacity`}>
                               <span className="profileAssetNameCell">{asset.name}</span>
@@ -5606,13 +5988,13 @@ function App() {
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Employees and Process Positions</h2>
-                        <p className="sectionHelp">Set a row to Direct labor when it works on quote operations. Set it to Overhead for purchasing, warehouse, planning, sales/quoting, admin, maintenance, management, and non-shopfloor quality. Indirect payroll = headcount x gross monthly salary x (1 + employer tax), so it stays 0 until those overhead rows have salary/headcount values.</p>
+                        <h2>{t("Employees and Process Positions")}</h2>
+                        <p className="sectionHelp">{t("Set a row to Direct labor when it works on quote operations. Set it to Overhead for purchasing, warehouse, planning, sales/quoting, admin, maintenance, management, and non-shopfloor quality. Indirect payroll = headcount x gross monthly salary x (1 + employer tax), so it stays 0 until those overhead rows have salary/headcount values.")}</p>
                       </div>
-                      <button className="primaryButton" onClick={addProfileEmployee}><Plus size={16} /> Add Position</button>
+                      <button className="primaryButton" onClick={addProfileEmployee}><Plus size={16} /> {t("Add Position")}</button>
                     </div>
                     <div className="resourceTable profileEmployeeTable">
-                      <div className="tableHead profileEmployeeHead"><span>Position</span><span>Process</span><span>Headcount</span><span>Gross/mo</span><span>Employer tax %</span><span>Paid h/mo</span><span>Cost type</span><span>Calculated cost</span><span></span></div>
+                      <div className="tableHead profileEmployeeHead"><span>{t("Position")}</span><span>{t("Process")}</span><span>{t("Headcount")}</span><span>{t("Gross/mo")}</span><span>{t("Employer tax %")}</span><span>{t("Paid h/mo")}</span><span>{t("Cost type")}</span><span>{t("Calculated cost")}</span><span></span></div>
                       {companyProfile.employees.map((employee, index) => (
                         <div className="tableRow profileEmployeeRow" key={employee.id}>
                           <input value={employee.position} onChange={(event) => updateProfileEmployee(index, "position", event.target.value)} />
@@ -5622,8 +6004,8 @@ function App() {
                           <input type="number" min="0" max="100" value={formatPercent(employee.employerSocialContributionRate)} onChange={(event) => updateProfileEmployee(index, "employerSocialContributionRate", numericValue(event.target.value) / 100)} />
                           <input type="number" min="1" value={employee.paidHoursPerMonth} onChange={(event) => updateProfileEmployee(index, "paidHoursPerMonth", Math.max(1, numericValue(event.target.value, 160)))} />
                           <select value={employee.directLabor ? "direct" : "overhead"} onChange={(event) => updateProfileEmployee(index, "directLabor", event.target.value === "direct")}>
-                            <option value="direct">Direct labor</option>
-                            <option value="overhead">Overhead</option>
+                            <option value="direct">{t("Direct labor")}</option>
+                            <option value="overhead">{t("Overhead")}</option>
                           </select>
                           <input readOnly value={employee.directLabor ? `${money.format(profileEmployeeHourlyCost(employee))}/h` : money.format(employee.headcount * employee.grossMonthlySalaryEur * (1 + employee.employerSocialContributionRate))} />
                           <button className="iconButton" onClick={() => removeProfileEmployee(index)}><Trash2 size={16} /></button>
@@ -5635,56 +6017,56 @@ function App() {
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Facility, Utilities, Insurance, and Overhead</h2>
-                        <p className="sectionHelp">These items flow into the same overhead allocation used by Resources. Add facility rent, electricity not already in machine variable rates, insurance, accounting, sales, quality management, and other company-level costs.</p>
+                        <h2>{t("Facility, Utilities, Insurance, and Overhead")}</h2>
+                        <p className="sectionHelp">{t("These items flow into the same overhead allocation used by Resources. Add facility rent, electricity not already in machine variable rates, insurance, accounting, sales, quality management, and other company-level costs.")}</p>
                       </div>
-                      <div className="buttonRow"><button className="primaryButton" onClick={() => addProfileOverheadItem()}><Plus size={16} /> Add Overhead Item</button></div>
+                      <div className="buttonRow"><button className="primaryButton" onClick={() => addProfileOverheadItem()}><Plus size={16} /> {t("Add Overhead Item")}</button></div>
                     </div>
                     <div className="resourceTable profileOverheadTable overheadTable">
-                      <div className="tableHead"><span>Expense</span><span>Monthly EUR</span><span>Data status</span><span></span></div>
+                      <div className="tableHead"><span>{t("Expense")}</span><span>{t("Monthly EUR")}</span><span>{t("Data status")}</span><span></span></div>
                       {companyProfile.overheadItems.map((item, index) => (
                         <div className="tableRow" key={item.id}>
                           <input value={item.name} onChange={(event) => updateProfileOverheadItem(index, "name", event.target.value)} />
                           <input type="number" min="0" value={item.monthly_cost_eur} onChange={(event) => updateProfileOverheadItem(index, "monthly_cost_eur", numericValue(event.target.value))} />
-                          <DataStatusInput value={item.quality} onChange={(value) => updateProfileOverheadItem(index, "quality", value)} />
+                          <DataStatusInput value={item.quality} onChange={(value) => updateProfileOverheadItem(index, "quality", value)} lang={language} />
                           <button className="iconButton" onClick={() => removeProfileOverheadItem(index)}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
                     <div className="profileOverheadBreakdown">
-                      <span>Entered overhead: {money.format(enteredOverhead)}</span>
-                      <span>Indirect payroll: {money.format(indirectPayroll)} (Overhead rows x gross salary x employer tax)</span>
-                      <span>Low-value inventory reserve: {money.format(lowValueReserve)} (inventory value / replacement months)</span>
-                      <strong>Total overhead applied: {money.format(totalProfileOverhead)}</strong>
+                      <span>{t("Entered overhead:")} {money.format(enteredOverhead)}</span>
+                      <span>{t("Indirect payroll:")} {money.format(indirectPayroll)} {t("(Overhead rows x gross salary x employer tax)")}</span>
+                      <span>{t("Low-value inventory reserve:")} {money.format(lowValueReserve)} {t("(inventory value / replacement months)")}</span>
+                      <strong>{t("Total overhead applied:")} {money.format(totalProfileOverhead)}</strong>
                     </div>
                   </section>
 
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Profile Material Scope</h2>
-                        <p className="sectionHelp">These rows define which materials exist in this company profile. Applying the profile creates matching Material Library rows; Resources is still where stock cost, dimensions, supplier, MOQ, and scrap recovery are completed.</p>
+                        <h2>{t("Profile Material Scope")}</h2>
+                        <p className="sectionHelp">{t("These rows define which materials exist in this company profile. Applying the profile creates matching Material Library rows; Resources is still where stock cost, dimensions, supplier, MOQ, and scrap recovery are completed.")}</p>
                       </div>
                       <div className="buttonRow">
-                        {isSectionOpen("profile_materials") ? <button className="primaryButton" onClick={addProfileMaterial}><Plus size={16} /> Add Material</button> : null}
+                        {isSectionOpen("profile_materials") ? <button className="primaryButton" onClick={addProfileMaterial}><Plus size={16} /> {t("Add Material")}</button> : null}
                         {sectionToggle("profile_materials")}
                       </div>
                     </div>
                     {isSectionOpen("profile_materials") ? (
                     <div className="resourceTable profileMaterialScopeTable">
-                      <div className="tableHead profileMaterialScopeHead"><span>Material name</span><span>Grade</span><span>Stock description</span><span>Shape</span><span></span></div>
+                      <div className="tableHead profileMaterialScopeHead"><span>{t("Material name")}</span><span>{t("Grade")}</span><span>{t("Stock description")}</span><span>{t("Shape")}</span><span></span></div>
                       {profileMaterials(companyProfile).map((material, index) => (
                         <div className="tableRow profileMaterialScopeRow" key={material.id}>
                           <input value={material.name} onChange={(event) => updateProfileMaterial(index, "name", event.target.value)} />
                           <input value={material.materialGrade} onChange={(event) => updateProfileMaterial(index, "materialGrade", event.target.value)} />
                           <input value={material.stockDescription} onChange={(event) => updateProfileMaterial(index, "stockDescription", event.target.value)} />
                           <select value={material.stockShape} onChange={(event) => updateProfileMaterial(index, "stockShape", event.target.value)}>
-                            <option value="">Not set</option>
-                            <option value="round_bar">Round bar</option>
-                            <option value="hex_bar">Hex bar</option>
-                            <option value="square_bar">Square bar</option>
-                            <option value="tube">Tube</option>
-                            <option value="plate">Plate</option>
+                            <option value="">{t("Not set")}</option>
+                            <option value="round_bar">{t("Round bar")}</option>
+                            <option value="hex_bar">{t("Hex bar")}</option>
+                            <option value="square_bar">{t("Square bar")}</option>
+                            <option value="tube">{t("Tube")}</option>
+                            <option value="plate">{t("Plate")}</option>
                           </select>
                           <button className="iconButton" onClick={() => removeProfileMaterial(index)}><Trash2 size={16} /></button>
                         </div>
@@ -5696,17 +6078,17 @@ function App() {
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Profile Tool Scope</h2>
-                        <p className="sectionHelp">These rows define the tool groups relevant for this profile. Applying the profile creates matching Tool Inventory rows; Resources is where diameter, radius, quantity, cost, lead time, and reuse settings are completed.</p>
+                        <h2>{t("Profile Tool Scope")}</h2>
+                        <p className="sectionHelp">{t("These rows define the tool groups relevant for this profile. Applying the profile creates matching Tool Inventory rows; Resources is where diameter, radius, quantity, cost, lead time, and reuse settings are completed.")}</p>
                       </div>
                       <div className="buttonRow">
-                        {isSectionOpen("profile_tools") ? <button className="primaryButton" onClick={addProfileTool}><Plus size={16} /> Add Tool Group</button> : null}
+                        {isSectionOpen("profile_tools") ? <button className="primaryButton" onClick={addProfileTool}><Plus size={16} /> {t("Add Tool Group")}</button> : null}
                         {sectionToggle("profile_tools")}
                       </div>
                     </div>
                     {isSectionOpen("profile_tools") ? (
                     <div className="resourceTable profileToolScopeTable">
-                      <div className="tableHead profileToolScopeHead"><span>Tool group</span><span>Type</span><span>Material groups</span><span></span></div>
+                      <div className="tableHead profileToolScopeHead"><span>{t("Tool group")}</span><span>{t("Type")}</span><span>{t("Material groups")}</span><span></span></div>
                       {profileTools(companyProfile).map((tool, index) => (
                         <div className="tableRow profileToolScopeRow" key={tool.id}>
                           <input value={tool.name} onChange={(event) => updateProfileTool(index, "name", event.target.value)} />
@@ -5722,27 +6104,27 @@ function App() {
                   <section className="operations">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Profile Operation Scope</h2>
-                        <p className="sectionHelp">These rows define the operation templates this profile uses. Applying the profile creates matching Operation Template rows; Resources is where setup, cycle, tooling, consumables, outsourcing, and scrap assumptions are completed.</p>
+                        <h2>{t("Profile Operation Scope")}</h2>
+                        <p className="sectionHelp">{t("These rows define the operation templates this profile uses. Applying the profile creates matching Operation Template rows; Resources is where setup, cycle, tooling, consumables, outsourcing, and scrap assumptions are completed.")}</p>
                       </div>
                       <div className="buttonRow">
-                        {isSectionOpen("profile_operations") ? <button className="primaryButton" onClick={addProfileOperation}><Plus size={16} /> Add Operation</button> : null}
+                        {isSectionOpen("profile_operations") ? <button className="primaryButton" onClick={addProfileOperation}><Plus size={16} /> {t("Add Operation")}</button> : null}
                         {sectionToggle("profile_operations")}
                       </div>
                     </div>
                     {isSectionOpen("profile_operations") ? (
                     <div className="resourceTable profileOperationScopeTable">
-                      <div className="tableHead profileOperationScopeHead"><span>Operation type</span><span>Display name</span><span>Default asset</span><span>Default labor</span><span></span></div>
+                      <div className="tableHead profileOperationScopeHead"><span>{t("Operation type")}</span><span>{t("Display name")}</span><span>{t("Default asset")}</span><span>{t("Default labor")}</span><span></span></div>
                       {profileOperations(companyProfile).map((operation, index) => (
                         <div className="tableRow profileOperationScopeRow" key={operation.id}>
                           <input value={operation.operationType} onChange={(event) => updateProfileOperation(index, "operationType", event.target.value)} />
                           <input value={operation.name} onChange={(event) => updateProfileOperation(index, "name", event.target.value)} />
                           <select value={operation.defaultMachineClassId ?? ""} onChange={(event) => updateProfileOperation(index, "defaultMachineClassId", event.target.value || null)}>
-                            <option value="">No asset</option>
+                            <option value="">{t("No asset")}</option>
                             {companyProfile.assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
                           </select>
                           <select value={operation.defaultLaborClassId ?? ""} onChange={(event) => updateProfileOperation(index, "defaultLaborClassId", event.target.value || null)}>
-                            <option value="">No labor</option>
+                            <option value="">{t("No labor")}</option>
                             {companyProfile.employees.filter((employee) => employee.directLabor).map((employee) => <option key={employee.id} value={employee.id}>{employee.position}</option>)}
                           </select>
                           <button className="iconButton" onClick={() => removeProfileOperation(index)}><Trash2 size={16} /></button>
@@ -5763,32 +6145,32 @@ function App() {
           <div className="resourcesPage">
             <section className="resourceIntroGrid">
               <div className="panel">
-                <div className="sectionHeader"><h2>Commercial Policy</h2></div>
-                <p className="sectionHelp">How cost becomes a price. Margin and risk apply to the shop's own work (machining, labor, engineering, overhead). Material and bought-out items are re-sold with the smaller handling markup instead -- customers rarely accept full profit margin on raw steel.</p>
+                <div className="sectionHeader"><h2>{t("Commercial Policy")}</h2></div>
+                <p className="sectionHelp">{t("How cost becomes a price. Margin and risk apply to the shop's own work (machining, labor, engineering, overhead). Material and bought-out items are re-sold with the smaller handling markup instead -- customers rarely accept full profit margin on raw steel.")}</p>
                 <div className="fieldGrid">
-                  <label>Margin %<input type="number" min="0" max="99" value={formatPercent(assumptions.commercial_policy.default_margin_percent)} onChange={(event) => updateCommercialField("default_margin_percent", numericValue(event.target.value) / 100)} /></label>
-                  <label>Risk allowance %<input type="number" min="0" value={formatPercent(assumptions.commercial_policy.risk_allowance_percent)} onChange={(event) => updateCommercialField("risk_allowance_percent", numericValue(event.target.value) / 100)} /></label>
-                  <label>Minimum admin cost<input type="number" min="0" value={assumptions.commercial_policy.minimum_order_admin_cost_eur} onChange={(event) => updateCommercialField("minimum_order_admin_cost_eur", numericValue(event.target.value))} /></label>
-                  <label>Material/bought-out markup %<input type="number" min="0" max="100" value={formatPercent(assumptions.commercial_policy.material_markup_percent ?? 0.1)} onChange={(event) => updateCommercialField("material_markup_percent", numericValue(event.target.value) / 100)} /></label>
+                  <label>{t("Margin %")}<input type="number" min="0" max="99" value={formatPercent(assumptions.commercial_policy.default_margin_percent)} onChange={(event) => updateCommercialField("default_margin_percent", numericValue(event.target.value) / 100)} /></label>
+                  <label>{t("Risk allowance %")}<input type="number" min="0" value={formatPercent(assumptions.commercial_policy.risk_allowance_percent)} onChange={(event) => updateCommercialField("risk_allowance_percent", numericValue(event.target.value) / 100)} /></label>
+                  <label>{t("Minimum admin cost")}<input type="number" min="0" value={assumptions.commercial_policy.minimum_order_admin_cost_eur} onChange={(event) => updateCommercialField("minimum_order_admin_cost_eur", numericValue(event.target.value))} /></label>
+                  <label>{t("Material/bought-out markup %")}<input type="number" min="0" max="100" value={formatPercent(assumptions.commercial_policy.material_markup_percent ?? 0.1)} onChange={(event) => updateCommercialField("material_markup_percent", numericValue(event.target.value) / 100)} /></label>
                 </div>
               </div>
               <div className="panel">
-                <div className="sectionHeader"><h2>Client Portal Range</h2></div>
-                <p className="sectionHelp">Editable, not hardcoded -- widened asymmetrically pending calibration against actuals.</p>
+                <div className="sectionHeader"><h2>{t("Client Portal Range")}</h2></div>
+                <p className="sectionHelp">{t("Editable, not hardcoded -- widened asymmetrically pending calibration against actuals.")}</p>
                 <div className="fieldGrid">
-                  <label>Low factor (x sell price)<input type="number" min="0.01" max="1" step="0.01" value={assumptions.client_portal?.range_low_factor ?? 0.85} onChange={(event) => updateClientPortalField("range_low_factor", Math.max(0.01, numericValue(event.target.value, 0.85)))} /></label>
-                  <label>High factor (x sell price)<input type="number" min="1" step="0.01" value={assumptions.client_portal?.range_high_factor ?? 1.35} onChange={(event) => updateClientPortalField("range_high_factor", Math.max(1, numericValue(event.target.value, 1.35)))} /></label>
-                  <label>Annual-volume relief %<input type="number" min="0" max="100" value={formatPercent(assumptions.client_portal?.annual_volume_relief_percent ?? 0.92)} onChange={(event) => updateClientPortalField("annual_volume_relief_percent", numericValue(event.target.value, 92) / 100)} /></label>
+                  <label>{t("Low factor (x sell price)")}<input type="number" min="0.01" max="1" step="0.01" value={assumptions.client_portal?.range_low_factor ?? 0.85} onChange={(event) => updateClientPortalField("range_low_factor", Math.max(0.01, numericValue(event.target.value, 0.85)))} /></label>
+                  <label>{t("High factor (x sell price)")}<input type="number" min="1" step="0.01" value={assumptions.client_portal?.range_high_factor ?? 1.35} onChange={(event) => updateClientPortalField("range_high_factor", Math.max(1, numericValue(event.target.value, 1.35)))} /></label>
+                  <label>{t("Annual-volume relief %")}<input type="number" min="0" max="100" value={formatPercent(assumptions.client_portal?.annual_volume_relief_percent ?? 0.92)} onChange={(event) => updateClientPortalField("annual_volume_relief_percent", numericValue(event.target.value, 92) / 100)} /></label>
                 </div>
               </div>
               <div className="panel">
-                <div className="sectionHeader"><h2>CAM Defaults</h2></div>
+                <div className="sectionHeader"><h2>{t("CAM Defaults")}</h2></div>
                 <div className="fieldGrid">
-                  <label>Repeat reuse %<input type="number" min="0" max="100" value={formatPercent(assumptions.cam_programming_defaults.repeat_part_reusable_program_percent)} onChange={(event) => updateCamField("repeat_part_reusable_program_percent", numericValue(event.target.value) / 100)} /></label>
-                  <label>Prove-out, min<input type="number" min="0" value={assumptions.cam_programming_defaults.default_setup_proveout_minutes} onChange={(event) => updateCamField("default_setup_proveout_minutes", numericValue(event.target.value))} /></label>
-                  <label>Simple min<input type="number" min="0" value={assumptions.cam_programming_defaults.simple_programming_minutes} onChange={(event) => updateCamField("simple_programming_minutes", numericValue(event.target.value))} /></label>
-                  <label>Medium min<input type="number" min="0" value={assumptions.cam_programming_defaults.medium_programming_minutes} onChange={(event) => updateCamField("medium_programming_minutes", numericValue(event.target.value))} /></label>
-                  <label>Complex min<input type="number" min="0" value={assumptions.cam_programming_defaults.complex_programming_minutes} onChange={(event) => updateCamField("complex_programming_minutes", numericValue(event.target.value))} /></label>
+                  <label>{t("Repeat reuse %")}<input type="number" min="0" max="100" value={formatPercent(assumptions.cam_programming_defaults.repeat_part_reusable_program_percent)} onChange={(event) => updateCamField("repeat_part_reusable_program_percent", numericValue(event.target.value) / 100)} /></label>
+                  <label>{t("Prove-out, min")}<input type="number" min="0" value={assumptions.cam_programming_defaults.default_setup_proveout_minutes} onChange={(event) => updateCamField("default_setup_proveout_minutes", numericValue(event.target.value))} /></label>
+                  <label>{t("Simple min")}<input type="number" min="0" value={assumptions.cam_programming_defaults.simple_programming_minutes} onChange={(event) => updateCamField("simple_programming_minutes", numericValue(event.target.value))} /></label>
+                  <label>{t("Medium min")}<input type="number" min="0" value={assumptions.cam_programming_defaults.medium_programming_minutes} onChange={(event) => updateCamField("medium_programming_minutes", numericValue(event.target.value))} /></label>
+                  <label>{t("Complex min")}<input type="number" min="0" value={assumptions.cam_programming_defaults.complex_programming_minutes} onChange={(event) => updateCamField("complex_programming_minutes", numericValue(event.target.value))} /></label>
                 </div>
               </div>
             </section>
@@ -5796,31 +6178,32 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Overhead Allocation</h2>
+                  <h2>{t("Overhead Allocation")}</h2>
                   <p className="sectionHelp">
-                    Admin, sales, quality management, and facility costs that sit outside any single machine or direct labor rate.
-                    Enter one monthly total below; it is spread over the shop's planned productive hours and folded into every machine's EUR/h in the Machine Rate Calculator, so every quoted hour automatically carries its fair share of running the company.
+                    {t("Admin, sales, quality management, and facility costs that sit outside any single machine or direct labor rate.")}
+                    {" "}
+                    {t("Enter one monthly total below; it is spread over the shop's planned productive hours and folded into every machine's EUR/h in the Machine Rate Calculator, so every quoted hour automatically carries its fair share of running the company.")}
                   </p>
                 </div>
-                <button className="primaryButton" onClick={addOverheadItem}><Plus size={16} /> Add Item</button>
+                <button className="primaryButton" onClick={addOverheadItem}><Plus size={16} /> {t("Add Item")}</button>
               </div>
               <div className="fieldGrid" style={{ marginBottom: 12 }}>
                 <label>
-                  Total monthly overhead
+                  {t("Total monthly overhead")}
                   <input readOnly value={money.format(totalMonthlyOverheadEur(assumptions))} />
                 </label>
                 <label>
-                  Overhead EUR/h, flat shop average (machine rates fold in a weighted share per station, not this flat figure)
+                  {t("Overhead EUR/h, flat shop average (machine rates fold in a weighted share per station, not this flat figure)")}
                   <input readOnly value={money.format(overheadPerMachineHour(assumptions, "target_availability_percent", "target_utilization_percent"))} />
                 </label>
               </div>
               <div className="resourceTable overheadTable">
-                <div className="tableHead"><span>Expense</span><span>Monthly EUR</span><span>Data status</span><span></span></div>
+                <div className="tableHead"><span>{t("Expense")}</span><span>{t("Monthly EUR")}</span><span>{t("Data status")}</span><span></span></div>
                 {(assumptions.overhead?.monthly_items ?? []).map((item, index) => (
                   <div className="tableRow" key={item.id}>
                     <input value={item.name} onChange={(event) => updateOverheadItem(index, "name", event.target.value)} />
                     <input type="number" min="0" value={item.monthly_cost_eur} onChange={(event) => updateOverheadItem(index, "monthly_cost_eur", numericValue(event.target.value))} />
-                    <DataStatusInput value={item.quality} onChange={(value) => updateOverheadItem(index, "quality", value)} />
+                    <DataStatusInput value={item.quality} onChange={(value) => updateOverheadItem(index, "quality", value)} lang={language} />
                     <button className="iconButton" onClick={() => removeOverheadItem(index)}><Trash2 size={16} /></button>
                   </div>
                 ))}
@@ -5830,18 +6213,18 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Labor Classes</h2>
-                  <p className="sectionHelp">What one hour of each person really costs the company. Enter labor as direct hourly cost or calculate it from gross monthly salary plus Latvian employer VSAOI. "Billable share %" is the share of paid hours that actually ends up on customer work -- the rest is waiting, training, and internal jobs. Salary is divided only over billable hours, otherwise every quote silently under-prices labor by the idle share.</p>
+                  <h2>{t("Labor Classes")}</h2>
+                  <p className="sectionHelp">{t("What one hour of each person really costs the company. Enter labor as direct hourly cost or calculate it from gross monthly salary plus Latvian employer VSAOI. \"Billable share %\" is the share of paid hours that actually ends up on customer work -- the rest is waiting, training, and internal jobs. Salary is divided only over billable hours, otherwise every quote silently under-prices labor by the idle share.")}</p>
                 </div>
               </div>
               <div className="resourceTable laborTable">
-                <div className="tableHead laborHead"><span>Name</span><span>Method</span><span>Direct EUR/h</span><span>Gross/month</span><span>Employer tax %</span><span>Paid h/month</span><span>Billable share %</span><span>Derived EUR/h</span><span>Data status</span></div>
+                <div className="tableHead laborHead"><span>{t("Name")}</span><span>{t("Method")}</span><span>{t("Direct EUR/h")}</span><span>{t("Gross/month")}</span><span>{t("Employer tax %")}</span><span>{t("Paid h/month")}</span><span>{t("Billable share %")}</span><span>{t("Derived EUR/h")}</span><span>{t("Data status")}</span></div>
                 {assumptions.labor_classes.map((labor, index) => (
                   <div className="tableRow laborRow" key={labor.id}>
                     <input value={labor.name} onChange={(event) => updateLabor(index, "name", event.target.value)} />
                     <select value={labor.cost_method ?? "direct_hourly"} onChange={(event) => updateLabor(index, "cost_method", event.target.value)}>
-                      <option value="direct_hourly">Direct hourly</option>
-                      <option value="gross_monthly">Gross salary</option>
+                      <option value="direct_hourly">{t("Direct hourly")}</option>
+                      <option value="gross_monthly">{t("Gross salary")}</option>
                     </select>
                     <input type="number" min="0" value={labor.employer_cost_per_hour_eur} onChange={(event) => updateLabor(index, "employer_cost_per_hour_eur", numericValue(event.target.value))} />
                     <input type="number" min="0" value={labor.gross_monthly_salary_eur ?? 0} onChange={(event) => updateLabor(index, "gross_monthly_salary_eur", numericValue(event.target.value))} />
@@ -5849,7 +6232,7 @@ function App() {
                     <input type="number" min="1" value={labor.paid_hours_per_month ?? assumptions.payroll_tax_defaults?.paid_hours_per_month ?? 160} onChange={(event) => updateLabor(index, "paid_hours_per_month", Math.max(1, numericValue(event.target.value, 160)))} />
                     <input type="number" min="10" max="100" value={formatPercent(laborBillableHoursRatio(labor, assumptions))} onChange={(event) => updateLabor(index, "billable_hours_ratio", Math.min(1, Math.max(0.1, numericValue(event.target.value, 85) / 100)))} />
                     <input readOnly value={deriveLaborHourlyCost(labor, assumptions)} />
-                    <DataStatusInput value={labor.quality} onChange={(value) => updateLabor(index, "quality", value)} />
+                    <DataStatusInput value={labor.quality} onChange={(value) => updateLabor(index, "quality", value)} lang={language} />
                   </div>
                 ))}
               </div>
@@ -5858,17 +6241,17 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Machine Rate Calculator</h2>
-                  <p className="sectionHelp">Availability is the share of scheduled time the machine is actually up and running; Utilization is how much of available time actually gets loaded with orders at all. Idleness (1 - Utilization) is the empty-order gap. Formula: fixed cost / (planned hours x Utilization x Availability) + variable cost + overhead EUR/h. "Variable EUR/h" is what one running hour adds on top of the fixed cost: machine electricity (from Power kW x price), coolant, compressed air, and routine wear items -- it belongs here and not in the overhead bills, because it should be paid only by the parts that actually run on this machine; building electricity (lights, heating, offices) stays in Overhead Allocation. Market sell EUR/h is user-entered and feeds Profitability revenue. Never compare it against the machine-only rate: a sold hour also pays the operator, so the honest comparison column is "Target + labour EUR/h" -- the target rate plus this machine's share of its assigned labour payroll. Which labour class belongs to which asset is set in Profile &gt; Production Assets ("Payroll role" column); the share per machine hour then follows from that class's headcount and how many machines share the role (one operator tending three machines costs each machine a third). OEE stays in the data model as a shop-floor diagnostic (see the Guide tab) but is not shown here: only Availability scales the rate -- performance losses already live in cycle minutes and quality losses in scrap, so charging full OEE would count them twice.</p>
+                  <h2>{t("Machine Rate Calculator")}</h2>
+                  <p className="sectionHelp">{t("Availability is the share of scheduled time the machine is actually up and running; Utilization is how much of available time actually gets loaded with orders at all. Idleness (1 - Utilization) is the empty-order gap. Formula: fixed cost / (planned hours x Utilization x Availability) + variable cost + overhead EUR/h. \"Variable EUR/h\" is what one running hour adds on top of the fixed cost: machine electricity (from Power kW x price), coolant, compressed air, and routine wear items -- it belongs here and not in the overhead bills, because it should be paid only by the parts that actually run on this machine; building electricity (lights, heating, offices) stays in Overhead Allocation. Market sell EUR/h is user-entered and feeds Profitability revenue. Never compare it against the machine-only rate: a sold hour also pays the operator, so the honest comparison column is \"Target + labour EUR/h\" -- the target rate plus this machine's share of its assigned labour payroll. Which labour class belongs to which asset is set in Profile > Production Assets (\"Payroll role\" column); the share per machine hour then follows from that class's headcount and how many machines share the role (one operator tending three machines costs each machine a third). OEE stays in the data model as a shop-floor diagnostic (see the Guide tab) but is not shown here: only Availability scales the rate -- performance losses already live in cycle minutes and quality losses in scrap, so charging full OEE would count them twice.")}</p>
                 </div>
               </div>
               <div className="resourceTable machineRateTable">
                 <div className="tableHead machineRateHead">
-                  <span>Name</span><span>Fixed cost EUR/month</span><span>Planned h/month</span>
-                  <span>Actual Availability %</span><span>Target Availability %</span>
-                  <span>Actual Utilization %</span><span>Target Utilization %</span>
-                  <span>Variable EUR/h</span><span>Target discount %</span>
-                  <span>Accounting EUR/h</span><span>Target EUR/h</span><span>Target + labour EUR/h</span><span>Market sell EUR/h</span><span>Power kW</span>
+                  <span>{t("Name")}</span><span>{t("Fixed cost EUR/month")}</span><span>{t("Planned h/month")}</span>
+                  <span>{t("Actual Availability % (machine)")}</span><span>{t("Target Availability % (machine)")}</span>
+                  <span>{t("Actual Utilization % (machine)")}</span><span>{t("Target Utilization % (machine)")}</span>
+                  <span>{t("Variable EUR/h")}</span><span>{t("Target discount %")}</span>
+                  <span>{t("Accounting EUR/h")}</span><span>{t("Target EUR/h")}</span><span>{t("Target + labour EUR/h")}</span><span>{t("Market sell EUR/h")}</span><span>{t("Power kW")}</span>
                 </div>
                 {assumptions.machine_classes.map((machine, index) => {
                   const actualUtilization = machine.actual_utilization_percent ?? 1;
@@ -5886,12 +6269,12 @@ function App() {
                       <div className="utilizationCell">
                         <input type="number" min="1" max="100" value={formatPercent(actualUtilization)} onChange={(event) => updateMachine(index, "actual_utilization_percent", Math.max(0.01, numericValue(event.target.value, 1) / 100))} />
                         <UtilizationBar utilization={actualUtilization} />
-                        <span className={`idlenessHint ${actualIdle === 0 ? "zero" : ""}`}>Idle {formatPercent(actualIdle)}%</span>
+                        <span className={`idlenessHint ${actualIdle === 0 ? "zero" : ""}`}>{t("Idle")} {formatPercent(actualIdle)}%</span>
                       </div>
                       <div className="utilizationCell">
                         <input type="number" min="1" max="100" value={formatPercent(targetUtilization)} onChange={(event) => updateMachine(index, "target_utilization_percent", Math.max(0.01, numericValue(event.target.value, DEFAULT_TARGET_UTILIZATION_PERCENT * 100) / 100))} />
                         <UtilizationBar utilization={targetUtilization} />
-                        <span className={`idlenessHint ${targetIdle === 0 ? "zero" : ""}`}>Idle {formatPercent(targetIdle)}%</span>
+                        <span className={`idlenessHint ${targetIdle === 0 ? "zero" : ""}`}>{t("Idle")} {formatPercent(targetIdle)}%</span>
                       </div>
                       <input type="number" min="0" value={machine.variable_cost_eur_per_hour ?? 0} onChange={(event) => updateMachine(index, "variable_cost_eur_per_hour", numericValue(event.target.value))} />
                       <input type="number" min="0" max="90" value={formatPercent(machine.target_rate_discount_percent ?? 0)} onChange={(event) => updateMachine(index, "target_rate_discount_percent", Math.min(0.9, numericValue(event.target.value) / 100))} />
@@ -5906,30 +6289,30 @@ function App() {
                           className="linkButton"
                           onClick={() => setExpandedFixedCostHelpers((current) => ({ ...current, [machine.id]: !helperOpen }))}
                         >
-                          {helperOpen ? "Hide" : "Estimate fixed cost from purchase price"}
+                          {helperOpen ? t("Hide") : t("Estimate fixed cost from purchase price")}
                         </button>
                       </div>
                       {helperOpen ? (
                         <div className="fixedCostHelper">
                           <label>
-                            Purchase price EUR
+                            {t("Purchase price EUR")}
                             <input type="number" min="0" value={machine.purchase_price_eur ?? 0} onChange={(event) => updateMachine(index, "purchase_price_eur", numericValue(event.target.value))} />
                           </label>
                           <label>
-                            Useful life, years
+                            {t("Useful life, years")}
                             <input type="number" min="1" value={machine.useful_life_years ?? 10} onChange={(event) => updateMachine(index, "useful_life_years", Math.max(1, numericValue(event.target.value, 10)))} />
                           </label>
                           <label>
-                            Salvage %
+                            {t("Salvage %")}
                             <input type="number" min="0" max="90" value={formatPercent(machine.salvage_percent ?? 0)} onChange={(event) => updateMachine(index, "salvage_percent", Math.min(0.9, numericValue(event.target.value) / 100))} />
                           </label>
                           <label>
-                            Other fixed cost EUR/month
+                            {t("Other fixed cost EUR/month")}
                             <input type="number" min="0" value={machine.other_monthly_fixed_cost_eur ?? 0} onChange={(event) => updateMachine(index, "other_monthly_fixed_cost_eur", numericValue(event.target.value))} />
                           </label>
                           <div>
-                            <div className="suggestedValue">Suggested: {money.format(suggestedFixedCostFromPurchase(machine))}/mo</div>
-                            <button type="button" className="secondaryButton" onClick={() => applySuggestedFixedCost(index)}>Apply</button>
+                            <div className="suggestedValue">{t("Suggested:")} {money.format(suggestedFixedCostFromPurchase(machine))}/mo</div>
+                            <button type="button" className="secondaryButton" onClick={() => applySuggestedFixedCost(index)}>{t("Apply")}</button>
                           </div>
                         </div>
                       ) : null}
@@ -5942,17 +6325,17 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Material Library</h2>
-                  <p className="sectionHelp">Stock pieces used in quote material selection. Costs should represent purchasable stock, not theoretical net part material.</p>
+                  <h2>{t("Material Library")}</h2>
+                  <p className="sectionHelp">{t("Stock pieces used in quote material selection. Costs should represent purchasable stock, not theoretical net part material.")}</p>
                 </div>
                 <div className="buttonRow">
-                  {isSectionOpen("material_library") ? <button className="primaryButton" onClick={addMaterial}><Plus size={16} /> Add Material</button> : null}
+                  {isSectionOpen("material_library") ? <button className="primaryButton" onClick={addMaterial}><Plus size={16} /> {t("Add Material")}</button> : null}
                   {sectionToggle("material_library")}
                 </div>
               </div>
               {isSectionOpen("material_library") ? (
               <div className="resourceTable materialTable">
-                <div className="tableHead materialHead"><span>Name</span><span>Grade</span><span>Stock description</span><span>Cost, EUR</span><span>Shape</span><span>Length mm</span><span>Width mm</span><span>Supplier</span><span>MOQ</span><span>Scrap rec. %</span></div>
+                <div className="tableHead materialHead"><span>{t("Name")}</span><span>{t("Grade")}</span><span>{t("Stock description")}</span><span>{t("Cost, EUR")}</span><span>{t("Shape")}</span><span>{t("Length mm")}</span><span>{t("Width mm")}</span><span>{t("Supplier")}</span><span>{t("MOQ")}</span><span>{t("Scrap rec. %")}</span></div>
                 {assumptions.material_examples.map((material, index) => (
                   <div className="tableRow materialRow" key={material.id}>
                     <input value={material.name} onChange={(event) => updateMaterial(index, "name", event.target.value)} />
@@ -5960,12 +6343,12 @@ function App() {
                     <input value={material.stock_description ?? ""} onChange={(event) => updateMaterial(index, "stock_description", event.target.value)} />
                     <input type="number" min="0" value={material.stock_piece_cost_eur} onChange={(event) => updateMaterial(index, "stock_piece_cost_eur", numericValue(event.target.value))} />
                     <select value={material.stock_shape ?? ""} onChange={(event) => updateMaterial(index, "stock_shape", event.target.value)}>
-                      <option value="">Not set</option>
-                      <option value="round_bar">Round bar</option>
-                      <option value="hex_bar">Hex bar</option>
-                      <option value="square_bar">Square bar</option>
-                      <option value="tube">Tube</option>
-                      <option value="plate">Plate</option>
+                      <option value="">{t("Not set")}</option>
+                      <option value="round_bar">{t("Round bar")}</option>
+                      <option value="hex_bar">{t("Hex bar")}</option>
+                      <option value="square_bar">{t("Square bar")}</option>
+                      <option value="tube">{t("Tube")}</option>
+                      <option value="plate">{t("Plate")}</option>
                     </select>
                     <input type="number" min="0" value={material.stock_length_mm ?? 0} onChange={(event) => updateMaterial(index, "stock_length_mm", numericValue(event.target.value))} />
                     <input type="number" min="0" value={material.stock_width_mm ?? 0} onChange={(event) => updateMaterial(index, "stock_width_mm", numericValue(event.target.value))} disabled={material.stock_shape !== "plate"} />
@@ -5981,11 +6364,11 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Tool Inventory</h2>
-                  <p className="sectionHelp">Simple cutter/tool library used by quote tool checks. Quantity zero is useful for missing-tool demo cases.</p>
+                  <h2>{t("Tool Inventory")}</h2>
+                  <p className="sectionHelp">{t("Simple cutter/tool library used by quote tool checks. Quantity zero is useful for missing-tool demo cases.")}</p>
                 </div>
                 <label className="toolToleranceField">
-                  Diameter/radius match tolerance, mm
+                  {t("Diameter/radius match tolerance, mm")}
                   <input
                     type="number"
                     min="0"
@@ -5995,13 +6378,13 @@ function App() {
                   />
                 </label>
                 <div className="buttonRow">
-                  {isSectionOpen("tool_inventory") ? <button className="primaryButton" onClick={addTool}><Plus size={16} /> Add Tool</button> : null}
+                  {isSectionOpen("tool_inventory") ? <button className="primaryButton" onClick={addTool}><Plus size={16} /> {t("Add Tool")}</button> : null}
                   {sectionToggle("tool_inventory")}
                 </div>
               </div>
               {isSectionOpen("tool_inventory") ? (
               <div className="resourceTable toolInventoryTable">
-                <div className="tableHead toolInventoryHead"><span>Name</span><span>Type</span><span>D mm</span><span>R mm</span><span>Materials</span><span>Qty</span><span>Cost</span><span>Lead days</span><span>Reusable</span><span>Data status</span></div>
+                <div className="tableHead toolInventoryHead"><span>{t("Name")}</span><span>{t("Type")}</span><span>{t("D mm")}</span><span>{t("R mm")}</span><span>{t("Materials")}</span><span>{t("Qty")}</span><span>{t("Cost")}</span><span>{t("Lead days")}</span><span>{t("Reusable")}</span><span>{t("Data status")}</span></div>
                 {(assumptions.tool_inventory ?? []).map((tool, index) => (
                   <div className="tableRow toolInventoryRow" key={tool.id}>
                     <input value={tool.name} onChange={(event) => updateTool(index, "name", event.target.value)} />
@@ -6013,10 +6396,10 @@ function App() {
                     <input type="number" min="0" value={tool.replacement_cost_eur} onChange={(event) => updateTool(index, "replacement_cost_eur", numericValue(event.target.value))} />
                     <input type="number" min="0" value={tool.lead_time_days} onChange={(event) => updateTool(index, "lead_time_days", numericValue(event.target.value))} />
                     <select value={tool.reusable ? "yes" : "no"} onChange={(event) => updateTool(index, "reusable", event.target.value === "yes")}>
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
+                      <option value="yes">{t("Yes")}</option>
+                      <option value="no">{t("No")}</option>
                     </select>
-                    <DataStatusInput value={tool.quality} onChange={(value) => updateTool(index, "quality", value)} />
+                    <DataStatusInput value={tool.quality} onChange={(value) => updateTool(index, "quality", value)} lang={language} />
                   </div>
                 ))}
               </div>
@@ -6026,19 +6409,19 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Operation Templates</h2>
-                  <p className="sectionHelp">Defaults used when adding operations to a quote. Tune these as measured setup and cycle history improves.</p>
+                  <h2>{t("Operation Templates")}</h2>
+                  <p className="sectionHelp">{t("Defaults used when adding operations to a quote. Tune these as measured setup and cycle history improves.")}</p>
                 </div>
                 {sectionToggle("operation_templates")}
               </div>
               {isSectionOpen("operation_templates") ? (
               <div className="resourceTable operationTemplateTable">
-                <div className="tableHead operationTemplateHead"><span>Operation</span><span>Machine</span><span>Labor</span><span>Setup M min</span><span>Setup L min</span><span>Cycle M min/pc</span><span>Cycle L min/pc</span><span>Tool EUR/part</span><span>Cons. EUR/part</span><span>Out EUR/part</span><span>Out EUR/batch</span><span>Scrap %</span></div>
+                <div className="tableHead operationTemplateHead"><span>{t("Operation")}</span><span>{t("Machine")}</span><span>{t("Labor")}</span><span>{t("Setup M min")}</span><span>{t("Setup L min")}</span><span>{t("Cycle M min/pc")}</span><span>{t("Cycle L min/pc")}</span><span>{t("Tool EUR/part")}</span><span>{t("Cons. EUR/part")}</span><span>{t("Out EUR/part")}</span><span>{t("Out EUR/batch")}</span><span>{t("Scrap %")}</span></div>
                 {assumptions.operation_templates.map((template, index) => (
                   <div className="tableRow operationTemplateRow" key={template.operation_type}>
                     <span>{operationLabel(template.operation_type)}</span>
-                    <select value={template.default_machine_class_id ?? ""} onChange={(event) => updateOperationTemplate(index, "default_machine_class_id", event.target.value || null)}><option value="">No machine</option>{assumptions.machine_classes.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select>
-                    <select value={template.default_labor_class_id ?? ""} onChange={(event) => updateOperationTemplate(index, "default_labor_class_id", event.target.value || null)}><option value="">No labor</option>{assumptions.labor_classes.map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select>
+                    <select value={template.default_machine_class_id ?? ""} onChange={(event) => updateOperationTemplate(index, "default_machine_class_id", event.target.value || null)}><option value="">{t("No machine")}</option>{assumptions.machine_classes.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select>
+                    <select value={template.default_labor_class_id ?? ""} onChange={(event) => updateOperationTemplate(index, "default_labor_class_id", event.target.value || null)}><option value="">{t("No labor")}</option>{assumptions.labor_classes.map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select>
                     <input type="number" min="0" value={template.default_setup_machine_minutes ?? 0} onChange={(event) => updateOperationTemplate(index, "default_setup_machine_minutes", numericValue(event.target.value))} />
                     <input type="number" min="0" value={template.default_setup_labor_minutes ?? 0} onChange={(event) => updateOperationTemplate(index, "default_setup_labor_minutes", numericValue(event.target.value))} />
                     <input type="number" min="0" value={template.default_run_machine_minutes_per_part ?? 0} onChange={(event) => updateOperationTemplate(index, "default_run_machine_minutes_per_part", numericValue(event.target.value))} />
@@ -6057,12 +6440,12 @@ function App() {
             <section className="operations">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Full JSON</h2>
-                  <p className="sectionHelp">Power-user access to every assumption, including fields without structured inputs above. Collapsed by default -- during a presentation there is no reason to open it.</p>
+                  <h2>{t("Full JSON")}</h2>
+                  <p className="sectionHelp">{t("Power-user access to every assumption, including fields without structured inputs above. Collapsed by default -- during a presentation there is no reason to open it.")}</p>
                 </div>
                 <div className="buttonRow">
-                  {isSectionOpen("full_json") ? <button className="secondaryButton" onClick={applyJsonEditor}>Apply JSON</button> : null}
-                  <button className="primaryButton" onClick={saveAssumptions}><Save size={16} /> Save</button>
+                  {isSectionOpen("full_json") ? <button className="secondaryButton" onClick={applyJsonEditor}>{t("Apply JSON")}</button> : null}
+                  <button className="primaryButton" onClick={saveAssumptions}><Save size={16} /> {t("Save")}</button>
                   {sectionToggle("full_json")}
                 </div>
               </div>
@@ -6098,58 +6481,58 @@ function App() {
               const targetMargin = assumptions.commercial_policy.default_margin_percent;
               const requiredSellAtTargetMargin = marketEvidenceProductionCost > 0 ? marketEvidenceProductionCost / Math.max(0.01, 1 - targetMargin) : 0;
               const selectedSolveClassName = marketEvidenceSolveClassId === "__blended"
-                ? "Blended route"
-                : entries.find((entry) => entry.id === marketEvidenceSolveClassId)?.name ?? "Selected class";
-              const loadedProfileName = companyProfile?.companyName ?? "No profile loaded";
+                ? t("Blended route")
+                : entries.find((entry) => entry.id === marketEvidenceSolveClassId)?.name ?? t("Selected class");
+              const loadedProfileName = companyProfile?.companyName ?? t("No profile loaded");
               const loadedProfileId = companyProfile?.profileId ?? null;
               const boundProfileId = marketRateCardProfileId(assumptions);
-              const boundProfileName = marketRateCardProfileName(assumptions) || "Not bound";
+              const boundProfileName = marketRateCardProfileName(assumptions) || t("Not bound");
               const cardMatchesLoadedProfile = Boolean(loadedProfileId && boundProfileId === loadedProfileId);
               const cardHasBinding = Boolean(boundProfileId);
               return (
                 <>
                   <section className="panel caseHero marketRateHero">
-                    <h2>Market Rates — Competitive Ceiling, Not a Target</h2>
-                    <p>Required and Target EUR/h on the Profitability page already tell you what you need to charge -- your own cost, risk, and margin. This page answers a different question: is anyone actually willing to pay that? It exists to hold rates sourced from <strong>outside</strong> this tool's own pricing engine -- a lost bid, a competitor's price, a market benchmark -- never a number backsolved from our own accepted quotes, since that would just hand back our own cost-plus price and prove nothing about the market. Once a rate is credible, apply it to Profitability, where it is shown next to Required/Target EUR/h as the realism cutoff, not the number that decides the price.</p>
+                    <h2>{t("Market Rates — Competitive Ceiling, Not a Target")}</h2>
+                    <p>{t("Required and Target EUR/h on the Profitability page already tell you what you need to charge -- your own cost, risk, and margin. This page answers a different question: is anyone actually willing to pay that? It exists to hold rates sourced from")} <strong>{t("outside")}</strong> {t("this tool's own pricing engine -- a lost bid, a competitor's price, a market benchmark -- never a number backsolved from our own accepted quotes, since that would just hand back our own cost-plus price and prove nothing about the market. Once a rate is credible, apply it to Profitability, where it is shown next to Required/Target EUR/h as the realism cutoff, not the number that decides the price.")}</p>
                   </section>
 
                   <section className="panel marketRatePanel">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Market Rate Card</h2>
-                        <p className="sectionHelp">These are external sell rates by work-center family, sourced from outside our own quotes -- not derived from asset value or our own cost-plus price. Use the source and confidence fields to separate real lost-bid/competitor evidence from manual placeholders; "Cost-plus floor only" openly marks a class with no market evidence yet, rather than inventing one.</p>
+                        <h2>{t("Market Rate Card")}</h2>
+                        <p className="sectionHelp">{t("These are external sell rates by work-center family, sourced from outside our own quotes -- not derived from asset value or our own cost-plus price. Use the source and confidence fields to separate real lost-bid/competitor evidence from manual placeholders; \"Cost-plus floor only\" openly marks a class with no market evidence yet, rather than inventing one.")}</p>
                       </div>
                       <div className="buttonRow marketRateActions">
-                        <button className="secondaryButton" onClick={addMarketRateEntry}><Plus size={16} /> Add Class</button>
-                        <button className="secondaryButton" onClick={loadMarketRateCardFromLoadedProfile}>Load Card from Profile</button>
-                        <button className="secondaryButton" onClick={bindMarketRateCardToLoadedProfile}>Bind to Loaded Profile</button>
-                        <button className="secondaryButton" onClick={saveMarketRateCard}><Save size={16} /> Save Rate Card</button>
-                        <button className="primaryButton" onClick={applyMarketRateCardToProfitability}>Apply to Profitability</button>
+                        <button className="secondaryButton" onClick={addMarketRateEntry}><Plus size={16} /> {t("Add Class")}</button>
+                        <button className="secondaryButton" onClick={loadMarketRateCardFromLoadedProfile}>{t("Load Card from Profile")}</button>
+                        <button className="secondaryButton" onClick={bindMarketRateCardToLoadedProfile}>{t("Bind to Loaded Profile")}</button>
+                        <button className="secondaryButton" onClick={saveMarketRateCard}><Save size={16} /> {t("Save Rate Card")}</button>
+                        <button className="primaryButton" onClick={applyMarketRateCardToProfitability}>{t("Apply to Profitability")}</button>
                       </div>
                     </div>
                     <div className={`marketBindingStrip ${cardMatchesLoadedProfile ? "compatible" : "blocked"}`}>
-                      <div><span>Loaded profile</span><strong>{loadedProfileName}</strong></div>
-                      <div><span>Rate card bound to</span><strong>{boundProfileName}</strong></div>
-                      <div><span>Compatibility</span><strong>{cardMatchesLoadedProfile ? "Compatible" : cardHasBinding ? "Wrong profile" : "Not bound"}</strong></div>
+                      <div><span>{t("Loaded profile")}</span><strong>{loadedProfileName}</strong></div>
+                      <div><span>{t("Rate card bound to")}</span><strong>{boundProfileName}</strong></div>
+                      <div><span>{t("Compatibility")}</span><strong>{cardMatchesLoadedProfile ? t("Compatible") : cardHasBinding ? t("Wrong profile") : t("Not bound")}</strong></div>
                     </div>
                     {!cardMatchesLoadedProfile ? (
-                      <p className="profitabilityWarning">Load a saved Company Profile, then load or bind its rate card before applying rates to Profitability. This prevents a CNC/manual/assembly rate card from one company profile being applied to another asset base.</p>
+                      <p className="profitabilityWarning">{t("Load a saved Company Profile, then load or bind its rate card before applying rates to Profitability. This prevents a CNC/manual/assembly rate card from one company profile being applied to another asset base.")}</p>
                     ) : null}
                     <p className="statusText">{assumptionStatus}</p>
                     <div className="resourceTable marketRateCardTable">
-                      <div className="tableHead marketRateCardHead"><span>Pricing class</span><span>Market EUR/h</span><span>Source</span><span>Confidence</span><span>Last updated</span><span>Notes</span><span></span></div>
+                      <div className="tableHead marketRateCardHead"><span>{t("Pricing class")}</span><span>{t("Market EUR/h")}</span><span>{t("Source")}</span><span>{t("Confidence")}</span><span>{t("Last updated")}</span><span>{t("Notes")}</span><span></span></div>
                       {entries.map((entry, index) => (
                         <div className="tableRow marketRateCardRow" key={entry.id}>
                           <input value={entry.name} onChange={(event) => updateMarketRateEntry(index, "name", event.target.value)} />
                           <input type="number" min="0" value={entry.rateEurPerHour} onChange={(event) => updateMarketRateEntry(index, "rateEurPerHour", numericValue(event.target.value))} />
                           <select value={entry.source} onChange={(event) => updateMarketRateEntry(index, "source", event.target.value)}>
-                            <option value="manual_rate_card">Manual / industry benchmark</option>
-                            <option value="lost_quote">Lost-bid backsolve</option>
-                            <option value="competitor_backsolve">Competitor backsolve</option>
-                            <option value="buyer_disclosed">Buyer-disclosed benchmark</option>
-                            <option value="cost_plus_floor">Cost-plus floor only (no evidence yet)</option>
+                            <option value="manual_rate_card">{t("Manual / industry benchmark")}</option>
+                            <option value="lost_quote">{t("Lost-bid backsolve")}</option>
+                            <option value="competitor_backsolve">{t("Competitor backsolve")}</option>
+                            <option value="buyer_disclosed">{t("Buyer-disclosed benchmark")}</option>
+                            <option value="cost_plus_floor">{t("Cost-plus floor only (no evidence yet)")}</option>
                           </select>
-                          <MarketConfidenceInput value={entry.confidence} onChange={(value) => updateMarketRateEntry(index, "confidence", value)} />
+                          <MarketConfidenceInput value={entry.confidence} onChange={(value) => updateMarketRateEntry(index, "confidence", value)} lang={language} />
                           <input value={entry.lastUpdated} placeholder="YYYY-MM-DD" onChange={(event) => updateMarketRateEntry(index, "lastUpdated", event.target.value)} />
                           <input value={entry.notes} onChange={(event) => updateMarketRateEntry(index, "notes", event.target.value)} />
                           <button className="iconButton" onClick={() => removeMarketRateEntry(index)}><Trash2 size={16} /></button>
@@ -6162,43 +6545,43 @@ function App() {
                     <div className="panel marketRatePanel">
                       <div className="sectionHeader wide">
                         <div>
-                          <h2>Competitor / Lost-Bid Evidence Backsolve</h2>
-                          <p className="sectionHelp">Enter a price we did NOT set ourselves. Real ways to get one: a lost bid (ask the customer informally what price/lead time won -- most will tell you); a blind or proxy RFQ sent through a broker or an arm's-length intermediary; a public instant-quote portal price for comparable work (Xometry, Protolabs, and similar); or a benchmark a multi-sourcing customer discloses to negotiate against (real, but always biased toward the buyer -- treat it as a soft ceiling, not a hard number). Remove material, bought-out, and fixed charges to isolate conversion revenue, then solve the route EUR/h. Route hours are entered by hand below -- there is no shortcut that pulls in this quote's own price, because that would just backsolve our own cost-plus rate and call it evidence.</p>
+                          <h2>{t("Competitor / Lost-Bid Evidence Backsolve")}</h2>
+                          <p className="sectionHelp">{t("Enter a price we did NOT set ourselves. Real ways to get one: a lost bid (ask the customer informally what price/lead time won -- most will tell you); a blind or proxy RFQ sent through a broker or an arm's-length intermediary; a public instant-quote portal price for comparable work (Xometry, Protolabs, and similar); or a benchmark a multi-sourcing customer discloses to negotiate against (real, but always biased toward the buyer -- treat it as a soft ceiling, not a hard number). Remove material, bought-out, and fixed charges to isolate conversion revenue, then solve the route EUR/h. Route hours are entered by hand below -- there is no shortcut that pulls in this quote's own price, because that would just backsolve our own cost-plus rate and call it evidence.")}</p>
                         </div>
                       </div>
                       <div className="fieldGrid">
-                        <label>Competitor / lost-bid sell price, EUR<input type="number" min="0" value={marketEvidenceSellPrice} onChange={(event) => setMarketEvidenceSellPrice(numericValue(event.target.value))} /></label>
-                        <label>Our production cost for the same part, EUR<input type="number" min="0" value={marketEvidenceProductionCost} onChange={(event) => setMarketEvidenceProductionCost(numericValue(event.target.value))} /></label>
-                        <label>Material sell amount, EUR<input type="number" min="0" value={marketEvidenceMaterialSell} onChange={(event) => setMarketEvidenceMaterialSell(numericValue(event.target.value))} /></label>
-                        <label>Bought-out / outsourced sell amount, EUR<input type="number" min="0" value={marketEvidenceBoughtOutSell} onChange={(event) => setMarketEvidenceBoughtOutSell(numericValue(event.target.value))} /></label>
-                        <label>Engineering / admin / batch charges, EUR<input type="number" min="0" value={marketEvidenceFixedCharges} onChange={(event) => setMarketEvidenceFixedCharges(numericValue(event.target.value))} /></label>
-                        <label>Evidence source<select value={marketEvidenceSource} onChange={(event) => setMarketEvidenceSource(event.target.value as MarketRateSource)}>
-                          <option value="lost_quote">Lost bid (we know what the winner charged)</option>
-                          <option value="competitor_backsolve">Competitor price (blind RFQ, proxy, or instant-quote portal)</option>
-                          <option value="buyer_disclosed">Buyer-disclosed benchmark (soft ceiling)</option>
-                          <option value="manual_rate_card">Manual / industry benchmark</option>
-                          <option value="cost_plus_floor">Cost-plus floor only (no evidence yet)</option>
+                        <label>{t("Competitor / lost-bid sell price, EUR")}<input type="number" min="0" value={marketEvidenceSellPrice} onChange={(event) => setMarketEvidenceSellPrice(numericValue(event.target.value))} /></label>
+                        <label>{t("Our production cost for the same part, EUR")}<input type="number" min="0" value={marketEvidenceProductionCost} onChange={(event) => setMarketEvidenceProductionCost(numericValue(event.target.value))} /></label>
+                        <label>{t("Material sell amount, EUR")}<input type="number" min="0" value={marketEvidenceMaterialSell} onChange={(event) => setMarketEvidenceMaterialSell(numericValue(event.target.value))} /></label>
+                        <label>{t("Bought-out / outsourced sell amount, EUR")}<input type="number" min="0" value={marketEvidenceBoughtOutSell} onChange={(event) => setMarketEvidenceBoughtOutSell(numericValue(event.target.value))} /></label>
+                        <label>{t("Engineering / admin / batch charges, EUR")}<input type="number" min="0" value={marketEvidenceFixedCharges} onChange={(event) => setMarketEvidenceFixedCharges(numericValue(event.target.value))} /></label>
+                        <label>{t("Evidence source")}<select value={marketEvidenceSource} onChange={(event) => setMarketEvidenceSource(event.target.value as MarketRateSource)}>
+                          <option value="lost_quote">{t("Lost bid (we know what the winner charged)")}</option>
+                          <option value="competitor_backsolve">{t("Competitor price (blind RFQ, proxy, or instant-quote portal)")}</option>
+                          <option value="buyer_disclosed">{t("Buyer-disclosed benchmark (soft ceiling)")}</option>
+                          <option value="manual_rate_card">{t("Manual / industry benchmark")}</option>
+                          <option value="cost_plus_floor">{t("Cost-plus floor only (no evidence yet)")}</option>
                         </select></label>
-                        <label>Solve residual for<select value={marketEvidenceSolveClassId} onChange={(event) => setMarketEvidenceSolveClassId(event.target.value)}>
-                          <option value="__blended">Blended route</option>
+                        <label>{t("Solve residual for")}<select value={marketEvidenceSolveClassId} onChange={(event) => setMarketEvidenceSolveClassId(event.target.value)}>
+                          <option value="__blended">{t("Blended route")}</option>
                           {entries.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
                         </select></label>
                       </div>
                       <div className="marketFormulaGrid">
-                        <div><span>Conversion revenue</span><strong>{money.format(conversionRevenue)}</strong><em>Sell price minus material, bought-out, engineering/admin, and batch charges -- the slice that paid for shop hours. Intermediate value: it feeds implied EUR/h and the rate-card check in Decision Logic below</em></div>
-                        <div><span>Route hours</span><strong>{roundMoney(totalRouteHours)} h</strong><em>Use work-center occupancy hours, not machine + labor double-counted</em></div>
-                        <div><span>{selectedSolveClassName} implied EUR/h</span><strong>{impliedRate !== null ? `${money.format(impliedRate)}/h` : "No hours"}</strong><em>Residual revenue divided by selected route hours</em></div>
-                        <div><span>Margin at sell price</span><strong>{grossMarginAtSellPrice !== null ? `${formatPercent(grossMarginAtSellPrice)}%` : "No sell price"}</strong><em>{money.format(grossProfitAtSellPrice)} gross profit vs entered production cost</em></div>
-                        <div><span>Required sell at target margin</span><strong>{marketEvidenceProductionCost > 0 ? money.format(requiredSellAtTargetMargin) : "No cost"}</strong><em>Cost / (1 - {formatPercent(targetMargin)}% margin)</em></div>
-                        <div><span>Current card route revenue</span><strong>{money.format(cardRouteRevenue)}</strong><em>The same route hours priced by the current rate card. Compare only against Conversion revenue (same basis) -- never against Required sell, which is a full price including material</em></div>
+                        <div><span>{t("Conversion revenue")}</span><strong>{money.format(conversionRevenue)}</strong><em>{t("Sell price minus material, bought-out, engineering/admin, and batch charges -- the slice that paid for shop hours. Intermediate value: it feeds implied EUR/h and the rate-card check in Decision Logic below")}</em></div>
+                        <div><span>{t("Route hours")}</span><strong>{roundMoney(totalRouteHours)} h</strong><em>{t("Use work-center occupancy hours, not machine + labor double-counted")}</em></div>
+                        <div><span>{selectedSolveClassName} {t("implied EUR/h")}</span><strong>{impliedRate !== null ? `${money.format(impliedRate)}/h` : t("No hours")}</strong><em>{t("Residual revenue divided by selected route hours")}</em></div>
+                        <div><span>{t("Margin at sell price")}</span><strong>{grossMarginAtSellPrice !== null ? `${formatPercent(grossMarginAtSellPrice)}%` : t("No sell price")}</strong><em>{money.format(grossProfitAtSellPrice)} {t("gross profit vs entered production cost")}</em></div>
+                        <div><span>{t("Required sell at target margin")}</span><strong>{marketEvidenceProductionCost > 0 ? money.format(requiredSellAtTargetMargin) : t("No cost")}</strong><em>{t("Cost / (1 -")} {formatPercent(targetMargin)}% {t("margin)")}</em></div>
+                        <div><span>{t("Current card route revenue")}</span><strong>{money.format(cardRouteRevenue)}</strong><em>{t("The same route hours priced by the current rate card. Compare only against Conversion revenue (same basis) -- never against Required sell, which is a full price including material")}</em></div>
                       </div>
                       <div className="buttonRow marketActionRow">
-                        <button className="secondaryButton" onClick={addMarketEvidenceRow}><Plus size={16} /> Add Route Row</button>
-                        <button className="secondaryButton" onClick={() => applyBlendedRateToRouteClasses(impliedRate)}>Use Blended Rate for Route Classes</button>
-                        <button className="primaryButton" onClick={() => applyImpliedMarketRateToCard(impliedRate)}>Apply Implied Rate to Class</button>
+                        <button className="secondaryButton" onClick={addMarketEvidenceRow}><Plus size={16} /> {t("Add Route Row")}</button>
+                        <button className="secondaryButton" onClick={() => applyBlendedRateToRouteClasses(impliedRate)}>{t("Use Blended Rate for Route Classes")}</button>
+                        <button className="primaryButton" onClick={() => applyImpliedMarketRateToCard(impliedRate)}>{t("Apply Implied Rate to Class")}</button>
                       </div>
                       <div className="resourceTable marketRouteTable">
-                        <div className="tableHead marketRouteHead"><span>Pricing class</span><span>Route h</span><span>Card EUR/h</span><span>Route revenue</span><span></span></div>
+                        <div className="tableHead marketRouteHead"><span>{t("Pricing class")}</span><span>{t("Route h")}</span><span>{t("Card EUR/h")}</span><span>{t("Route revenue")}</span><span></span></div>
                         {marketEvidenceRows.map((row, index) => {
                           const entry = rates.get(row.marketRateClassId);
                           const rate = entry?.rateEurPerHour ?? 0;
@@ -6220,43 +6603,43 @@ function App() {
                     <div className="panel marketRatePanel">
                       <div className="sectionHeader wide">
                         <div>
-                          <h2>Decision Logic</h2>
-                          <p className="sectionHelp">The correct route is not to force cost-plus into the market rate. Use this diagnostic to decide whether a job is profitable, needs negotiation, or should be rejected.</p>
+                          <h2>{t("Decision Logic")}</h2>
+                          <p className="sectionHelp">{t("The correct route is not to force cost-plus into the market rate. Use this diagnostic to decide whether a job is profitable, needs negotiation, or should be rejected.")}</p>
                         </div>
                       </div>
                       <div className="marketDecisionStack">
                         <div>
-                          <span>Market evidence price</span>
+                          <span>{t("Market evidence price")}</span>
                           <strong>{money.format(marketEvidenceSellPrice)}</strong>
                         </div>
                         <div>
-                          <span>Cost-plus required price (what we would need to charge at {formatPercent(targetMargin)}% margin)</span>
-                          <strong>{marketEvidenceProductionCost > 0 ? <><em className="decisionFormula">{money.format(marketEvidenceProductionCost)} cost / (1 − {formatPercent(targetMargin)}%) = </em>{money.format(requiredSellAtTargetMargin)}</> : "No cost"}</strong>
+                          <span>{t("Cost-plus required price (what we would need to charge at")} {formatPercent(targetMargin)}% {t("margin)")}</span>
+                          <strong>{marketEvidenceProductionCost > 0 ? <><em className="decisionFormula">{money.format(marketEvidenceProductionCost)} {t("cost / (1 −")} {formatPercent(targetMargin)}%) = </em>{money.format(requiredSellAtTargetMargin)}</> : t("No cost")}</strong>
                         </div>
                         <div className={marketEvidenceProductionCost > 0 && marketEvidenceSellPrice - requiredSellAtTargetMargin >= 0 ? "decisionGood" : undefined}>
-                          <span>Gap to target margin (market minus required)</span>
-                          <strong>{marketEvidenceProductionCost > 0 ? <><em className="decisionFormula">{money.format(marketEvidenceSellPrice)} − {money.format(requiredSellAtTargetMargin)} = </em>{money.format(marketEvidenceSellPrice - requiredSellAtTargetMargin)}</> : "No cost"}</strong>
+                          <span>{t("Gap to target margin (market minus required)")}</span>
+                          <strong>{marketEvidenceProductionCost > 0 ? <><em className="decisionFormula">{money.format(marketEvidenceSellPrice)} − {money.format(requiredSellAtTargetMargin)} = </em>{money.format(marketEvidenceSellPrice - requiredSellAtTargetMargin)}</> : t("No cost")}</strong>
                         </div>
                         <div className={grossProfitAtSellPrice >= 0 ? "decisionGood" : "decisionBad"}>
-                          <span>Gross profit at market price (market minus production cost)</span>
+                          <span>{t("Gross profit at market price (market minus production cost)")}</span>
                           <strong><em className="decisionFormula">{money.format(marketEvidenceSellPrice)} − {money.format(marketEvidenceProductionCost)} = </em>{money.format(grossProfitAtSellPrice)}</strong>
                         </div>
                         {totalRouteHours > 0 ? (
                           <div className={conversionRevenue - cardRouteRevenue >= 0 ? "decisionGood" : "decisionBad"}>
-                            <span>Rate card check (evidence conversion revenue minus card route revenue, same hours)</span>
+                            <span>{t("Rate card check (evidence conversion revenue minus card route revenue, same hours)")}</span>
                             <strong>
                               <em className="decisionFormula">{money.format(conversionRevenue)} − {money.format(cardRouteRevenue)} = </em>
                               {money.format(conversionRevenue - cardRouteRevenue)}
-                              <em className="decisionFormula"> ({conversionRevenue - cardRouteRevenue >= 0 ? "+" : "−"}{money.format(Math.abs(conversionRevenue - cardRouteRevenue) / totalRouteHours)}/h over {roundMoney(totalRouteHours)} h)</em>
+                              <em className="decisionFormula"> ({conversionRevenue - cardRouteRevenue >= 0 ? "+" : "−"}{money.format(Math.abs(conversionRevenue - cardRouteRevenue) / totalRouteHours)}/h {t("over")} {roundMoney(totalRouteHours)} h)</em>
                             </strong>
                           </div>
                         ) : null}
                       </div>
                       <p className="sectionHelp marketDecisionText">
-                        Rate card check: positive means this real order paid <strong>more</strong> per route hour than the current rate card assumes -- the card is conservative. Negative means the customer paid <strong>less</strong> per hour than the card claims the market pays -- the card is optimistic for this kind of work, and Profitability revenue built on it is overstated. Consistently negative checks across several orders mean the card rates should come down (or this work should not be taken at these prices).
+                        {t("Rate card check: positive means this real order paid")} <strong>{t("more")}</strong> {t("per route hour than the current rate card assumes -- the card is conservative. Negative means the customer paid")} <strong>{t("less")}</strong> {t("per hour than the card claims the market pays -- the card is optimistic for this kind of work, and Profitability revenue built on it is overstated. Consistently negative checks across several orders mean the card rates should come down (or this work should not be taken at these prices).")}
                       </p>
                       <p className="sectionHelp marketDecisionText">
-                        If market price is below the cost-plus required price but still covers variable cost and contributes to overhead, it may be a spare-capacity decision. If it is below true production cost, it is a loss unless there is a strategic reason to accept it.
+                        {t("If market price is below the cost-plus required price but still covers variable cost and contributes to overhead, it may be a spare-capacity decision. If it is below true production cost, it is a loss unless there is a strategic reason to accept it.")}
                       </p>
                     </div>
                   </section>
@@ -6264,27 +6647,107 @@ function App() {
                   <section className="panel marketRatePanel">
                     <div className="sectionHeader wide">
                       <div>
-                        <h2>Asset Mapping to Profitability</h2>
-                        <p className="sectionHelp">Map every machine asset to a pricing class, then apply the card. Sellable assets receive their class EUR/h; support/internal assets receive 0 and remain recovered through the cost base. Applying also updates the currently loaded Company Profile asset sell rates; save the profile if that should persist there too. This is the number Profitability shows next to Required/Target EUR/h -- the reality check on whether the market will actually pay what the cost model says we need.</p>
-                        <p className="sectionHelp">Data flows one way: <strong>evidence → rate card → assets → Profitability</strong>. The buttons here only copy card rates onto assets -- they never change the card itself. If the Rate card check above is red, fix the card first ("Apply Implied Rate to Class" in the Backsolve section), then push the corrected card to assets here.</p>
+                        <h2>{t("Basket Evidence Solver")}</h2>
+                        <p className="sectionHelp">{t("The single-quote backsolve above assumes every other pricing class's card rate is already correct -- it can't bootstrap a card from zero, and it can't separate a fixed per-order charge from an hourly rate from just one order. This panel fits one shared batch/engineering charge plus one market EUR/h per pricing class across every row at once, by least squares. Add rows from real competitor quotes (upload a PDF to extract line items, or enter by hand), fill in your own material-sell estimate and route hours per row, then solve once you have more solvable rows than pricing classes in use.")}</p>
+                        <p className="sectionHelp">{t("Enter totals for each row's full sold quantity, not per-piece values -- same convention as the backsolve panel above. Material/bought-out sell amount is always your own estimate from your routings/BOM; the competitor's quote will not break this out reliably.")}</p>
                       </div>
-                      <button className="primaryButton" onClick={applyMarketRateCardToProfitability}>Apply Rate Card to Assets</button>
+                    </div>
+                    <div className="fieldGrid">
+                      <label>{t("Upload competitor quote PDF")}
+                        <input type="file" accept=".pdf" onChange={(event) => setBasketPdfFile(event.target.files?.[0] ?? null)} />
+                      </label>
+                      <div className="buttonRow">
+                        <button className="secondaryButton" disabled={!basketPdfFile || basketExtracting} onClick={extractBasketPdf}>
+                          {basketExtracting ? t("Extracting...") : t("Extract Line Items")}
+                        </button>
+                        <button className="secondaryButton" onClick={() => addBasketRow()}><Plus size={16} /> {t("Add Row Manually")}</button>
+                      </div>
+                    </div>
+                    {basketStatus ? <p className="statusText">{basketStatus}</p> : null}
+                    <div className="resourceTable marketBasketTable">
+                      <div className="tableHead marketBasketHead">
+                        <span>{t("Part")}</span><span>{t("Qty")}</span><span>{t("Sell price (total)")}</span><span>{t("Material sell (total)")}</span><span>{t("Route hours")}</span><span>{t("Solvable")}</span><span></span>
+                      </div>
+                      {basketRows.map((row, rowIndex) => {
+                        const solvable = basketRowIsSolvable(row);
+                        const residual = basketSolveResult?.residualsByRowId[row.id];
+                        const total = basketRowTotalSellEur(row);
+                        const offModel = residual !== undefined && total !== null && total > 0 && Math.abs(residual) / total > 0.15;
+                        return (
+                          <div className="tableRow marketBasketRow" key={row.id}>
+                            <div className="marketBasketRowMain">
+                              <input placeholder={t("Part name")} value={row.partName} onChange={(event) => updateBasketRow(rowIndex, "partName", event.target.value)} />
+                              {row.source === "pdf_extraction" ? <span className="sectionHelp">{t("from")} {row.pdfFilename}{row.supplier ? ` (${row.supplier})` : ""}</span> : null}
+                            </div>
+                            <input type="number" min="0" placeholder={t("Qty")} value={row.quantity ?? ""} onChange={(event) => updateBasketRow(rowIndex, "quantity", numericValue(event.target.value))} />
+                            <input type="number" min="0" placeholder={t("Sell EUR")} value={row.lineTotalEur ?? (row.unitPriceEur != null && row.quantity != null ? row.unitPriceEur * row.quantity : "")} onChange={(event) => updateBasketRow(rowIndex, "lineTotalEur", numericValue(event.target.value))} />
+                            <input type="number" min="0" placeholder={t("Material EUR")} value={row.materialSellEur ?? ""} onChange={(event) => updateBasketRow(rowIndex, "materialSellEur", numericValue(event.target.value))} />
+                            <div className="marketBasketHoursCell">
+                              {row.routeHours.map((hourEntry, hourIndex) => (
+                                <div className="marketBasketHourRow" key={hourEntry.id}>
+                                  <select value={hourEntry.marketRateClassId} onChange={(event) => updateBasketRowHourEntry(rowIndex, hourIndex, "marketRateClassId", event.target.value)}>
+                                    {entries.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+                                  </select>
+                                  <input type="number" min="0" value={hourEntry.hours} onChange={(event) => updateBasketRowHourEntry(rowIndex, hourIndex, "hours", numericValue(event.target.value))} />
+                                  <button className="iconButton" onClick={() => removeBasketRowHourEntry(rowIndex, hourIndex)}><Trash2 size={14} /></button>
+                                </div>
+                              ))}
+                              <button className="secondaryButton" onClick={() => addBasketRowHourEntry(rowIndex)}>+ {t("class")}</button>
+                            </div>
+                            <span className={solvable ? "decisionGood" : undefined}>
+                              {solvable ? t("Yes") : t("Incomplete")}
+                              {offModel ? <em className="decisionFormula decisionBad"> {t("off-model")} ({money.format(residual!)})</em> : null}
+                            </span>
+                            <div className="buttonRow">
+                              <button className="secondaryButton" onClick={() => saveBasketRow(rowIndex)}>{t("Save")}</button>
+                              <button className="iconButton" onClick={() => deleteBasketRow(rowIndex)}><Trash2 size={16} /></button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="buttonRow marketActionRow">
+                      <button className="primaryButton" onClick={solveBasket}>{t("Solve Basket")}</button>
+                      <button className="primaryButton" disabled={!basketSolveResult} onClick={applyBasketRatesToCard}>{t("Apply Solved Rates to Card")}</button>
+                    </div>
+                    {basketSolveResult ? (
+                      <div className="marketFormulaGrid">
+                        <div><span>{t("Solved batch/engineering charge")}</span><strong>{money.format(basketSolveResult.batchChargeEur)}</strong><em>{t("Shared fixed charge per order, separated from hourly rates by the regression")}</em></div>
+                        {entries.filter((entry) => basketSolveResult.ratesByClassId[entry.id] !== undefined).map((entry) => (
+                          <div key={entry.id}>
+                            <span>{entry.name} {t("solved EUR/h")}</span>
+                            <strong>{money.format(basketSolveResult.ratesByClassId[entry.id])}/h</strong>
+                            <em>{t("Card currently:")} {money.format(entry.rateEurPerHour)}/h</em>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section className="panel marketRatePanel">
+                    <div className="sectionHeader wide">
+                      <div>
+                        <h2>{t("Asset Mapping to Profitability")}</h2>
+                        <p className="sectionHelp">{t("Map every machine asset to a pricing class, then apply the card. Sellable assets receive their class EUR/h; support/internal assets receive 0 and remain recovered through the cost base. Applying also updates the currently loaded Company Profile asset sell rates; save the profile if that should persist there too. This is the number Profitability shows next to Required/Target EUR/h -- the reality check on whether the market will actually pay what the cost model says we need.")}</p>
+                        <p className="sectionHelp">{t("Data flows one way:")} <strong>{t("evidence → rate card → assets → Profitability")}</strong>. {t("The buttons here only copy card rates onto assets -- they never change the card itself. If the Rate card check above is red, fix the card first (\"Apply Implied Rate to Class\" in the Backsolve section), then push the corrected card to assets here.")}</p>
+                      </div>
+                      <button className="primaryButton" onClick={applyMarketRateCardToProfitability}>{t("Apply Rate Card to Assets")}</button>
                     </div>
                     <div className="resourceTable marketMappingTable">
-                      <div className="tableHead marketMappingHead"><span>Asset</span><span>Capacity role</span><span>Pricing class</span><span>Card EUR/h</span><span>Current Profitability EUR/h</span><span></span></div>
+                      <div className="tableHead marketMappingHead"><span>{t("Asset")}</span><span>{t("Capacity role")}</span><span>{t("Pricing class")}</span><span>{t("Card EUR/h")}</span><span>{t("Current Profitability EUR/h")}</span><span></span></div>
                       {assumptions.machine_classes.map((machine, index) => {
                         const classId = machineMarketRateClassId(machine);
                         const entry = rates.get(classId);
                         return (
                           <div className="tableRow marketMappingRow" key={machine.id}>
                             <span>{machine.name}</span>
-                            <span>{isSellableCapacityMachine(machine) ? "Sellable" : "Support"}</span>
+                            <span>{isSellableCapacityMachine(machine) ? t("Sellable") : t("Support")}</span>
                             <select value={classId} onChange={(event) => updateMachine(index, "market_rate_class_id", event.target.value)}>
                               {entries.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
                             </select>
                             <span>{money.format(entry?.rateEurPerHour ?? 0)}/h</span>
-                            <span>{isSellableCapacityMachine(machine) ? `${money.format(machine.market_sell_rate_eur_per_hour ?? 0)}/h` : "Support cost pool"}</span>
-                            <button className="secondaryButton" title="Apply this asset's card rate only, leaving all other assets unchanged" onClick={() => applyMarketRateToSingleAsset(machine.id)}>Apply row</button>
+                            <span>{isSellableCapacityMachine(machine) ? `${money.format(machine.market_sell_rate_eur_per_hour ?? 0)}/h` : t("Support cost pool")}</span>
+                            <button className="secondaryButton" title={t("Apply this asset's card rate only, leaving all other assets unchanged")} onClick={() => applyMarketRateToSingleAsset(machine.id)}>{t("Apply row")}</button>
                           </div>
                         );
                       })}
@@ -6301,26 +6764,26 @@ function App() {
         {activeView === "scenarios" ? (
           <section className="scenariosPage">
             <section className="panel scenarioIntro">
-              <h2>Scenario Comparison</h2>
-              <p>This tab answers one practical question: if the price is too high or too low, which business driver explains it? Use the waterfall to see how utilization, availability, and overhead move the price. Use sensitivity to see how strongly the price reacts when one input moves up or down.</p>
+              <h2>{t("Scenario Comparison")}</h2>
+              <p>{t("This tab answers one practical question: if the price is too high or too low, which business driver explains it? Use the waterfall to see how utilization, availability, and overhead move the price. Use sensitivity to see how strongly the price reacts when one input moves up or down.")}</p>
             </section>
 
             <section className="panel">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>Gap Waterfall and Sensitivity</h2>
-                  <p className="scenarioHelpLarge">Waterfall moves the quote from today's accounting view toward the target pricing view. The first two steps are business actions: fill machines with orders and reduce unplanned downtime. The overhead row is the automatic effect of spreading the same monthly overhead over more productive hours. Sensitivity shows how the target unit price reacts when one driver changes.</p>
+                  <h2>{t("Gap Waterfall and Sensitivity")}</h2>
+                  <p className="scenarioHelpLarge">{t("Waterfall moves the quote from today's accounting view toward the target pricing view. The first two steps are business actions: fill machines with orders and reduce unplanned downtime. The overhead row is the automatic effect of spreading the same monthly overhead over more productive hours. Sensitivity shows how the target unit price reacts when one driver changes.")}</p>
                 </div>
                 <div className="buttonRow">
-                  <button className="secondaryButton" onClick={runGapWaterfall}>Run Gap Waterfall</button>
-                  <button className="secondaryButton" onClick={runSensitivityAnalysis}>Run Sensitivity Table</button>
+                  <button className="secondaryButton" onClick={runGapWaterfall}>{t("Run Gap Waterfall")}</button>
+                  <button className="secondaryButton" onClick={runSensitivityAnalysis}>{t("Run Sensitivity Table")}</button>
                 </div>
               </div>
               {diagnosticsStatus ? <p className="statusText">{diagnosticsStatus}</p> : null}
 
               {gapWaterfall ? (
                 <div className="operationTable">
-                  <div className="tableHead gapWaterfallHead"><span>Step</span><span>Unit price</span><span>Change from previous</span><span>Share of accounting premium</span></div>
+                  <div className="tableHead gapWaterfallHead"><span>{t("Step")}</span><span>{t("Unit price")}</span><span>{t("Change from previous")}</span><span>{t("Share of accounting premium")}</span></div>
                   {gapWaterfall.map((row) => (
                     <div className="tableRow gapWaterfallRow" key={row.step}>
                       <span className="gapWaterfallStep"><strong>{row.step}</strong><em>{row.detail}</em></span>
@@ -6334,7 +6797,7 @@ function App() {
 
               {sensitivityTable ? (
                 <div className="operationTable" style={{ marginTop: 16 }}>
-                  <div className="tableHead sensitivityHead"><span>Driver</span><span>25% lower</span><span>10% lower</span><span>Current</span><span>10% higher</span><span>25% higher</span></div>
+                  <div className="tableHead sensitivityHead"><span>{t("Driver")}</span><span>{t("25% lower")}</span><span>{t("10% lower")}</span><span>{t("Current")}</span><span>{t("10% higher")}</span><span>{t("25% higher")}</span></div>
                   {sensitivityTable.map((row) => (
                     <div className="tableRow sensitivityRow" key={row.driver}>
                       <span>{row.driver}</span>
@@ -6350,11 +6813,11 @@ function App() {
             </section>
 
             <section className="panel">
-              <div className="sectionHeader"><h2>Competitor Price Check</h2></div>
-              <p className="scenarioHelpLarge">Enter a competitor unit price to see whether your target price has room to move. Green means your target is cheaper than the competitor. Red means your target is more expensive and needs attention.</p>
+              <div className="sectionHeader"><h2>{t("Competitor Price Check")}</h2></div>
+              <p className="scenarioHelpLarge">{t("Enter a competitor unit price to see whether your target price has room to move. Green means your target is cheaper than the competitor. Red means your target is more expensive and needs attention.")}</p>
               <div className="fieldGrid">
                 <label>
-                  Competitor unit price, EUR/pc
+                  {t("Competitor unit price, EUR/pc")}
                   <input
                     type="number"
                     min="0"
@@ -6366,7 +6829,7 @@ function App() {
               {(() => {
                 const gap = competitorGapAnalysis();
                 if (!gap) {
-                  return <p className="sectionHelp">Enter a competitor unit price after the Target quote is calculated to see whether your price is safely below the market or needs attention.</p>;
+                  return <p className="sectionHelp">{t("Enter a competitor unit price after the Target quote is calculated to see whether your price is safely below the market or needs attention.")}</p>;
                 }
                 const targetUnitPrice = displayTargetResult?.unit_sell_price_eur ?? 0;
                 const priceRoomEur = roundMoney((competitorUnitPriceEur ?? 0) - targetUnitPrice);
@@ -6375,52 +6838,52 @@ function App() {
                 return (
                   <dl className="summary competitorSummary">
                     <div className={isCheaperThanCompetitor ? "marketGood" : "marketBad"}>
-                      <dt>{isCheaperThanCompetitor ? "Your target price is below competitor" : "Your target price is above competitor"}</dt>
-                      <dd>{money.format(Math.abs(priceRoomEur))} per part ({priceRoomPercent.toFixed(0)}%)</dd>
+                      <dt>{isCheaperThanCompetitor ? t("Your target price is below competitor") : t("Your target price is above competitor")}</dt>
+                      <dd>{money.format(Math.abs(priceRoomEur))} {t("per part")} ({priceRoomPercent.toFixed(0)}%)</dd>
                     </div>
                     <div>
-                      <dt>Margin possible at competitor price</dt>
-                      <dd>{gap.feasibleMargin && gap.requiredMarginPercent !== null ? `${formatPercent(gap.requiredMarginPercent)}%` : "Competitor price is below your cost"}</dd>
+                      <dt>{t("Margin possible at competitor price")}</dt>
+                      <dd>{gap.feasibleMargin && gap.requiredMarginPercent !== null ? `${formatPercent(gap.requiredMarginPercent)}%` : t("Competitor price is below your cost")}</dd>
                     </div>
-                    <p className="competitorExplanation">If you sold at the competitor price and your costs stayed unchanged, this is the gross margin you would earn. When the competitor price increases, this margin increases because the selling price is higher.</p>
+                    <p className="competitorExplanation">{t("If you sold at the competitor price and your costs stayed unchanged, this is the gross margin you would earn. When the competitor price increases, this margin increases because the selling price is higher.")}</p>
                     <div>
-                      <dt>Average machine rate allowed by competitor price</dt>
-                      <dd>{gap.feasibleRate && gap.requiredBlendedRateEurPerHour !== null ? money.format(gap.requiredBlendedRateEurPerHour) : "Not enough price to cover machine cost"}</dd>
+                      <dt>{t("Average machine rate allowed by competitor price")}</dt>
+                      <dd>{gap.feasibleRate && gap.requiredBlendedRateEurPerHour !== null ? money.format(gap.requiredBlendedRateEurPerHour) : t("Not enough price to cover machine cost")}</dd>
                     </div>
-                    <p className="competitorExplanation">This estimates the blended machine EUR/h that would fit inside the competitor price if machine rate were the only thing adjusted.</p>
+                    <p className="competitorExplanation">{t("This estimates the blended machine EUR/h that would fit inside the competitor price if machine rate were the only thing adjusted.")}</p>
                     <div>
-                      <dt>Shop utilization needed at competitor price</dt>
-                      <dd>{gap.feasibleUtilization && gap.requiredAverageUtilizationPercent !== null ? `${formatPercent(gap.requiredAverageUtilizationPercent)}%` : "Not reachable through utilization alone"}</dd>
+                      <dt>{t("Shop utilization needed at competitor price")}</dt>
+                      <dd>{gap.feasibleUtilization && gap.requiredAverageUtilizationPercent !== null ? `${formatPercent(gap.requiredAverageUtilizationPercent)}%` : t("Not reachable through utilization alone")}</dd>
                     </div>
-                    <p className="competitorExplanation">This estimates what average utilization would be needed if utilization were the only lever changed. A higher competitor price usually means the required utilization can be lower.</p>
+                    <p className="competitorExplanation">{t("This estimates what average utilization would be needed if utilization were the only lever changed. A higher competitor price usually means the required utilization can be lower.")}</p>
                   </dl>
                 );
               })()}
               {displayTargetResult && assumptions ? (
                 <div className="combinedWhatIf">
-                  <h3>Combined what-if: move two levers at once</h3>
-                  <p className="sectionHelp">The three suggestions above each change one lever in isolation. Here you can test a realistic partial move on both: set a margin and a shop utilization, and the quote is genuinely recalculated with both applied (utilization scales every machine's target level proportionally -- an approximation for mixed shops).</p>
+                  <h3>{t("Combined what-if: move two levers at once")}</h3>
+                  <p className="sectionHelp">{t("The three suggestions above each change one lever in isolation. Here you can test a realistic partial move on both: set a margin and a shop utilization, and the quote is genuinely recalculated with both applied (utilization scales every machine's target level proportionally -- an approximation for mixed shops).")}</p>
                   <div className="fieldGrid">
                     <label>
-                      What-if margin %
+                      {t("What-if margin %")}
                       <input type="number" min="0" max="90" value={whatIfMarginPercent !== null ? formatPercent(whatIfMarginPercent) : formatPercent(assumptions.commercial_policy.default_margin_percent)} onChange={(event) => setWhatIfMarginPercent(Math.min(0.9, Math.max(0, numericValue(event.target.value, 25) / 100)))} />
                     </label>
                     <label>
-                      What-if average utilization %
+                      {t("What-if average utilization %")}
                       <input type="number" min="1" max="100" value={whatIfUtilizationPercent !== null ? formatPercent(whatIfUtilizationPercent) : formatPercent(averageTargetUtilization(assumptions))} onChange={(event) => setWhatIfUtilizationPercent(Math.min(1, Math.max(0.01, numericValue(event.target.value, 95) / 100)))} />
                     </label>
                     <label>
                       &nbsp;
-                      <button className="secondaryButton" onClick={runCombinedWhatIf}>Recalculate with both levers</button>
+                      <button className="secondaryButton" onClick={runCombinedWhatIf}>{t("Recalculate with both levers")}</button>
                     </label>
                   </div>
                   {whatIfResult ? (
                     <p className={`sectionHelp ${competitorUnitPriceEur !== null && whatIfResult.unitPrice <= competitorUnitPriceEur ? "decisionGood" : ""}`}>
-                      At {formatPercent(whatIfResult.marginPercent)}% margin and {formatPercent(whatIfResult.utilizationPercent)}% utilization the unit price becomes <strong>{money.format(whatIfResult.unitPrice)}</strong>
+                      {t("At")} {formatPercent(whatIfResult.marginPercent)}% {t("margin and")} {formatPercent(whatIfResult.utilizationPercent)}% {t("utilization the unit price becomes")} <strong>{money.format(whatIfResult.unitPrice)}</strong>
                       {competitorUnitPriceEur !== null && competitorUnitPriceEur > 0
                         ? whatIfResult.unitPrice <= competitorUnitPriceEur
-                          ? ` -- at or below the competitor's ${money.format(competitorUnitPriceEur)}.`
-                          : ` -- still ${money.format(roundMoney(whatIfResult.unitPrice - competitorUnitPriceEur))} above the competitor's ${money.format(competitorUnitPriceEur)}.`
+                          ? ` -- ${t("at or below the competitor's")} ${money.format(competitorUnitPriceEur)}.`
+                          : ` -- ${t("still")} ${money.format(roundMoney(whatIfResult.unitPrice - competitorUnitPriceEur))} ${t("above the competitor's")} ${money.format(competitorUnitPriceEur)}.`
                         : "."}
                     </p>
                   ) : null}
@@ -6433,46 +6896,46 @@ function App() {
         {activeView === "profitability" && assumptions ? (
           <section className="casePage">
             <section className="panel caseHero">
-              <h2>Can We Be Profitable?</h2>
-              <p>Independent of any single quote, this page asks one question: if the shop's hours were loaded to a chosen level and sold at today's market rates, would the month end in profit or loss? It combines the monthly expense list (same one as Resources &gt; Overhead Allocation), full payroll, machine costs, and per-asset market sell rates. The result is an <strong>operating profit</strong>: it is before bank interest and corporate income tax, and machine cost includes depreciation rather than loan payments -- so it answers "does the business model work", not "what lands on the bank account this month".</p>
+              <h2>{t("Can We Be Profitable?")}</h2>
+              <p>{t("Independent of any single quote, this page asks one question: if the shop's hours were loaded to a chosen level and sold at today's market rates, would the month end in profit or loss? It combines the monthly expense list (same one as Resources > Overhead Allocation), full payroll, machine costs, and per-asset market sell rates. The result is an")} <strong>{t("operating profit")}</strong>: {t("it is before bank interest and corporate income tax, and machine cost includes depreciation rather than loan payments -- so it answers \"does the business model work\", not \"what lands on the bank account this month\".")}</p>
             </section>
 
             <section className="quoteGrid">
               <div className="panel">
-                <div className="sectionHeader"><h2>Department Monthly Expenses</h2></div>
-                <p className="sectionHelp">Same list as Resources &gt; Overhead Allocation. Editing here updates it there too.</p>
+                <div className="sectionHeader"><h2>{t("Department Monthly Expenses")}</h2></div>
+                <p className="sectionHelp">{t("Same list as Resources > Overhead Allocation. Editing here updates it there too.")}</p>
                 <div className="resourceTable overheadTable">
-                  <div className="tableHead"><span>Expense</span><span>Monthly EUR</span><span>Data status</span><span></span></div>
+                  <div className="tableHead"><span>{t("Expense")}</span><span>{t("Monthly EUR")}</span><span>{t("Data status")}</span><span></span></div>
                   {(assumptions.overhead?.monthly_items ?? []).map((item, index) => (
                     <div className="tableRow" key={item.id}>
                       <input value={item.name} onChange={(event) => updateOverheadItem(index, "name", event.target.value)} />
                       <input type="number" min="0" value={item.monthly_cost_eur} onChange={(event) => updateOverheadItem(index, "monthly_cost_eur", numericValue(event.target.value))} />
-                      <DataStatusInput value={item.quality} onChange={(value) => updateOverheadItem(index, "quality", value)} />
+                      <DataStatusInput value={item.quality} onChange={(value) => updateOverheadItem(index, "quality", value)} lang={language} />
                       <button className="iconButton" onClick={() => removeOverheadItem(index)}><Trash2 size={16} /></button>
                     </div>
                   ))}
                 </div>
-                <button className="secondaryButton" style={{ marginTop: 10 }} onClick={addOverheadItem}><Plus size={16} /> Add Item</button>
+                <button className="secondaryButton" style={{ marginTop: 10 }} onClick={addOverheadItem}><Plus size={16} /> {t("Add Item")}</button>
               </div>
 
               <div className="panel">
-                <div className="sectionHeader"><h2>Capacity Basis</h2></div>
-                <p className="sectionHelp">Revenue, cost, and the operating-profit bridge below are always built on today's real asset load: each asset's actual Availability and Utilization from Profile/Resources, so changing those fields updates this bridge directly. The Revenue capacity table further down also shows a Target EUR/h per station -- the same calculation run on each station's own target Utilization/Availability from Resources, for comparison only.</p>
+                <div className="sectionHeader"><h2>{t("Capacity Basis")}</h2></div>
+                <p className="sectionHelp">{t("Revenue, cost, and the operating-profit bridge below are always built on today's real asset load: each asset's actual Availability and Utilization from Profile/Resources, so changing those fields updates this bridge directly. The Revenue capacity table further down also shows a Target EUR/h per station -- the same calculation run on each station's own target Utilization/Availability from Resources, for comparison only.")}</p>
                 <div className="fieldGrid capacityBasisGrid">
                   <label>
-                    Current weighted utilization %
+                    {t("Current weighted utilization %")}
                     <input readOnly type="number" value={formatPercent(averageActualUtilization(assumptions))} />
                   </label>
                   <label>
-                    Margin % (from Commercial Policy)
+                    {t("Margin % (from Commercial Policy)")}
                     <input readOnly value={formatPercent(assumptions.commercial_policy.default_margin_percent)} />
                   </label>
                   <label>
-                    Risk allowance % (from Commercial Policy)
+                    {t("Risk allowance % (from Commercial Policy)")}
                     <input readOnly value={formatPercent(assumptions.commercial_policy.risk_allowance_percent)} />
                   </label>
                   <label>
-                    Material margin, % of revenue
+                    {t("Material margin, % of revenue")}
                     <input
                       type="number"
                       min="0"
@@ -6485,17 +6948,17 @@ function App() {
                     />
                   </label>
                 </div>
-                <p className="sectionHelp">Hour-based revenue alone ignores the small handling markup quotes add on material and bought-out items. If that markup is real income for the shop, enter it here as a percent of revenue; leave 0 for the conservative hours-only view.</p>
+                <p className="sectionHelp">{t("Hour-based revenue alone ignores the small handling markup quotes add on material and bought-out items. If that markup is real income for the shop, enter it here as a percent of revenue; leave 0 for the conservative hours-only view.")}</p>
                 <label className="compareScenarioToggle">
                   <input type="checkbox" checked={profitabilityCompareScenario} onChange={(event) => setProfitabilityCompareScenario(event.target.checked)} />
-                  Compare against a uniform shop-wide Utilization scenario
+                  {t("Compare against a uniform shop-wide Utilization scenario")}
                 </label>
                 {profitabilityCompareScenario ? (
                   <>
-                    <p className="sectionHelp">Ad-hoc what-if only: applies one Utilization value to every asset's target Availability, for a quick "what if we only load to X% shop-wide" check. It adds a Scenario EUR/h column below and never changes Actual/Target EUR/h or the revenue bridge above.</p>
+                    <p className="sectionHelp">{t("Ad-hoc what-if only: applies one Utilization value to every asset's target Availability, for a quick \"what if we only load to X% shop-wide\" check. It adds a Scenario EUR/h column below and never changes Actual/Target EUR/h or the revenue bridge above.")}</p>
                     <div className="fieldGrid capacityBasisGrid">
                       <label>
-                        Utilization scenario %
+                        {t("Utilization scenario %")}
                         <input
                           type="number"
                           min="1"
@@ -6506,8 +6969,8 @@ function App() {
                       </label>
                     </div>
                     <div className="scenarioButtons">
-                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(averageActualUtilization(assumptions))}>Use current weighted load ({formatPercent(averageActualUtilization(assumptions))}%)</button>
-                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(1)}>Use 100% (fully booked)</button>
+                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(averageActualUtilization(assumptions))}>{t("Use current weighted load")} ({formatPercent(averageActualUtilization(assumptions))}%)</button>
+                      <button className="secondaryButton" onClick={() => setProfitabilityScenarioUtilization(1)}>{t("Use 100% (fully booked)")}</button>
                     </div>
                   </>
                 ) : null}
@@ -6578,40 +7041,40 @@ function App() {
               const sensitivityUtilizations = [0.5, 0.65, 0.8, 0.85, 0.95, 1];
               return (
                 <section className="panel backbonePanel">
-                  <div className="sectionHeader"><h2>Monthly Operating Profit Bridge</h2></div>
-                  <p className="sectionHelp">Reads left to right: what the market would pay for the loaded hours, minus machine costs, minus payroll, minus overhead -- what remains is the month's operating result. Revenue is built station by station from explicit market sell rates; the cost-derived rate is shown only as the required cost-plus floor, never counted as revenue. QC/support assets do not sell hours; their cost is recovered through the sellable stations. "Operating" means before bank interest and income tax.</p>
+                  <div className="sectionHeader"><h2>{t("Monthly Operating Profit Bridge")}</h2></div>
+                  <p className="sectionHelp">{t("Reads left to right: what the market would pay for the loaded hours, minus machine costs, minus payroll, minus overhead -- what remains is the month's operating result. Revenue is built station by station from explicit market sell rates; the cost-derived rate is shown only as the required cost-plus floor, never counted as revenue. QC/support assets do not sell hours; their cost is recovered through the sellable stations. \"Operating\" means before bank interest and income tax.")}</p>
                   {doubleCountWarnings.map((warning) => (
                     <p className="profitabilityWarning" key={warning}>{warning}</p>
                   ))}
                   <dl className="summary profitabilityInputs">
-                    <div><dt>Current productive hours/mo</dt><dd>{Math.round(productiveHoursMonth)} h</dd></div>
-                    <div><dt>Current sold hours/mo</dt><dd>{Math.round(scenarioSoldHours)} h</dd></div>
-                    <div><dt>Actual cost-plus avg (weighted)</dt><dd>{money.format(weightedAverageRequiredRate)}/h</dd></div>
-                    <div><dt>Market sell-rate coverage</dt><dd>{pricedRowCount}/{revenueRows.length} assets</dd></div>
-                    <div><dt>Weighted market sell rate</dt><dd>{pricedSoldHours > 0 ? `${money.format(weightedAverageSellRate)}/h` : "Not set"}</dd></div>
-                    <div><dt>Direct payroll/mo</dt><dd>{money.format(directPayroll)}</dd></div>
+                    <div><dt>{t("Current productive hours/mo")}</dt><dd>{Math.round(productiveHoursMonth)} h</dd></div>
+                    <div><dt>{t("Current sold hours/mo")}</dt><dd>{Math.round(scenarioSoldHours)} h</dd></div>
+                    <div><dt>{t("Actual cost-plus avg (weighted)")}</dt><dd>{money.format(weightedAverageRequiredRate)}/h</dd></div>
+                    <div><dt>{t("Market sell-rate coverage")}</dt><dd>{pricedRowCount}/{revenueRows.length} {t("assets")}</dd></div>
+                    <div><dt>{t("Weighted market sell rate")}</dt><dd>{pricedSoldHours > 0 ? `${money.format(weightedAverageSellRate)}/h` : t("Not set")}</dd></div>
+                    <div><dt>{t("Direct payroll/mo")}</dt><dd>{money.format(directPayroll)}</dd></div>
                   </dl>
                   <div className="profitFormulaGrid">
-                    <div><span>1. Sellable machine average</span><strong>{money.format(sellRateBreakdown.sellableMachineRate)}/h</strong><em>Only sellable assets: fixed + running cost / sellable basis hours</em></div>
-                    <div><span>2. Support asset recovery</span><strong>{money.format(sellRateBreakdown.supportMachineRate)}/h</strong><em>{money.format(sellRateBreakdown.supportMachineCostMonth)} support machine cost / {Math.round(targetHoursMonth)} sellable basis h</em></div>
-                    <div><span>3. Assigned payroll avg</span><strong>{money.format(sellRateBreakdown.assignedPayrollRate)}/h</strong><em>{money.format(sellRateBreakdown.assignedPayrollMonth)} assigned to sellable station payroll roles</em></div>
-                    <div><span>4. Overhead recovery</span><strong>{money.format(sellRateBreakdown.overheadRate)}/h</strong><em>{money.format(sellRateBreakdown.overheadMonth)} / {Math.round(targetHoursMonth)} sellable basis h</em></div>
-                    <div><span>5. Shared recovery layer</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>support assets + support/unassigned payroll + overhead (engineering/CAM payroll excluded -- recovered via the quote's NRE line) -- shop average; allocated per station in proportion to its machine + payroll EUR/h, see table below</em></div>
-                    <div><span>6. Required cost-plus uplift</span><strong>{formatPercent(assumptions.commercial_policy.risk_allowance_percent)}% risk, {formatPercent(assumptions.commercial_policy.default_margin_percent)}% margin</strong><em>Diagnostic floor only; revenue uses explicit market sell rates</em></div>
+                    <div><span>{t("1. Sellable machine average")}</span><strong>{money.format(sellRateBreakdown.sellableMachineRate)}/h</strong><em>{t("Only sellable assets: fixed + running cost / sellable basis hours")}</em></div>
+                    <div><span>{t("2. Support asset recovery")}</span><strong>{money.format(sellRateBreakdown.supportMachineRate)}/h</strong><em>{money.format(sellRateBreakdown.supportMachineCostMonth)} {t("support machine cost")} / {Math.round(targetHoursMonth)} {t("sellable basis h")}</em></div>
+                    <div><span>{t("3. Assigned payroll avg")}</span><strong>{money.format(sellRateBreakdown.assignedPayrollRate)}/h</strong><em>{money.format(sellRateBreakdown.assignedPayrollMonth)} {t("assigned to sellable station payroll roles")}</em></div>
+                    <div><span>{t("4. Overhead recovery")}</span><strong>{money.format(sellRateBreakdown.overheadRate)}/h</strong><em>{money.format(sellRateBreakdown.overheadMonth)} / {Math.round(targetHoursMonth)} {t("sellable basis h")}</em></div>
+                    <div><span>{t("5. Shared recovery layer")}</span><strong>{money.format(sellRateBreakdown.sharedAllocatedRate)}/h</strong><em>{t("support assets + support/unassigned payroll + overhead (engineering/CAM payroll excluded -- recovered via the quote's NRE line) -- shop average; allocated per station in proportion to its machine + payroll EUR/h, see table below")}</em></div>
+                    <div><span>{t("6. Required cost-plus uplift")}</span><strong>{formatPercent(assumptions.commercial_policy.risk_allowance_percent)}% {t("risk")}, {formatPercent(assumptions.commercial_policy.default_margin_percent)}% {t("margin")}</strong><em>{t("Diagnostic floor only; revenue uses explicit market sell rates")}</em></div>
                   </div>
                   {missingSellRateCount > 0 ? (
-                    <p className="profitabilityWarning">Revenue capacity is incomplete: {missingSellRateCount} sellable asset{missingSellRateCount === 1 ? "" : "s"} have no market sell EUR/h. The required cost-plus rate is a floor, not proof that customers will pay it.</p>
+                    <p className="profitabilityWarning">{t("Revenue capacity is incomplete:")} {missingSellRateCount} {missingSellRateCount === 1 ? t("sellable asset has") : t("sellable assets have")} {t("no market sell EUR/h. The required cost-plus rate is a floor, not proof that customers will pay it.")}</p>
                   ) : null}
                   <div className="breakEvenCallout">
-                    <span>Break-even Utilization</span>
+                    <span>{t("Break-even Utilization")}</span>
                     <strong>{breakEvenLabel}</strong>
-                    <p>This assumes load is spread evenly across all stations. A real order book fills one bottleneck machine first while others wait, so the achievable shop-wide average is usually lower than this number suggests.</p>
+                    <p>{t("This assumes load is spread evenly across all stations. A real order book fills one bottleneck machine first while others wait, so the achievable shop-wide average is usually lower than this number suggests.")}</p>
                   </div>
                   <div className="profitabilityTableBlock">
-                    <h3>Revenue capacity build-up</h3>
-                    <p className="sectionHelp">This table is the first bridge column as a sum of sellable-capacity asset rows only. Actual EUR/h is today's cost-plus floor: machine cost, assigned payroll, shared recovery, risk, and margin at each asset's actual Availability/Utilization -- it can run high while a station sits under-loaded. Target EUR/h is the same formula at each asset's own target Availability/Utilization from Resources -- the floor once that station reaches its designed load, and the number to compare against Market. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.</p>
+                    <h3>{t("Revenue capacity build-up")}</h3>
+                    <p className="sectionHelp">{t("This table is the first bridge column as a sum of sellable-capacity asset rows only. Actual EUR/h is today's cost-plus floor: machine cost, assigned payroll, shared recovery, risk, and margin at each asset's actual Availability/Utilization -- it can run high while a station sits under-loaded. Target EUR/h is the same formula at each asset's own target Availability/Utilization from Resources -- the floor once that station reaches its designed load, and the number to compare against Market. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.")}</p>
                     <div className={`diagnosticTable profitabilityRevenueTable ${profitabilityCompareScenario ? "hasCompareScenario" : ""}`}>
-                      <div className="tableHead profitabilityRevenueHead"><span>Asset</span><span>Actual h/mo</span><span>Machine EUR/h</span><span>Payroll EUR/h</span><span>Shared recovery/h</span><span>Base EUR/h</span><span>Actual EUR/h</span><span>Target EUR/h</span>{profitabilityCompareScenario ? <span>Scenario EUR/h</span> : null}<span>Market sell EUR/h</span><span>Revenue/mo</span></div>
+                      <div className="tableHead profitabilityRevenueHead"><span>{t("Asset")}</span><span>{t("Actual h/mo")}</span><span>{t("Machine EUR/h")}</span><span>{t("Payroll EUR/h")}</span><span>{t("Shared recovery/h")}</span><span>{t("Base EUR/h")}</span><span>{t("Actual EUR/h")}</span><span>{t("Target EUR/h")}</span>{profitabilityCompareScenario ? <span>{t("Scenario EUR/h")}</span> : null}<span>{t("Market sell EUR/h")}</span><span>{t("Revenue/mo")}</span></div>
                       {revenueRows.map((row) => {
                         const marketRateClass = !row.hasMarketSellRate
                           ? "rateMissing"
@@ -6621,12 +7084,12 @@ function App() {
                               ? "rateBad"
                               : "rateWarning";
                         const marketRateTitle = !row.hasMarketSellRate
-                          ? "No market sell rate set."
+                          ? t("No market sell rate set.")
                           : row.marketSellRate >= row.targetSellRate
-                            ? "Market rate meets or exceeds the required rate at target Utilization/Availability."
+                            ? t("Market rate meets or exceeds the required rate at target Utilization/Availability.")
                             : row.marketSellRate < row.baseRate
-                              ? "Market rate is below base cost recovery before risk and margin."
-                              : "Market rate covers base cost but misses the required risk and margin target once the station reaches its target Utilization/Availability.";
+                              ? t("Market rate is below base cost recovery before risk and margin.")
+                              : t("Market rate covers base cost but misses the required risk and margin target once the station reaches its target Utilization/Availability.");
                         return (
                         <div className="tableRow profitabilityRevenueRow" key={row.id}>
                           <span>{row.name}</span>
@@ -6638,35 +7101,35 @@ function App() {
                           <span>{money.format(row.requiredSellRate)}/h</span>
                           <span>{money.format(row.targetSellRate)}/h</span>
                           {profitabilityCompareScenario ? <span>{row.compareScenarioSellRate !== null ? `${money.format(row.compareScenarioSellRate)}/h` : "--"}</span> : null}
-                          <span className={marketRateClass} title={marketRateTitle}>{row.hasMarketSellRate ? `${money.format(row.marketSellRate)}/h` : "Not set"}</span>
+                          <span className={marketRateClass} title={marketRateTitle}>{row.hasMarketSellRate ? `${money.format(row.marketSellRate)}/h` : t("Not set")}</span>
                           <span>{row.hasMarketSellRate ? money.format(row.revenue) : "--"}</span>
                         </div>
                         );
                       })}
                       <div className="tableRow profitabilityRevenueRow profitabilityTotalRow">
-                        <span title="Rate columns below are hour-weighted averages across sellable stations.">{hasCompleteSellRates ? "Total (hour-weighted avg)" : "Known priced revenue (hour-weighted avg)"}</span>
+                        <span title={t("Rate columns below are hour-weighted averages across sellable stations.")}>{hasCompleteSellRates ? t("Total (hour-weighted avg)") : t("Known priced revenue (hour-weighted avg)")}</span>
                         <span>{Math.round(scenarioSoldHours)} h</span>
                         <span></span>
                         <span></span>
                         <span></span>
                         <span></span>
-                        <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageRequiredRate)}/h</span>
-                        <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageTargetRate)}/h</span>
-                        {profitabilityCompareScenario ? <span title="Hour-weighted average across sellable stations.">{money.format(weightedAverageCompareScenarioRate)}/h</span> : null}
-                        <span title="Hour-weighted average across sellable stations.">{hasCompleteSellRates ? `${money.format(weightedAverageSellRate)}/h` : `${pricedRowCount}/${revenueRows.length} set`}</span>
-                        <span>{hasCompleteSellRates ? money.format(revenueMonth) : `${money.format(revenueMonth)} known`}</span>
+                        <span title={t("Hour-weighted average across sellable stations.")}>{money.format(weightedAverageRequiredRate)}/h</span>
+                        <span title={t("Hour-weighted average across sellable stations.")}>{money.format(weightedAverageTargetRate)}/h</span>
+                        {profitabilityCompareScenario ? <span title={t("Hour-weighted average across sellable stations.")}>{money.format(weightedAverageCompareScenarioRate)}/h</span> : null}
+                        <span title={t("Hour-weighted average across sellable stations.")}>{hasCompleteSellRates ? `${money.format(weightedAverageSellRate)}/h` : `${pricedRowCount}/${revenueRows.length} ${t("set")}`}</span>
+                        <span>{hasCompleteSellRates ? money.format(revenueMonth) : `${money.format(revenueMonth)} ${t("known")}`}</span>
                       </div>
                     </div>
                   </div>
                   <div className="profitabilityTableBlock">
-                    <h3>Sellable station pricing basis</h3>
-                    <p className="sectionHelp">Variable running cost/mo means the asset cost that rises when it runs: power, compressed air, coolant, routine wear items, and similar per-hour machine costs. Own direct EUR/h is each station's fixed plus running cost divided by its target hours. This is the part that makes manual and CNC stations price differently.</p>
+                    <h3>{t("Sellable station pricing basis")}</h3>
+                    <p className="sectionHelp">{t("Variable running cost/mo means the asset cost that rises when it runs: power, compressed air, coolant, routine wear items, and similar per-hour machine costs. Own direct EUR/h is each station's fixed plus running cost divided by its target hours. This is the part that makes manual and CNC stations price differently.")}</p>
                     <div className="diagnosticTable profitabilityMachineTable">
-                      <div className="tableHead profitabilityMachineHead"><span>Asset</span><span>Role</span><span>Basis h/mo</span><span>Fixed/mo</span><span>Variable run cost/mo</span><span>Own direct EUR/h</span><span>Cost share</span></div>
+                      <div className="tableHead profitabilityMachineHead"><span>{t("Asset")}</span><span>{t("Role")}</span><span>{t("Basis h/mo")}</span><span>{t("Fixed/mo")}</span><span>{t("Variable run cost/mo")}</span><span>{t("Own direct EUR/h")}</span><span>{t("Cost share")}</span></div>
                       {sellRateBreakdown.sellableRows.map((row) => (
                         <div className="tableRow profitabilityMachineRow" key={row.id}>
                           <span>{row.name}</span>
-                          <span>Sellable</span>
+                          <span>{t("Sellable")}</span>
                           <span>{Math.round(row.targetHours)} h</span>
                           <span>{money.format(row.fixedCostMonth)}</span>
                           <span>{money.format(row.variableCostMonth)}</span>
@@ -6678,14 +7141,14 @@ function App() {
                   </div>
                   {sellRateBreakdown.supportRows.length > 0 ? (
                     <div className="profitabilityTableBlock">
-                      <h3>Support/internal asset cost pool</h3>
-                      <p className="sectionHelp">These assets are necessary for production control or internal flow but do not sell hours by themselves. They stay out of revenue capacity and are recovered as {money.format(sellRateBreakdown.supportMachineRate)}/h machine support plus {money.format(sellRateBreakdown.supportPayrollRate + sellRateBreakdown.unassignedPayrollRate)}/h support or unassigned payroll across sellable basis hours.</p>
+                      <h3>{t("Support/internal asset cost pool")}</h3>
+                      <p className="sectionHelp">{t("These assets are necessary for production control or internal flow but do not sell hours by themselves. They stay out of revenue capacity and are recovered as")} {money.format(sellRateBreakdown.supportMachineRate)}/h {t("machine support plus")} {money.format(sellRateBreakdown.supportPayrollRate + sellRateBreakdown.unassignedPayrollRate)}/h {t("support or unassigned payroll across sellable basis hours.")}</p>
                       <div className="diagnosticTable profitabilityMachineTable supportCostTable">
-                        <div className="tableHead profitabilityMachineHead"><span>Asset</span><span>Role</span><span>Basis h/mo</span><span>Fixed/mo</span><span>Variable run cost/mo</span><span>Own direct EUR/h</span><span>Cost share</span></div>
+                        <div className="tableHead profitabilityMachineHead"><span>{t("Asset")}</span><span>{t("Role")}</span><span>{t("Basis h/mo")}</span><span>{t("Fixed/mo")}</span><span>{t("Variable run cost/mo")}</span><span>{t("Own direct EUR/h")}</span><span>{t("Cost share")}</span></div>
                         {sellRateBreakdown.supportRows.map((row) => (
                           <div className="tableRow profitabilityMachineRow" key={row.id}>
                             <span>{row.name}</span>
-                            <span>Support</span>
+                            <span>{t("Support")}</span>
                             <span>{Math.round(row.targetHours)} h</span>
                             <span>{money.format(row.fixedCostMonth)}</span>
                             <span>{money.format(row.variableCostMonth)}</span>
@@ -6698,15 +7161,15 @@ function App() {
                   ) : null}
                   {hasCompleteSellRates ? (
                     <div className="profitabilityTableBlock">
-                      <h3>What the result looks like at other load levels</h3>
-                      <p className="sectionHelp">The same revenue and cost rules at fixed Utilization levels, so one scenario number is never mistaken for the whole picture. Cost-accounting practice treats roughly 80-85% as a realistic "normally busy" level for planning; 95-100% is a near-perfect order book.</p>
+                      <h3>{t("What the result looks like at other load levels")}</h3>
+                      <p className="sectionHelp">{t("The same revenue and cost rules at fixed Utilization levels, so one scenario number is never mistaken for the whole picture. Cost-accounting practice treats roughly 80-85% as a realistic \"normally busy\" level for planning; 95-100% is a near-perfect order book.")}</p>
                       <div className="diagnosticTable">
-                        <div className="tableHead sensitivityHead"><span>Shop Utilization</span><span>Operating result / month</span></div>
+                        <div className="tableHead sensitivityHead"><span>{t("Shop Utilization")}</span><span>{t("Operating result / month")}</span></div>
                         {sensitivityUtilizations.map((utilization) => {
                           const profitAt = profitabilityOperatingProfitAtUtilization(assumptions, utilization);
                           return (
                             <div className="tableRow sensitivityRow" key={utilization}>
-                              <span>{formatPercent(utilization)}%{Math.abs(utilization - averageActualUtilization(assumptions)) < 0.005 ? " (current actual avg)" : ""}</span>
+                              <span>{formatPercent(utilization)}%{Math.abs(utilization - averageActualUtilization(assumptions)) < 0.005 ? ` ${t("(current actual avg)")}` : ""}</span>
                               <span className={profitAt >= 0 ? "decisionGood" : "decisionBad"}>{money.format(profitAt)}</span>
                             </div>
                           );
@@ -6720,8 +7183,9 @@ function App() {
                     directPayroll={directPayroll}
                     overhead={overheadMonth}
                     operatingProfit={operatingProfitMonth}
-                    revenueLabel={hasCompleteSellRates ? (materialMarginMonth > 0 ? "Market revenue + material margin" : "Market revenue capacity") : "Known priced revenue"}
-                    resultLabel={hasCompleteSellRates ? undefined : "Incomplete result"}
+                    revenueLabel={hasCompleteSellRates ? (materialMarginMonth > 0 ? t("Market revenue + material margin") : t("Market revenue capacity")) : t("Known priced revenue")}
+                    resultLabel={hasCompleteSellRates ? undefined : t("Incomplete result")}
+                    lang={language}
                   />
                 </section>
               );
@@ -6732,56 +7196,56 @@ function App() {
         {activeView === "methods" ? (
           <section className="casePage">
             <section className="panel caseHero">
-              <h2>How Can a Product's Cost Be Calculated? More Than One Honest Answer</h2>
-              <p>There is no single "correct" production cost. Accounting practice knows several established methods, and each answers a different business question. Asking "what must we charge to survive long-term?" gives one number; "should we accept this cheap order while machines sit idle?" gives another; "which order earns the most on our busiest machine?" gives a third. All three answers can be right at the same time. A price decision goes wrong when a number built for one question is used to answer a different one.</p>
-              <p><strong>What this tool uses:</strong> the Quote page is <em>full costing with machine-hour rates at normal capacity</em> (the standard method in European metalworking, and the logic behind IAS 2 inventory rules), and the Profitability page is a classic <em>cost-volume-profit</em> check on top of it. The other methods below are not implemented as separate calculators, but knowing them explains what the numbers can and cannot say.</p>
+              <h2>{t("How Can a Product's Cost Be Calculated? More Than One Honest Answer")}</h2>
+              <p>{t("There is no single \"correct\" production cost. Accounting practice knows several established methods, and each answers a different business question. Asking \"what must we charge to survive long-term?\" gives one number; \"should we accept this cheap order while machines sit idle?\" gives another; \"which order earns the most on our busiest machine?\" gives a third. All three answers can be right at the same time. A price decision goes wrong when a number built for one question is used to answer a different one.")}</p>
+              <p><strong>{t("What this tool uses:")}</strong> {t("the Quote page is")} <em>{t("full costing with machine-hour rates at normal capacity")}</em> {t("(the standard method in European metalworking, and the logic behind IAS 2 inventory rules), and the Profitability page is a classic")} <em>{t("cost-volume-profit")}</em> {t("check on top of it. The other methods below are not implemented as separate calculators, but knowing them explains what the numbers can and cannot say.")}</p>
             </section>
 
             <section className="panel guideReferenceGrid">
-              <h2>The Methods</h2>
+              <h2>{t("The Methods")}</h2>
               <div className="guideGrid">
                 <article className="guideCard">
-                  <strong>Full costing at normal capacity — used by this tool</strong>
-                  <p><em>What it is:</em> every machine gets an hourly rate that covers its purchase, upkeep, energy, and a fair share of overhead, spread over the hours a normally busy shop would sell. A product's cost is material plus the hours it consumes at those rates. In German-speaking metalworking this is the standard "machine hour rate" method.</p>
-                  <p><em>Good at:</em> long-run pricing floors, explaining exactly where a price comes from, proving whether overhead is covered. Every euro of monthly cost lands somewhere, so nothing is silently lost.</p>
-                  <p><em>Best when:</em> quoting external work that must sustain the whole company over time — which is exactly this project's situation. Weak spot: the "normally busy" assumption is a choice, and picking it too optimistic under-recovers cost, too pessimistic prices the shop out of the market (the death spiral on the Case page).</p>
+                  <strong>{t("Full costing at normal capacity — used by this tool")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("every machine gets an hourly rate that covers its purchase, upkeep, energy, and a fair share of overhead, spread over the hours a normally busy shop would sell. A product's cost is material plus the hours it consumes at those rates. In German-speaking metalworking this is the standard \"machine hour rate\" method.")}</p>
+                  <p><em>{t("Good at:")}</em> {t("long-run pricing floors, explaining exactly where a price comes from, proving whether overhead is covered. Every euro of monthly cost lands somewhere, so nothing is silently lost.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("quoting external work that must sustain the whole company over time — which is exactly this project's situation. Weak spot: the \"normally busy\" assumption is a choice, and picking it too optimistic under-recovers cost, too pessimistic prices the shop out of the market (the death spiral on the Case page).")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Contribution (variable) costing</strong>
-                  <p><em>What it is:</em> only the costs that truly appear because an order runs — material, energy, tooling, outsourced work — count as the order's cost. Everything fixed (rent, salaries, depreciation) sits in one pool that all orders together must cover. The difference between price and variable cost is the order's "contribution".</p>
-                  <p><em>Good at:</em> deciding whether to accept a low-priced order when machines are idle: any price above variable cost contributes something toward the fixed pool, which beats an idle machine contributing nothing.</p>
-                  <p><em>Best when:</em> capacity is empty and the choice is "this order or nothing". Dangerous as a general pricing habit — if every order is priced near variable cost, the fixed pool is never covered and the year ends in loss.</p>
+                  <strong>{t("Contribution (variable) costing")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("only the costs that truly appear because an order runs — material, energy, tooling, outsourced work — count as the order's cost. Everything fixed (rent, salaries, depreciation) sits in one pool that all orders together must cover. The difference between price and variable cost is the order's \"contribution\".")}</p>
+                  <p><em>{t("Good at:")}</em> {t("deciding whether to accept a low-priced order when machines are idle: any price above variable cost contributes something toward the fixed pool, which beats an idle machine contributing nothing.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("capacity is empty and the choice is \"this order or nothing\". Dangerous as a general pricing habit — if every order is priced near variable cost, the fixed pool is never covered and the year ends in loss.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Time-Driven Activity-Based Costing (TDABC)</strong>
-                  <p><em>What it is:</em> a refinement of full costing: measure what one hour of each resource costs to supply, and how many minutes of each resource a product really uses, using a realistic ("practical") capacity of roughly 80-85% of theoretical. Kaplan's modern replacement for older, heavier ABC systems.</p>
-                  <p><em>Good at:</em> exposing which products quietly eat disproportionate setup, inspection, or admin effort; being honest about idle capacity by pricing off achievable hours instead of the calendar.</p>
-                  <p><em>Best when:</em> product mix is varied and small-batch work hides behind averages. This tool's rate math is essentially TDABC in structure — the main debate is only which capacity percentage to call "normal".</p>
+                  <strong>{t("Time-Driven Activity-Based Costing (TDABC)")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("a refinement of full costing: measure what one hour of each resource costs to supply, and how many minutes of each resource a product really uses, using a realistic (\"practical\") capacity of roughly 80-85% of theoretical. Kaplan's modern replacement for older, heavier ABC systems.")}</p>
+                  <p><em>{t("Good at:")}</em> {t("exposing which products quietly eat disproportionate setup, inspection, or admin effort; being honest about idle capacity by pricing off achievable hours instead of the calendar.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("product mix is varied and small-batch work hides behind averages. This tool's rate math is essentially TDABC in structure — the main debate is only which capacity percentage to call \"normal\".")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Throughput accounting (bottleneck thinking)</strong>
-                  <p><em>What it is:</em> in the short run, only material is treated as the product's cost; everything else is a fixed monthly expense. What matters is throughput (price minus material) <em>per hour of the bottleneck machine</em> — the one station that limits the whole shop.</p>
-                  <p><em>Good at:</em> ranking orders when the shop is nearly full: two orders with the same margin percent can differ several times over in how much profit they generate per bottleneck hour.</p>
-                  <p><em>Best when:</em> demand exceeds capacity and one machine visibly constrains everything. Less useful for a shop whose problem is an empty order book — there, contribution thinking applies first.</p>
+                  <strong>{t("Throughput accounting (bottleneck thinking)")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("in the short run, only material is treated as the product's cost; everything else is a fixed monthly expense. What matters is throughput (price minus material)")} <em>{t("per hour of the bottleneck machine")}</em> {t("— the one station that limits the whole shop.")}</p>
+                  <p><em>{t("Good at:")}</em> {t("ranking orders when the shop is nearly full: two orders with the same margin percent can differ several times over in how much profit they generate per bottleneck hour.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("demand exceeds capacity and one machine visibly constrains everything. Less useful for a shop whose problem is an empty order book — there, contribution thinking applies first.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Target costing (market-back)</strong>
-                  <p><em>What it is:</em> the reverse direction. Start from the price the market will actually pay, subtract the profit the company needs, and what remains is the <em>allowable cost</em>. Then work on the product and process until real cost fits inside it.</p>
-                  <p><em>Good at:</em> forcing honesty when the market, not the shop, sets the price — which is the reality for most subcontract machining. It converts "our price is too high" into a concrete cost-reduction target.</p>
-                  <p><em>Best when:</em> competitor prices are known. The Market Rates and Scenarios pages are this method's first half: they measure what the market pays per hour and show the gap to the cost-plus floor.</p>
+                  <strong>{t("Target costing (market-back)")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("the reverse direction. Start from the price the market will actually pay, subtract the profit the company needs, and what remains is the")} <em>{t("allowable cost")}</em>{t(". Then work on the product and process until real cost fits inside it.")}</p>
+                  <p><em>{t("Good at:")}</em> {t("forcing honesty when the market, not the shop, sets the price — which is the reality for most subcontract machining. It converts \"our price is too high\" into a concrete cost-reduction target.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("competitor prices are known. The Market Rates and Scenarios pages are this method's first half: they measure what the market pays per hour and show the gap to the cost-plus floor.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Standard costing with variance follow-up</strong>
-                  <p><em>What it is:</em> set a planned ("standard") time and cost for each operation, then systematically compare actual results against the plan and investigate the differences instead of quietly absorbing them.</p>
-                  <p><em>Good at:</em> keeping estimates honest over time. A quote model is only as good as its cycle times; without a feedback loop the same optimistic minutes get quoted forever.</p>
-                  <p><em>Best when:</em> parts repeat and actuals can be captured. The Actuals Feedback / calibration loop on the Quote page is a lightweight version of this method.</p>
+                  <strong>{t("Standard costing with variance follow-up")}</strong>
+                  <p><em>{t("What it is:")}</em> {t("set a planned (\"standard\") time and cost for each operation, then systematically compare actual results against the plan and investigate the differences instead of quietly absorbing them.")}</p>
+                  <p><em>{t("Good at:")}</em> {t("keeping estimates honest over time. A quote model is only as good as its cycle times; without a feedback loop the same optimistic minutes get quoted forever.")}</p>
+                  <p><em>{t("Best when:")}</em> {t("parts repeat and actuals can be captured. The Actuals Feedback / calibration loop on the Quote page is a lightweight version of this method.")}</p>
                 </article>
               </div>
             </section>
 
             <section className="panel caseHero">
-              <h2>The Three Numbers Every Quote Decision Needs</h2>
-              <p>The methods above collapse into three practical reference points for any order. <strong>1) The cash floor</strong> (contribution view): below the variable cost of running the order, the company pays to work — never quote below it knowingly. <strong>2) The survival floor</strong> (full-cost view): the price at a normally busy load that covers machines, people, overhead, and margin — the Target price on the Quote page. <strong>3) The market price</strong> (target-costing view): what customers actually pay — the Market Rates evidence. A healthy business quotes near number 3, keeps it above number 2 on average, and drops to the space between 1 and 2 only deliberately, to fill idle hours, never as a habit.</p>
+              <h2>{t("The Three Numbers Every Quote Decision Needs")}</h2>
+              <p>{t("The methods above collapse into three practical reference points for any order.")} <strong>{t("1) The cash floor")}</strong> {t("(contribution view): below the variable cost of running the order, the company pays to work — never quote below it knowingly.")} <strong>{t("2) The survival floor")}</strong> {t("(full-cost view): the price at a normally busy load that covers machines, people, overhead, and margin — the Target price on the Quote page.")} <strong>{t("3) The market price")}</strong> {t("(target-costing view): what customers actually pay — the Market Rates evidence. A healthy business quotes near number 3, keeps it above number 2 on average, and drops to the space between 1 and 2 only deliberately, to fill idle hours, never as a habit.")}</p>
             </section>
           </section>
         ) : null}
@@ -6789,69 +7253,69 @@ function App() {
         {activeView === "business_case" ? (
           <section className="casePage">
             <section className="panel caseHero">
-              <h2>How To Use This Tool</h2>
-              <p>This project is a simulator for the common unknowns in manufacturing: what a product costs, what price covers the chosen margin and risk, whether that price looks realistic against the market, what market sell EUR/h should be used for stations, and whether the business can be profitable under those rates.</p>
-              <p>It is not meant to be a monthly bookkeeping report. Real revenue and invoices are evidence for calibration, but the Profitability page is mainly for testing profit/loss conditions under chosen market rates, cost structure, and capacity assumptions.</p>
+              <h2>{t("How To Use This Tool")}</h2>
+              <p>{t("This project is a simulator for the common unknowns in manufacturing: what a product costs, what price covers the chosen margin and risk, whether that price looks realistic against the market, what market sell EUR/h should be used for stations, and whether the business can be profitable under those rates.")}</p>
+              <p>{t("It is not meant to be a monthly bookkeeping report. Real revenue and invoices are evidence for calibration, but the Profitability page is mainly for testing profit/loss conditions under chosen market rates, cost structure, and capacity assumptions.")}</p>
             </section>
 
             <section className="caseSignals">
               <div>
-                <span className="scenarioLabel">Target quote</span>
+                <span className="scenarioLabel">{t("Target quote")}</span>
                 <strong>{displayTargetResult ? money.format(displayTargetResult.sell_price_eur) : "..."}</strong>
-                <span className="scenarioHint">Cost-side price using the target planning assumptions.</span>
+                <span className="scenarioHint">{t("Cost-side price using the target planning assumptions.")}</span>
               </div>
               <div>
-                <span className="scenarioLabel">Accounting quote</span>
+                <span className="scenarioLabel">{t("Accounting quote")}</span>
                 <strong>{displayAccountingResult ? money.format(displayAccountingResult.sell_price_eur) : "..."}</strong>
-                <span className="scenarioHint">Price if current actual capacity load is charged to the order.</span>
+                <span className="scenarioHint">{t("Price if current actual capacity load is charged to the order.")}</span>
               </div>
               <div>
-                <span className="scenarioLabel">Accounting premium</span>
+                <span className="scenarioLabel">{t("Accounting premium")}</span>
                 <strong>{displayAccountingResult && displayTargetResult ? money.format(priceGap) : "..."}</strong>
-                <span className="scenarioHint">Signal that utilization, availability, overhead, or route assumptions need attention.</span>
+                <span className="scenarioHint">{t("Signal that utilization, availability, overhead, or route assumptions need attention.")}</span>
               </div>
               <div>
-                <span className="scenarioLabel">Missing tool exposure</span>
+                <span className="scenarioLabel">{t("Missing tool exposure")}</span>
                 <strong>{money.format(totalMissingToolCost)}</strong>
-                <span className="scenarioHint">Tool purchases that must be charged, amortized, or explicitly excluded.</span>
+                <span className="scenarioHint">{t("Tool purchases that must be charged, amortized, or explicitly excluded.")}</span>
               </div>
             </section>
 
             <section className="panel backbonePanel">
-              <h2>Working Flow</h2>
+              <h2>{t("Working Flow")}</h2>
               <div className="caseFlowSteps">
-                <div><strong>1. Build the profile</strong><span>Enter assets, direct labor, overhead, material scope, tool scope, and operation scope. Resources is only trustworthy when this data is complete enough for the simulation.</span></div>
-                <div><strong>2. Price the quote</strong><span>Quote Builder turns material, CAM, route time, tooling, consumables, risk, and margin into production cost and target sell price.</span></div>
-                <div><strong>3. Check market pressure</strong><span>Scenarios compares the target price with competitor or customer evidence. Batch size must match the comparison because unit price changes with setup and programming spread.</span></div>
-                <div><strong>4. Backsolve market rates</strong><span>Market Rates uses real accepted, lost, or competitor prices. Remove material, bought-out, and fixed charges, then allocate the remaining conversion revenue across route hours.</span></div>
-                <div><strong>5. Simulate profitability</strong><span>Profitability uses explicit market sell EUR/h, direct machine cost, direct payroll, and overhead to test whether the company can make money at those market conditions.</span></div>
-                <div><strong>6. Decide what to fix</strong><span>If the result is weak, act on the driver: price negotiation, route time measurement, utilization improvement, overhead reduction, asset role changes, material buying, or tooling policy.</span></div>
+                <div><strong>{t("1. Build the profile")}</strong><span>{t("Enter assets, direct labor, overhead, material scope, tool scope, and operation scope. Resources is only trustworthy when this data is complete enough for the simulation.")}</span></div>
+                <div><strong>{t("2. Price the quote")}</strong><span>{t("Quote Builder turns material, CAM, route time, tooling, consumables, risk, and margin into production cost and target sell price.")}</span></div>
+                <div><strong>{t("3. Check market pressure")}</strong><span>{t("Scenarios compares the target price with competitor or customer evidence. Batch size must match the comparison because unit price changes with setup and programming spread.")}</span></div>
+                <div><strong>{t("4. Backsolve market rates")}</strong><span>{t("Market Rates uses real accepted, lost, or competitor prices. Remove material, bought-out, and fixed charges, then allocate the remaining conversion revenue across route hours.")}</span></div>
+                <div><strong>{t("5. Simulate profitability")}</strong><span>{t("Profitability uses explicit market sell EUR/h, direct machine cost, direct payroll, and overhead to test whether the company can make money at those market conditions.")}</span></div>
+                <div><strong>{t("6. Decide what to fix")}</strong><span>{t("If the result is weak, act on the driver: price negotiation, route time measurement, utilization improvement, overhead reduction, asset role changes, material buying, or tooling policy.")}</span></div>
               </div>
             </section>
 
             <section className="panel diagnosticPanel">
-              <h2>Rules That Keep The Result Honest</h2>
+              <h2>{t("Rules That Keep The Result Honest")}</h2>
               <div className="diagnosticTable">
-                <div className="diagnosticHead"><span>Rule</span><span>Meaning</span><span>Where It Applies</span></div>
-                <div><span>Production cost is not market price</span><span>Cost-plus tells the minimum required price for the chosen margin. It does not prove customers will pay it.</span><span>Quote Builder, Scenarios</span></div>
-                <div><span>Competitor evidence needs same batch logic</span><span>A price for 5 pieces cannot calibrate a 100-piece batch without normalizing setup, CAM, and fixed charges.</span><span>Scenarios, Market Rates</span></div>
-                <div><span>Market EUR/h comes from many quotes</span><span>One quote can anchor a class, but the credible rate card should come from repeated evidence, starting with simple routes.</span><span>Market Rates</span></div>
-                <div><span>Route hours are work-center occupancy</span><span>Do not double-count machine and labor hours for the same operation unless they occupy separate sellable work centers.</span><span>Market Rates</span></div>
-                <div><span>Assemblies need component discipline</span><span>For a welded assembly, cost the component operations and the final welding/assembly route, then backsolve the sold assembly price across the route that created it.</span><span>Quote Builder, Market Rates</span></div>
-                <div><span>Profitability is a simulation trigger</span><span>The page should show whether the chosen cost structure and market sell rates can work, then point management to the driver that must change.</span><span>Profitability</span></div>
+                <div className="diagnosticHead"><span>{t("Rule")}</span><span>{t("Meaning")}</span><span>{t("Where It Applies")}</span></div>
+                <div><span>{t("Production cost is not market price")}</span><span>{t("Cost-plus tells the minimum required price for the chosen margin. It does not prove customers will pay it.")}</span><span>{t("Quote Builder, Scenarios")}</span></div>
+                <div><span>{t("Competitor evidence needs same batch logic")}</span><span>{t("A price for 5 pieces cannot calibrate a 100-piece batch without normalizing setup, CAM, and fixed charges.")}</span><span>{t("Scenarios, Market Rates")}</span></div>
+                <div><span>{t("Market EUR/h comes from many quotes")}</span><span>{t("One quote can anchor a class, but the credible rate card should come from repeated evidence, starting with simple routes.")}</span><span>{t("Market Rates")}</span></div>
+                <div><span>{t("Route hours are work-center occupancy")}</span><span>{t("Do not double-count machine and labor hours for the same operation unless they occupy separate sellable work centers.")}</span><span>{t("Market Rates")}</span></div>
+                <div><span>{t("Assemblies need component discipline")}</span><span>{t("For a welded assembly, cost the component operations and the final welding/assembly route, then backsolve the sold assembly price across the route that created it.")}</span><span>{t("Quote Builder, Market Rates")}</span></div>
+                <div><span>{t("Profitability is a simulation trigger")}</span><span>{t("The page should show whether the chosen cost structure and market sell rates can work, then point management to the driver that must change.")}</span><span>{t("Profitability")}</span></div>
               </div>
             </section>
 
             <section className="panel backbonePanel">
-              <h2>Page Map</h2>
+              <h2>{t("Page Map")}</h2>
               <div className="casePageMap">
-                <div><strong>Profile</strong><span>Company structure: assets, people, overhead, operation scope, material scope, tool scope.</span></div>
-                <div><strong>Resources</strong><span>Detailed editable assumptions created from the profile: rates, materials, tools, overhead allocation, operation templates.</span></div>
-                <div><strong>Quote Builder</strong><span>One product or assembly quote: cost, target price, route, quantity breaks, and offer payload.</span></div>
-                <div><strong>Scenarios</strong><span>Why price moves: utilization, availability, overhead policy, margin, material, cycle time, competitor check.</span></div>
-                <div><strong>Market Rates</strong><span>Evidence-based conversion-rate card used to populate market sell EUR/h by station class.</span></div>
-                <div><strong>Profitability</strong><span>Profit/loss simulation under explicit market sell rates, current actual capacity, or a target-capacity scenario.</span></div>
-                <div><strong>Methods</strong><span>Plain-language reference: the costing method this tool uses and the recognized alternatives, with when each one is the right lens.</span></div>
+                <div><strong>{t("Profile")}</strong><span>{t("Company structure: assets, people, overhead, operation scope, material scope, tool scope.")}</span></div>
+                <div><strong>{t("Resources")}</strong><span>{t("Detailed editable assumptions created from the profile: rates, materials, tools, overhead allocation, operation templates.")}</span></div>
+                <div><strong>{t("Quote Builder")}</strong><span>{t("One product or assembly quote: cost, target price, route, quantity breaks, and offer payload.")}</span></div>
+                <div><strong>{t("Scenarios")}</strong><span>{t("Why price moves: utilization, availability, overhead policy, margin, material, cycle time, competitor check.")}</span></div>
+                <div><strong>{t("Market Rates")}</strong><span>{t("Evidence-based conversion-rate card used to populate market sell EUR/h by station class.")}</span></div>
+                <div><strong>{t("Profitability")}</strong><span>{t("Profit/loss simulation under explicit market sell rates, current actual capacity, or a target-capacity scenario.")}</span></div>
+                <div><strong>{t("Methods")}</strong><span>{t("Plain-language reference: the costing method this tool uses and the recognized alternatives, with when each one is the right lens.")}</span></div>
               </div>
             </section>
           </section>
@@ -6860,106 +7324,106 @@ function App() {
         {activeView === "guide" ? (
           <section className="guidePage costGuide">
             <section className="panel guideIntro">
-              <h2>Production Cost Calculation Backbone</h2>
-              <p className="sectionHelp">This is the principle behind the whole tool. A sell price is not a single number guessed at the end. It is a chain of cost drivers, and each driver can push the offer above the market.</p>
-              <div className="costBackboneFlow" aria-label="Production cost backbone">
-                <div><strong>1. Material starts from stock</strong><span>Use the piece the company must buy or take from stock. Do not quote only the theoretical net part material.</span></div>
-                <div><strong>2. Engineering prepares production</strong><span>New parts need CAM, programming, setup planning, and prove-out. Repeat parts reuse part of this work.</span></div>
-                <div><strong>3. Route consumes capacity</strong><span>Each operation uses setup minutes, cycle minutes, machine rate, labor rate, consumables, tooling, scrap, and QC.</span></div>
-                <div><strong>4. Commercial policy converts cost to price</strong><span>Risk, admin cost, and margin are added only after the production cost is visible.</span></div>
+              <h2>{t("Production Cost Calculation Backbone")}</h2>
+              <p className="sectionHelp">{t("This is the principle behind the whole tool. A sell price is not a single number guessed at the end. It is a chain of cost drivers, and each driver can push the offer above the market.")}</p>
+              <div className="costBackboneFlow" aria-label={t("Production cost backbone")}>
+                <div><strong>{t("1. Material starts from stock")}</strong><span>{t("Use the piece the company must buy or take from stock. Do not quote only the theoretical net part material.")}</span></div>
+                <div><strong>{t("2. Engineering prepares production")}</strong><span>{t("New parts need CAM, programming, setup planning, and prove-out. Repeat parts reuse part of this work.")}</span></div>
+                <div><strong>{t("3. Route consumes capacity")}</strong><span>{t("Each operation uses setup minutes, cycle minutes, machine rate, labor rate, consumables, tooling, scrap, and QC.")}</span></div>
+                <div><strong>{t("4. Commercial policy converts cost to price")}</strong><span>{t("Risk, admin cost, and margin are added only after the production cost is visible.")}</span></div>
               </div>
             </section>
 
             <section className="panel oeeGuide">
-              <h2>OEE vs. Utilization — Two Different Gauges</h2>
-              <p><strong>OEE</strong> is the share of scheduled machine time that becomes good productive output — availability, performance, and quality <em>while the machine has work loaded</em>. <strong>Utilization</strong> is a separate question: how much of the available planned time actually gets loaded with orders in the first place. A machine can run beautifully (high OEE) and still sit idle most of the month (low Utilization) because there is not enough demand.</p>
-              <p>Availability and Utilization are editable company inputs, not fixed constants. Actual values describe the current business; target values describe the planning scenario management wants to test. Idleness (<code>1 - Utilization</code>) is the empty-order gap, and it is tracked separately from OEE throughout this tool. Only Availability (not full OEE) feeds the rate formula below — performance losses already live in cycle/setup minutes and quality losses in the scrap allowance, so folding OEE in here would double-charge both.</p>
+              <h2>{t("OEE vs. Utilization — Two Different Gauges")}</h2>
+              <p><strong>{t("OEE")}</strong> {t("is the share of scheduled machine time that becomes good productive output — availability, performance, and quality")} <em>{t("while the machine has work loaded")}</em>. <strong>{t("Utilization")}</strong> {t("is a separate question: how much of the available planned time actually gets loaded with orders in the first place. A machine can run beautifully (high OEE) and still sit idle most of the month (low Utilization) because there is not enough demand.")}</p>
+              <p>{t("Availability and Utilization are editable company inputs, not fixed constants. Actual values describe the current business; target values describe the planning scenario management wants to test. Idleness (")}<code>1 - Utilization</code>{t(") is the empty-order gap, and it is tracked separately from OEE throughout this tool. Only Availability (not full OEE) feeds the rate formula below — performance losses already live in cycle/setup minutes and quality losses in the scrap allowance, so folding OEE in here would double-charge both.")}</p>
               <div className="oeeExampleGrid">
-                <div><span>Fixed monthly machine cost</span><strong>8,000 EUR</strong></div>
-                <div><span>Planned monthly hours</span><strong>160 h</strong></div>
-                <div><span>Target scenario</span><strong>planned hours x target availability x target utilization</strong></div>
-                <div><span>Actual scenario</span><strong>planned hours x actual availability x actual utilization</strong></div>
+                <div><span>{t("Fixed monthly machine cost")}</span><strong>8,000 EUR</strong></div>
+                <div><span>{t("Planned monthly hours")}</span><strong>160 h</strong></div>
+                <div><span>{t("Target scenario")}</span><strong>{t("planned hours x target availability x target utilization")}</strong></div>
+                <div><span>{t("Actual scenario")}</span><strong>{t("planned hours x actual availability x actual utilization")}</strong></div>
               </div>
-              <p>The exact percentages should come from the Company Profile or Resources page. If actual utilization is much lower than target utilization, fixed cost is spread over fewer productive hours and the accounting hourly rate rises. That is why the Case page treats utilization as a business/load assumption, not only a machine performance number.</p>
+              <p>{t("The exact percentages should come from the Company Profile or Resources page. If actual utilization is much lower than target utilization, fixed cost is spread over fewer productive hours and the accounting hourly rate rises. That is why the Case page treats utilization as a business/load assumption, not only a machine performance number.")}</p>
             </section>
 
             <section className="panel guideCompare">
-              <h2>Target Capacity Is A Planning Input</h2>
-              <p>The Target scenario uses the target availability and target utilization entered for each asset in the Company Profile or Resources. These values are not universal defaults; they are management assumptions about what a healthier, better-loaded shop could realistically achieve. The goal is to compare today's accounting view with a chosen planning scenario, not to force every company into one fixed availability or utilization number.</p>
+              <h2>{t("Target Capacity Is A Planning Input")}</h2>
+              <p>{t("The Target scenario uses the target availability and target utilization entered for each asset in the Company Profile or Resources. These values are not universal defaults; they are management assumptions about what a healthier, better-loaded shop could realistically achieve. The goal is to compare today's accounting view with a chosen planning scenario, not to force every company into one fixed availability or utilization number.")}</p>
               <div className="compareColumns">
                 <div>
-                  <h3>Target Price</h3>
-                  <p>Uses target machine rates from Profile/Resources: target availability, target utilization, and optional target discount. They answer: what price level do we need under the planning scenario management chose?</p>
+                  <h3>{t("Target Price")}</h3>
+                  <p>{t("Uses target machine rates from Profile/Resources: target availability, target utilization, and optional target discount. They answer: what price level do we need under the planning scenario management chose?")}</p>
                 </div>
                 <div>
-                  <h3>Accounting Price</h3>
-                  <p>Uses current full-cost machine rates: actual availability and actual utilization. They answer: what price do we get if today's real capacity load is charged to this one order?</p>
+                  <h3>{t("Accounting Price")}</h3>
+                  <p>{t("Uses current full-cost machine rates: actual availability and actual utilization. They answer: what price do we get if today's real capacity load is charged to this one order?")}</p>
                 </div>
                 <div>
-                  <h3>Accounting Premium</h3>
-                  <p>The difference between the two. A high premium is a management signal: either improve order load, adjust the target assumptions, change overhead allocation, correct route assumptions, or accept that the market cannot pay today's cost structure.</p>
+                  <h3>{t("Accounting Premium")}</h3>
+                  <p>{t("The difference between the two. A high premium is a management signal: either improve order load, adjust the target assumptions, change overhead allocation, correct route assumptions, or accept that the market cannot pay today's cost structure.")}</p>
                 </div>
               </div>
             </section>
 
             <section className="panel highPriceGuide">
-              <h2>Typical Reasons A Quote Becomes Too High</h2>
+              <h2>{t("Typical Reasons A Quote Becomes Too High")}</h2>
               <div className="reasonList">
-                <div><strong>Low Utilization</strong><span>Fixed machine cost is spread over too few productive hours because there is not enough order load, not because the machine performs poorly.</span></div>
-                <div><strong>Overhead ignored</strong><span>Admin, sales, quality, and facility costs are missing from the cost formula, understating true cost.</span></div>
-                <div><strong>Wrong route time</strong><span>Setup or cycle assumptions are too conservative, outdated, or not measured.</span></div>
-                <div><strong>Small batch</strong><span>Setup and CAM do not amortize across enough parts.</span></div>
-                <div><strong>New part engineering</strong><span>CAM and prove-out are real labor costs before production starts.</span></div>
-                <div><strong>Missing tools</strong><span>Buying a cutter, tap, fixture, or gauge for one order must be charged or approved.</span></div>
-                <div><strong>Material reality</strong><span>The company buys sellable stock pieces and may create unusable cutoffs.</span></div>
-                <div><strong>Quality requirements</strong><span>Tight tolerance, reports, and FAI add inspection time and risk.</span></div>
-                <div><strong>Unclear data quality</strong><span>When assumptions are guesses, the company adds risk or overprices to protect itself.</span></div>
+                <div><strong>{t("Low Utilization")}</strong><span>{t("Fixed machine cost is spread over too few productive hours because there is not enough order load, not because the machine performs poorly.")}</span></div>
+                <div><strong>{t("Overhead ignored")}</strong><span>{t("Admin, sales, quality, and facility costs are missing from the cost formula, understating true cost.")}</span></div>
+                <div><strong>{t("Wrong route time")}</strong><span>{t("Setup or cycle assumptions are too conservative, outdated, or not measured.")}</span></div>
+                <div><strong>{t("Small batch")}</strong><span>{t("Setup and CAM do not amortize across enough parts.")}</span></div>
+                <div><strong>{t("New part engineering")}</strong><span>{t("CAM and prove-out are real labor costs before production starts.")}</span></div>
+                <div><strong>{t("Missing tools")}</strong><span>{t("Buying a cutter, tap, fixture, or gauge for one order must be charged or approved.")}</span></div>
+                <div><strong>{t("Material reality")}</strong><span>{t("The company buys sellable stock pieces and may create unusable cutoffs.")}</span></div>
+                <div><strong>{t("Quality requirements")}</strong><span>{t("Tight tolerance, reports, and FAI add inspection time and risk.")}</span></div>
+                <div><strong>{t("Unclear data quality")}</strong><span>{t("When assumptions are guesses, the company adds risk or overprices to protect itself.")}</span></div>
               </div>
             </section>
 
             <section className="panel guideReferenceGrid">
-              <h2>Resources Reference</h2>
+              <h2>{t("Resources Reference")}</h2>
               <div className="guideGrid">
                 <article className="guideCard">
-                  <strong>Commercial Policy</strong>
-                  <p>Margin is gross margin on sell price, not markup on cost, and it applies to the shop's own work only. Material and bought-out items are re-sold with a smaller handling markup instead of the full margin. Risk allowance is added to own work before margin. Minimum admin cost protects small orders from ignoring quotation and document work.</p>
+                  <strong>{t("Commercial Policy")}</strong>
+                  <p>{t("Margin is gross margin on sell price, not markup on cost, and it applies to the shop's own work only. Material and bought-out items are re-sold with a smaller handling markup instead of the full margin. Risk allowance is added to own work before margin. Minimum admin cost protects small orders from ignoring quotation and document work.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>CAM Defaults</strong>
-                  <p>New parts carry programming and prove-out. Repeat parts reuse part of that effort. These minutes are starter assumptions and should be replaced with measured history.</p>
+                  <strong>{t("CAM Defaults")}</strong>
+                  <p>{t("New parts carry programming and prove-out. Repeat parts reuse part of that effort. These minutes are starter assumptions and should be replaced with measured history.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Machine Rates</strong>
-                  <p>Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability and target Utilization. OEE stays diagnostic and does not directly scale the rate.</p>
+                  <strong>{t("Machine Rates")}</strong>
+                  <p>{t("Accounting EUR/h uses actual Availability and actual Utilization. Target EUR/h uses target Availability and target Utilization. OEE stays diagnostic and does not directly scale the rate.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Overhead Allocation</strong>
-                  <p>Admin, sales, quality, and facility cost is entered as one monthly total, spread over the shop's planned productive hours, and folded into every machine's EUR/h -- so each quoted hour carries its share of running the company.</p>
+                  <strong>{t("Overhead Allocation")}</strong>
+                  <p>{t("Admin, sales, quality, and facility cost is entered as one monthly total, spread over the shop's planned productive hours, and folded into every machine's EUR/h -- so each quoted hour carries its share of running the company.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Tool Inventory</strong>
-                  <p>Required tools are matched against inventory with an editable tolerance. Missing tools can be charged, amortized, or explicitly left out with management approval.</p>
+                  <strong>{t("Tool Inventory")}</strong>
+                  <p>{t("Required tools are matched against inventory with an editable tolerance. Missing tools can be charged, amortized, or explicitly left out with management approval.")}</p>
                 </article>
                 <article className="guideCard">
-                  <strong>Full JSON</strong>
-                  <p>The JSON editor exposes every assumption, including fields without structured inputs. Invalid structure can break calculations or selectors, so use it deliberately.</p>
+                  <strong>{t("Full JSON")}</strong>
+                  <p>{t("The JSON editor exposes every assumption, including fields without structured inputs. Invalid structure can break calculations or selectors, so use it deliberately.")}</p>
                 </article>
               </div>
             </section>
 
             <section className="panel guideMap">
-              <h2>Where To Look In The Tool</h2>
+              <h2>{t("Where To Look In The Tool")}</h2>
               <div className="diagnosticTable">
-                <div className="diagnosticHead"><span>Question</span><span>Relevant Area</span><span>What To Check</span></div>
-                <div><span>Why is the price high?</span><span>Quote Summary and Scenarios</span><span>Target vs accounting price, accounting premium, unit price by quantity.</span></div>
-                <div><span>Is the machine rate believable?</span><span>Resources, Machine Rate Calculator</span><span>Fixed monthly cost, planned hours, actual/target Availability, actual/target Utilization, Idleness, variable EUR/h, Accounting EUR/h, Target EUR/h, and Target + labour EUR/h.</span></div>
-                <div><span>Is overhead counted?</span><span>Resources, Overhead Allocation</span><span>Total monthly overhead and the EUR/h recovery folded into machine rates.</span></div>
-                <div><span>Can the company be profitable at all?</span><span>Profitability</span><span>Department expenses, current actual vs target-scenario capacity, market sell rates, and monthly operating profit/loss.</span></div>
-                <div><span>Will the market actually pay this price?</span><span>Scenarios and Market Rates</span><span>Target price is a cost-side floor, not a market benchmark. Compare against real competitor quotes, then use evidence to calibrate market sell EUR/h.</span></div>
-                <div><span>Is the production route realistic?</span><span>Operations and Actuals Feedback</span><span>Setup time, cycle time, labor time, scrap, plan/fact deviations.</span></div>
-                <div><span>Can the part actually be produced?</span><span>Tool Check and Materials</span><span>Required tools, missing tool cost, stock piece availability and cost.</span></div>
-                <div><span>Can this connect to existing company systems?</span><span>ERP Connection Demo</span><span>BOM, route, stock, customer, and offer-data handoff path.</span></div>
-                <div><span>Can external clients self-serve early estimates?</span><span>Client Portal</span><span>Multi-part STEP plus drawing/spec RFQ intake with one preliminary estimate range and manual confirmation.</span></div>
+                <div className="diagnosticHead"><span>{t("Question")}</span><span>{t("Relevant Area")}</span><span>{t("What To Check")}</span></div>
+                <div><span>{t("Why is the price high?")}</span><span>{t("Quote Summary and Scenarios")}</span><span>{t("Target vs accounting price, accounting premium, unit price by quantity.")}</span></div>
+                <div><span>{t("Is the machine rate believable?")}</span><span>{t("Resources, Machine Rate Calculator")}</span><span>{t("Fixed monthly cost, planned hours, actual/target Availability, actual/target Utilization, Idleness, variable EUR/h, Accounting EUR/h, Target EUR/h, and Target + labour EUR/h.")}</span></div>
+                <div><span>{t("Is overhead counted?")}</span><span>{t("Resources, Overhead Allocation")}</span><span>{t("Total monthly overhead and the EUR/h recovery folded into machine rates.")}</span></div>
+                <div><span>{t("Can the company be profitable at all?")}</span><span>{t("Profitability")}</span><span>{t("Department expenses, current actual vs target-scenario capacity, market sell rates, and monthly operating profit/loss.")}</span></div>
+                <div><span>{t("Will the market actually pay this price?")}</span><span>{t("Scenarios and Market Rates")}</span><span>{t("Target price is a cost-side floor, not a market benchmark. Compare against real competitor quotes, then use evidence to calibrate market sell EUR/h.")}</span></div>
+                <div><span>{t("Is the production route realistic?")}</span><span>{t("Operations and Actuals Feedback")}</span><span>{t("Setup time, cycle time, labor time, scrap, plan/fact deviations.")}</span></div>
+                <div><span>{t("Can the part actually be produced?")}</span><span>{t("Tool Check and Materials")}</span><span>{t("Required tools, missing tool cost, stock piece availability and cost.")}</span></div>
+                <div><span>{t("Can this connect to existing company systems?")}</span><span>{t("ERP Connection Demo")}</span><span>{t("BOM, route, stock, customer, and offer-data handoff path.")}</span></div>
+                <div><span>{t("Can external clients self-serve early estimates?")}</span><span>{t("Client Portal")}</span><span>{t("Multi-part STEP plus drawing/spec RFQ intake with one preliminary estimate range and manual confirmation.")}</span></div>
               </div>
             </section>
           </section>
@@ -6968,8 +7432,8 @@ function App() {
         {activeView === "print" ? (
           <>
             <div className="printActions">
-              <button className="primaryButton" onClick={() => window.print()}>Print / Save PDF</button>
-              <button className="secondaryButton" onClick={() => setActiveView("quote")}>Back to Quote</button>
+              <button className="primaryButton" onClick={() => window.print()}>{t("Print / Save PDF")}</button>
+              <button className="secondaryButton" onClick={() => setActiveView("quote")}>{t("Back to Quote")}</button>
             </div>
             <PrintableQuote
               assumptions={assumptions}
@@ -6985,6 +7449,7 @@ function App() {
               stockName={stockName}
               targetResult={displayTargetResult}
               validityDate={validityDate}
+              lang={language}
             />
           </>
         ) : null}
