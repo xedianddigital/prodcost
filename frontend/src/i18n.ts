@@ -149,7 +149,7 @@ export const LV: Record<string, string> = {
   "Complex": "Sarežģīta",
   "CAM rate, EUR/h": "CAM inženiera likme, EUR/h",
   "Programming, min": "Programmēšana, min",
-  "Prove-out, min": "Aprobācija (testēšana uz darbgaldam), min",
+  "Prove-out, min": "Testēšana uz darbgalda, min",
   "Full CAM cost is included.": "Ir iekļautas pilnas CAM izmaksas.",
   "Existing CAM program reuse reduces CAM cost by": "Esošas CAM programmas atkārtota izmantošana samazina CAM izmaksas par",
   "STEP geometry is stored as metadata; geometry parsing is a later estimator layer.": "STEP faila ģeometrija tiek saglabāta kā metadati; tās automātiskā analīze ir paredzēta nākamajos sistēmas moduļos.",
@@ -372,7 +372,7 @@ export const LV: Record<string, string> = {
   "Market sell EUR/h": "Tirgus EUR/h",
   "Sellable capacity": "Pārdodamā jauda",
   "Support / internal flow": "Atbalsts / iekšējā plūsma",
-  "Capacity Planning": "Jaudas plānošana",
+  "Capacity Planning": "Ražošanas jaudas plānošana",
   "Hours/mo": "Stundas/mēn.",
   "Actual availability %": "Faktiskā pieejamība, %",
   "Actual utilization %": "Faktiskais noslogojums, %",
@@ -444,7 +444,7 @@ export const LV: Record<string, string> = {
   "Margin %": "Uzcenojums (Marža), %",
   "Risk allowance %": "Riska rezerve, %",
   "Minimum admin cost": "Minimālās administratīvās izmaksas",
-  "Material/bought-out markup %": "Materiālu/iepirkto komponenšu uzcenojums, %",
+  "Material/bought-out markup %": "Materiālu uzcenojums, %",
   "Client Portal Range": "Klientu portāla cenu diapazons",
   "Editable, not hardcoded -- widened asymmetrically pending calibration against actuals.": "Rediģējams, nevis fiksēts – asimetriski paplašināts līdz brīdim, kad tiks veikta kalibrēšana pret faktiskajiem datiem.",
   "Low factor (x sell price)": "Zemākais koeficients (x pārdošanas cena)",
@@ -452,7 +452,7 @@ export const LV: Record<string, string> = {
   "Annual-volume relief %": "Apjoma atlaide par gada apjomu, %",
   "CAM Defaults": "CAM noklusējuma vērtības",
   "Repeat reuse %": "Atkārtotas izmantošanas koeficients, %",
-  "Simple min": "Vienkārša struktūra, min",
+  "Simple min": "Zema sarežģītība, min",
   "Medium min": "Vidēja sarežģītība, min",
   "Complex min": "Augsta sarežģītība, min",
   "Overhead Allocation": "Netiešo izmaksu attiecināšana",
@@ -463,7 +463,7 @@ export const LV: Record<string, string> = {
   "Add Item": "Pievienot",
   "Total monthly overhead": "Kopējās ikmēneša netiešās izmaksas",
   "Overhead EUR/h, flat shop average (machine rates fold in a weighted share per station, not this flat figure)":
-    "Netiešās izmaksas EUR/h, vidējā fiksētā likme (iekārtu stundas likmēs tiek iestrādāta svērtā daļa katram darba centram, nevis šis fiksētais skaitlis)",
+    "Netiešās izmaksas EUR/h, vidējā fiksētā likme (iekārtu stundas likmēs tiek iestrādāta svērtā daļa katram darba centram)",
   "Labor Classes": "Darbaspēka kategorijas",
   "What one hour of each person really costs the company. Enter labor as direct hourly cost or calculate it from gross monthly salary plus Latvian employer VSAOI. \"Billable share %\" is the share of paid hours that actually ends up on customer work -- the rest is waiting, training, and internal jobs. Salary is divided only over billable hours, otherwise every quote silently under-prices labor by the idle share.":
     "Cik uzņēmumam reāli izmaksā viena katra darbinieka stunda. Ievadiet darbaspēku kā tiešo stundas likmi vai aprēķiniet to no bruto mēnešalgas, pieskaitot darba devēja VSAOI. \"Apmaksājamā daļa %\" ir daļa no apmaksātajām stundām, kas tiek tieši patērēta klientu pasūtījumu izpildei (pārējais laiks ir dīkstāve, apmācības un iekšējie darbi). Alga tiek dalīta tikai ar apmaksājamajām stundām – pretējā gadījumā katra tāme dīkstāves dēļ slēpti samazinās reālās darbaspēka izmaksas.",
@@ -489,7 +489,7 @@ export const LV: Record<string, string> = {
   "Target EUR/h": "Mērķa EUR/h",
   "Target + labour EUR/h": "Mērķis + darbaspēks, EUR/h",
   "Power kW": "Jauda, kW",
-  "Idle": "Dīkstāve",
+  "Idle": "Gaidstāve",
   "Hide": "Slēpt",
   "Estimate fixed cost from purchase price": "Aprēķināt fiksētās izmaksas no iegādes cenas",
   "Purchase price EUR": "Iegādes cena, EUR",
@@ -621,7 +621,7 @@ export const LV: Record<string, string> = {
     "stundā, nekā noteikts kartē kā tirgus līmenis (karte ir pārāk optimistiska šāda veida darbiem, un uz tās balstītie Rentabilitātes ieņēmumi ir pārvērtēti). Ja šis rādītājs ir pastāvīgi negatīvs vairākos pasūtījumos pēc kārtas, kartes likmes ir jāsamazina (vai arī šādi pasūtījumi par esošajām cenām nav jāpieņem).",
   "If market price is below the cost-plus required price but still covers variable cost and contributes to overhead, it may be a spare-capacity decision. If it is below true production cost, it is a loss unless there is a strategic reason to accept it.":
     "Ja tirgus cena ir zemāka par aprēķināto pašizmaksas un uzcenojuma cenu, bet joprojām sedz mainīgās izmaksas un daļēji nosedz netiešās izmaksas, to var izvērtēt kā lēmumu par brīvās ražošanas jaudas izmantošanu. Ja cena ir zemāka par reālo ražošanas pašizmaksu, pasūtījums rada zaudējumus, un to var pieņemt tikai nopietnu stratēģisku iemeslu dēļ.",
-  "Basket Evidence Solver": "Grozveida pierādījumu aprēķinātājs (regresija)",
+  "Basket Evidence Solver": "Grozveida pierādījumu aprēķinātājs",
   "The single-quote backsolve above assumes every other pricing class's card rate is already correct -- it can't bootstrap a card from zero, and it can't separate a fixed per-order charge from an hourly rate from just one order. This panel fits one shared batch/engineering charge plus one market EUR/h per pricing class across every row at once, by least squares. Add rows from real competitor quotes (upload a PDF to extract line items, or enter by hand), fill in your own material-sell estimate and route hours per row, then solve once you have more solvable rows than pricing classes in use.":
     "Iepriekš redzamais viena piedāvājuma reverss aprēķins pieņem, her katras citas cenu kategorijas likme jau ir pareiza – ar to nevar izveidot pilnu karti no nulles, kā arī nav iespējams no viena paša pasūtījuma atdalīt fiksēto pasūtījuma maksu no stundas likmes. Šis panelis, izmantojot mazāko kvadrātu metodi, visām rindām vienlaicīgi aprēķina vienu kopīgu partijas/inženiertehnisko izmaksu un vienu tirgus stundas likmi (EUR/h) katrai cenu kategorijai. Pievienojiet rindas no reāliem konkurentu piedāvājumiem (augšupielādējiet PDF, lai izgūtu pozīcijas, vai ievadiet manuāli), norādiet savu prognozēto materiālu pārdošanas cenu un maršruta stundas katrai rindai, un palaidiet aprēķinu, tiklīdz ievadīto rindu skaits pārsniedz izmantoto cenu kategoriju skaitu.",
   "Enter totals for each row's full sold quantity, not per-piece values -- same convention as the backsolve panel above. Material/bought-out sell amount is always your own estimate from your routings/BOM; the competitor's quote will not break this out reliably.":
@@ -1145,6 +1145,37 @@ export const LV: Record<string, string> = {
   "Revenue capacity": "Ieņēmumu potenciāls",
   "Operating profit": "Pamatdarbības peļņa",
   "Operating loss": "Pamatdarbības zaudējumi",
+
+  // Basket Evidence Solver (per-work-center rework)
+  "The single-quote check above assumes every other rate on your card is already correct -- it can't build a card from nothing. This panel works differently: upload a competitor's quote for a part you already produce, and the tool reads the real hours from your own operations, broken down by work center (the actual machine that did the work). That matters because your card's shared \"CNC\" label can hide a lathe, a mill, and a press brake charging very different rates.":
+    "Iepriekšējā atrisināšana pieņem, ka visas pārējās kartes likmes jau ir pareizas -- tā nevar izveidot karti no nulles. Šis panelis darbojas savādāk: augšupielādējiet konkurenta piedāvājumu detaļai, ko jūs jau ražojat, un rīks nolasa reālās stundas no jūsu pašu operācijām, sadalot pēc darbstacijas (iekārtas, kas faktiski veica darbu). Tas ir svarīgi, jo jūsu kartes kopīgais apzīmējums \"CNC\" var slēpt virpu, frēzi un preses bremzi ar ļoti atšķirīgām likmēm.",
+  "A quote only counts as evidence for a work center when that work center did most of the job -- at least":
+    "Piedāvājums kalpo kā pierādījums darbstacijai tikai tad, ja šī darbstacija veikusi lielāko darba daļu -- vismaz",
+  " of the hours. When it does, the math is simple: what the competitor charged, minus your material cost, divided by that work center's hours. Nothing is solved or guessed: a work center with no quote clearly dominated by it is marked as having no evidence yet, not given a made-up number.":
+    " no stundām. Ja tā, aprēķins ir vienkāršs: konkurenta cena mīnus jūsu materiāla izmaksas, dalīts ar šīs darbstacijas stundām. Nekas netiek atrisināts vai uzminēts: darbstacija, kurai neviens piedāvājums nav skaidri dominējošs, tiek atzīmēta kā tāda, kurai vēl nav pierādījumu, nevis tai piešķir izdomātu skaitli.",
+  "Worth knowing before you rely on this:": "Vērts zināt, pirms uz to paļauties:",
+  "one quote is a hint, not proof -- wait for a second one to agree before trusting a rate. Quotes where no single work center clearly did most of the job don't tell you anything and are simply left out; that's normal, not a bug. And the material cost used here is always your own estimate, marked up by the percentage below -- not what the competitor actually paid -- so adjust it if you think they buy material differently than you do.":
+    "viens piedāvājums ir norāde, nevis pierādījums -- pirms uzticēties likmei, uzgaidiet, kamēr tam piekrīt vēl viens neatkarīgs piedāvājums. Piedāvājumi, kuros neviena darbstacija nav skaidri dominējoša, neko neapliecina un vienkārši netiek ņemti vērā -- tas ir normāli, nevis kļūda. Un šeit izmantotās materiāla izmaksas vienmēr ir jūsu pašu novērtējums ar zemāk norādīto uzcenojumu -- nevis tas, ko konkurents faktiski maksājis par materiālu -- tāpēc pielāgojiet to, ja domājat, ka viņi iepērk materiālu citādi nekā jūs.",
+  "Assumed competitor material markup": "Pieņemtais konkurenta materiāla uzcenojums",
+  "Route hours (by work center)": "Maršruta stundas (pa darbstacijām)",
+  "work center": "darbstacija",
+  "Not enough evidence yet": "Vēl nav pietiekami pierādījumu",
+  "Only 1 quote isolates it -- treat as provisional": "To apstiprina tikai 1 piedāvājums -- uzskatiet par pagaidu vērtību",
+  "Range across quotes:": "Diapazons starp piedāvājumiem:",
+  "0 quotes isolate this work center": "Neviens piedāvājums neapliecina šo darbstaciju",
+  "competitor quote isolates this work center": "konkurenta piedāvājums apliecina šo darbstaciju",
+  "competitor quotes isolate this work center": "konkurentu piedāvājumi apliecina šo darbstaciju",
+  "Competitor quote line": "Konkurenta piedāvājuma rinda",
+  "Price/part": "Cena/detaļa",
+  "Dominant work center": "Dominējošā darbstacija",
+  "Share of hours": "Stundu daļa",
+  "Sell − material": "Pārdošana − materiāls",
+  "Hours": "Stundas",
+  "Implied €/h": "Netiešā EUR/h",
+  "(unnamed row)": "(rinda bez nosaukuma)",
+  "row incomplete -- missing quantity, sell price, material estimate, or route hours": "rinda nav pilnīga -- trūkst daudzuma, pārdošanas cenas, materiāla novērtējuma vai maršruta stundu",
+  "no route hours entered for this row": "šai rindai nav ievadītas maršruta stundas",
+  "too mixed -- no work center reaches the cutoff": "pārāk sajaukts -- neviena darbstacija nesasniedz robežvērtību",
 };
 
 export function translate(text: string, lang: Language): string {

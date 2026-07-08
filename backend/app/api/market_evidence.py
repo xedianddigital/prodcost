@@ -31,6 +31,7 @@ class BasketRowInput(BaseModel):
     unit_price_eur: float | None = None
     line_total_eur: float | None = None
     material_sell_eur: float | None = None
+    material_unit_cost_eur: float | None = None
     route_hours: list[RouteHourEntry] = Field(default_factory=list)
     notes: str = ""
 

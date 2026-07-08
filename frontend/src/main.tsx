@@ -109,6 +109,17 @@ type ErpOfferPayload = {
   created_at: string;
 };
 
+type ErpCustomerOfferRecord = {
+  part_name: string;
+  quantity: number;
+  material_unit_cost_eur: number | null;
+  created_at: string;
+};
+
+function normalizePartName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 type QuoteOperation = {
   id: string;
   operationType: string;
@@ -467,6 +478,10 @@ function MarketConfidenceInput({ value, onChange, lang }: { value: string; onCha
   );
 }
 
+// Field name kept generic (not renamed to workCenterId) to match the backend's untyped string
+// column -- within BasketRow.routeHours this id refers to a real work center (MachineClass.id),
+// not a shared market-rate pricing class, unlike the single-quote backsolve panel's use of this
+// same type further up the file.
 type MarketEvidenceRouteRow = {
   id: string;
   marketRateClassId: string;
@@ -485,6 +500,7 @@ type BasketRow = {
   unitPriceEur: number | null;
   lineTotalEur: number | null;
   materialSellEur: number | null;
+  materialUnitCostEur: number | null;
   routeHours: MarketEvidenceRouteRow[];
   notes: string;
 };
@@ -504,6 +520,7 @@ function basketRowFromApi(row: any): BasketRow {
     unitPriceEur: row.unit_price_eur ?? null,
     lineTotalEur: row.line_total_eur ?? null,
     materialSellEur: row.material_sell_eur ?? null,
+    materialUnitCostEur: row.material_unit_cost_eur ?? null,
     routeHours: (row.route_hours ?? []).map((entry: any, index: number) => ({
       id: `${row.id}_hours_${index}`,
       marketRateClassId: entry.market_rate_class_id,
@@ -525,6 +542,7 @@ function basketRowToApiPayload(row: BasketRow) {
     unit_price_eur: row.unitPriceEur,
     line_total_eur: row.lineTotalEur,
     material_sell_eur: row.materialSellEur,
+    material_unit_cost_eur: row.materialUnitCostEur,
     route_hours: row.routeHours.map((entry) => ({
       market_rate_class_id: entry.marketRateClassId,
       hours: entry.hours
@@ -539,96 +557,125 @@ function basketRowTotalSellEur(row: BasketRow): number | null {
   return null;
 }
 
-function basketRowIsSolvable(row: BasketRow): boolean {
+// The competitor's own material cost is never known -- this substitutes our own quote's
+// material cost for the same part, marked up by an assumed (user-adjustable) percent, as the
+// best available stand-in. Falls back to a directly-entered materialSellEur for rows with no
+// ERP cost match (manual rows, or PDF rows whose part name didn't match anything of ours).
+function basketRowMaterialSellEur(row: BasketRow, assumedMarkupPercent: number): number | null {
+  if (row.materialUnitCostEur != null && row.quantity != null) {
+    return Math.round(row.materialUnitCostEur * (1 + assumedMarkupPercent / 100) * row.quantity * 100) / 100;
+  }
+  return row.materialSellEur;
+}
+
+function basketRowIsSolvable(row: BasketRow, assumedMarkupPercent: number): boolean {
   const total = basketRowTotalSellEur(row);
+  const materialSellEur = basketRowMaterialSellEur(row, assumedMarkupPercent);
   const hoursSum = row.routeHours.reduce((sum, entry) => sum + Math.max(0, entry.hours || 0), 0);
   return (
     row.quantity != null &&
     row.quantity > 0 &&
     total != null &&
-    row.materialSellEur != null &&
+    materialSellEur != null &&
     hoursSum > 0
   );
 }
 
-// Solves a small linear least-squares system Ax = b via Gaussian elimination with partial
-// pivoting on the normal equations (A^T A) x = A^T b. No linear-algebra dependency exists in
-// this frontend (only react/lucide-react) and the systems here are tiny (a handful of pricing
-// classes plus one batch-charge unknown), so a hand-rolled solver is simplest.
-function solveLeastSquares(designMatrix: number[][], target: number[]): number[] | null {
-  const unknownCount = designMatrix[0]?.length ?? 0;
-  if (unknownCount === 0) return null;
+const BASKET_DOMINANCE_CUTOFF = 0.65;
 
-  const ata: number[][] = Array.from({ length: unknownCount }, () => new Array(unknownCount).fill(0));
-  const atb: number[] = new Array(unknownCount).fill(0);
-
-  for (let rowIndex = 0; rowIndex < designMatrix.length; rowIndex++) {
-    const row = designMatrix[rowIndex];
-    for (let i = 0; i < unknownCount; i++) {
-      atb[i] += row[i] * target[rowIndex];
-      for (let j = 0; j < unknownCount; j++) {
-        ata[i][j] += row[i] * row[j];
-      }
-    }
-  }
-
-  // Gaussian elimination with partial pivoting on the augmented [ata | atb] system.
-  const augmented = ata.map((row, i) => [...row, atb[i]]);
-  for (let col = 0; col < unknownCount; col++) {
-    let pivotRow = col;
-    for (let row = col + 1; row < unknownCount; row++) {
-      if (Math.abs(augmented[row][col]) > Math.abs(augmented[pivotRow][col])) pivotRow = row;
-    }
-    if (Math.abs(augmented[pivotRow][col]) < 1e-9) return null;
-    [augmented[col], augmented[pivotRow]] = [augmented[pivotRow], augmented[col]];
-
-    for (let row = 0; row < unknownCount; row++) {
-      if (row === col) continue;
-      const factor = augmented[row][col] / augmented[col][col];
-      for (let k = col; k <= unknownCount; k++) {
-        augmented[row][k] -= factor * augmented[col][k];
-      }
-    }
-  }
-
-  return augmented.map((row, i) => row[unknownCount] / row[i]);
-}
-
-type BasketSolveResult = {
-  batchChargeEur: number;
-  ratesByClassId: Record<string, number>;
-  residualsByRowId: Record<string, number>;
+type WorkCenterEvidence = {
+  workCenterId: string;
+  workCenterName: string;
+  status: "found" | "provisional" | "unknown";
+  medianRate: number | null;
+  minRate: number | null;
+  maxRate: number | null;
+  evidenceCount: number;
+  cardRateEurPerHour: number | null;
 };
 
-function solveBasketRates(rows: BasketRow[]): BasketSolveResult | null {
-  const solvableRows = rows.filter(basketRowIsSolvable);
-  const classIds = Array.from(
-    new Set(solvableRows.flatMap((row) => row.routeHours.map((entry) => entry.marketRateClassId)))
-  );
-  if (solvableRows.length === 0 || classIds.length === 0 || solvableRows.length < classIds.length + 1) return null;
+type BasketRowTrace = {
+  rowId: string;
+  dominantWorkCenterId: string | null;
+  dominantShare: number | null;
+  dominantHours: number | null;
+  totalSellEur: number | null;
+  materialSellEur: number | null;
+  impliedRate: number | null;
+  excludedReason: "below_cutoff" | "no_route_hours" | "not_solvable" | null;
+};
 
-  const designMatrix = solvableRows.map((row) => {
-    const hoursByClass = new Map(row.routeHours.map((entry) => [entry.marketRateClassId, entry.hours]));
-    return [1, ...classIds.map((classId) => hoursByClass.get(classId) ?? 0)];
+type BasketSolveResult = {
+  markupPercentUsed: number;
+  workCenters: WorkCenterEvidence[];
+  rowTraces: BasketRowTrace[];
+};
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+// Per-work-center, per-row direct estimate instead of a joint regression: a row only counts as
+// evidence for a work center when that work center clearly dominates its hours (>= 65%), so the
+// implied rate is always simple arithmetic -- (competitor sell - our material estimate) / that
+// work center's hours -- never a solved unknown that can swing wildly from a barely-determined
+// system. Work centers no row ever isolates are reported as having no evidence, not guessed.
+function solveBasketByWorkCenter(
+  rows: BasketRow[],
+  assumedMarkupPercent: number,
+  workCenterIds: string[],
+  workCenterName: (id: string) => string,
+  cardRateForWorkCenter: (id: string) => number | null
+): BasketSolveResult {
+  const rowTraces: BasketRowTrace[] = [];
+  const ratesByWorkCenter = new Map<string, number[]>();
+
+  for (const row of rows) {
+    if (!basketRowIsSolvable(row, assumedMarkupPercent)) {
+      rowTraces.push({ rowId: row.id, dominantWorkCenterId: null, dominantShare: null, dominantHours: null, totalSellEur: null, materialSellEur: null, impliedRate: null, excludedReason: "not_solvable" });
+      continue;
+    }
+    const total = basketRowTotalSellEur(row)!;
+    const materialSellEur = basketRowMaterialSellEur(row, assumedMarkupPercent)!;
+    const totalHours = row.routeHours.reduce((sum, entry) => sum + Math.max(0, entry.hours || 0), 0);
+    if (totalHours <= 0) {
+      rowTraces.push({ rowId: row.id, dominantWorkCenterId: null, dominantShare: null, dominantHours: null, totalSellEur: total, materialSellEur, impliedRate: null, excludedReason: "no_route_hours" });
+      continue;
+    }
+    const dominant = row.routeHours.reduce((best, entry) => (entry.hours > (best?.hours ?? -1) ? entry : best), row.routeHours[0]);
+    const share = dominant.hours / totalHours;
+    if (share < BASKET_DOMINANCE_CUTOFF) {
+      rowTraces.push({ rowId: row.id, dominantWorkCenterId: dominant.marketRateClassId, dominantShare: share, dominantHours: dominant.hours, totalSellEur: total, materialSellEur, impliedRate: null, excludedReason: "below_cutoff" });
+      continue;
+    }
+    const impliedRate = (total - materialSellEur) / dominant.hours;
+    rowTraces.push({ rowId: row.id, dominantWorkCenterId: dominant.marketRateClassId, dominantShare: share, dominantHours: dominant.hours, totalSellEur: total, materialSellEur, impliedRate, excludedReason: null });
+    const list = ratesByWorkCenter.get(dominant.marketRateClassId) ?? [];
+    list.push(impliedRate);
+    ratesByWorkCenter.set(dominant.marketRateClassId, list);
+  }
+
+  const workCenters: WorkCenterEvidence[] = workCenterIds.map((id) => {
+    const rates = ratesByWorkCenter.get(id) ?? [];
+    const cardRateEurPerHour = cardRateForWorkCenter(id);
+    if (rates.length === 0) {
+      return { workCenterId: id, workCenterName: workCenterName(id), status: "unknown", medianRate: null, minRate: null, maxRate: null, evidenceCount: 0, cardRateEurPerHour };
+    }
+    return {
+      workCenterId: id,
+      workCenterName: workCenterName(id),
+      status: rates.length === 1 ? "provisional" : "found",
+      medianRate: median(rates),
+      minRate: Math.min(...rates),
+      maxRate: Math.max(...rates),
+      evidenceCount: rates.length,
+      cardRateEurPerHour
+    };
   });
-  const target = solvableRows.map((row) => basketRowTotalSellEur(row)! - row.materialSellEur!);
 
-  const solution = solveLeastSquares(designMatrix, target);
-  if (!solution) return null;
-
-  const [batchChargeEur, ...classRates] = solution;
-  const ratesByClassId: Record<string, number> = {};
-  classIds.forEach((classId, index) => {
-    ratesByClassId[classId] = classRates[index];
-  });
-
-  const residualsByRowId: Record<string, number> = {};
-  solvableRows.forEach((row, index) => {
-    const predicted = designMatrix[index].reduce((sum, coeff, i) => sum + coeff * solution[i], 0);
-    residualsByRowId[row.id] = target[index] - predicted;
-  });
-
-  return { batchChargeEur, ratesByClassId, residualsByRowId };
+  return { markupPercentUsed: assumedMarkupPercent, workCenters, rowTraces };
 }
 
 type CalibrationCandidate = {
@@ -2384,6 +2431,8 @@ function App() {
       </button>
     );
   }
+  const [erpOfferMaterialUnitCost, setErpOfferMaterialUnitCost] = useState<Record<string, number>>({});
+  const [assumedMaterialMarkupPercent, setAssumedMaterialMarkupPercent] = useState(10);
   const [marketEvidenceSellPrice, setMarketEvidenceSellPrice] = useState(0);
   const [marketEvidenceProductionCost, setMarketEvidenceProductionCost] = useState(0);
   const [marketEvidenceMaterialSell, setMarketEvidenceMaterialSell] = useState(0);
@@ -2498,6 +2547,35 @@ function App() {
     }
 
     loadBasketRows();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadErpOfferMaterialUnitCost() {
+      try {
+        const response = await fetch("/api/erp/customer-offers");
+        if (!response.ok) {
+          throw new Error(`Customer offer list returned ${response.status}`);
+        }
+        const data = (await response.json()) as ErpCustomerOfferRecord[];
+        if (cancelled) return;
+        const costs: Record<string, number> = {};
+        for (const offer of data) {
+          const key = normalizePartName(offer.part_name || "");
+          if (!key || offer.material_unit_cost_eur == null) continue;
+          if (costs[key] === undefined) costs[key] = offer.material_unit_cost_eur;
+        }
+        setErpOfferMaterialUnitCost(costs);
+      } catch {
+        // Non-critical: basket rows just fall back to manual material entry.
+      }
+    }
+
+    loadErpOfferMaterialUnitCost();
     return () => {
       cancelled = true;
     };
@@ -4016,7 +4094,7 @@ function App() {
   }
 
   function addBasketRow(draft?: Partial<BasketRow>) {
-    const firstClass = assumptions ? marketRateCardEntries(assumptions)[0]?.id ?? "cnc" : "cnc";
+    const firstWorkCenter = assumptions?.machine_classes[0]?.id ?? "";
     const localId = `basket_draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     setBasketRows((current) => [
       ...current,
@@ -4032,7 +4110,8 @@ function App() {
         unitPriceEur: null,
         lineTotalEur: null,
         materialSellEur: null,
-        routeHours: [{ id: `${localId}_hours_0`, marketRateClassId: firstClass, hours: 0 }],
+        materialUnitCostEur: null,
+        routeHours: [{ id: `${localId}_hours_0`, marketRateClassId: firstWorkCenter, hours: 0 }],
         notes: "",
         ...draft
       }
@@ -4040,16 +4119,25 @@ function App() {
   }
 
   function updateBasketRow(index: number, field: keyof BasketRow, value: unknown) {
-    setBasketRows((current) => replaceArrayItem(current, index, { ...current[index], [field]: value }));
+    setBasketRows((current) => {
+      const updatedRow: BasketRow = { ...current[index], [field]: value };
+      if (field === "partName" || field === "quantity") {
+        const cost = erpOfferMaterialUnitCost[normalizePartName(updatedRow.partName)];
+        if (cost !== undefined) {
+          updatedRow.materialUnitCostEur = cost;
+        }
+      }
+      return replaceArrayItem(current, index, updatedRow);
+    });
   }
 
   function addBasketRowHourEntry(rowIndex: number) {
-    const firstClass = assumptions ? marketRateCardEntries(assumptions)[0]?.id ?? "cnc" : "cnc";
+    const firstWorkCenter = assumptions?.machine_classes[0]?.id ?? "";
     setBasketRows((current) => replaceArrayItem(current, rowIndex, {
       ...current[rowIndex],
       routeHours: [
         ...current[rowIndex].routeHours,
-        { id: `${current[rowIndex].id}_hours_${Date.now()}`, marketRateClassId: firstClass, hours: 0 }
+        { id: `${current[rowIndex].id}_hours_${Date.now()}`, marketRateClassId: firstWorkCenter, hours: 0 }
       ]
     }));
   }
@@ -4112,6 +4200,28 @@ function App() {
     }
   }
 
+  // Grouped by the actual work center (machine), not the shared pricing-class label -- a
+  // "CNC" class can span a lathe, a mill, and a press brake, and those are different machines
+  // with potentially different real rates, so evidence has to stay resolved at that level.
+  async function routeHoursFromErpPart(partId: string, quantity: number): Promise<MarketEvidenceRouteRow[]> {
+    const response = await fetch(`/api/erp/parts/${partId}`);
+    if (!response.ok) return [];
+    const data = (await response.json()) as { route: ErpRouteOperation[] };
+    const hoursByWorkCenter = new Map<string, number>();
+    for (const operation of data.route) {
+      const workCenterId = operation.machine_class_id ?? `unassigned_${operation.operation_type}`;
+      const setupMinutes = attendedLaborMinutes(operation.machine_class_id, operation.setup_machine_minutes, operation.setup_labor_minutes);
+      const runMinutes = attendedLaborMinutes(operation.machine_class_id, operation.run_machine_minutes_per_part, operation.run_labor_minutes_per_part);
+      const totalHours = (setupMinutes + runMinutes * quantity) / 60;
+      hoursByWorkCenter.set(workCenterId, (hoursByWorkCenter.get(workCenterId) ?? 0) + totalHours);
+    }
+    return Array.from(hoursByWorkCenter.entries()).map(([workCenterId, hours], index) => ({
+      id: `erp_route_${partId}_${index}`,
+      marketRateClassId: workCenterId,
+      hours: Math.round(hours * 100) / 100
+    }));
+  }
+
   async function extractBasketPdf() {
     if (!basketPdfFile) {
       setBasketStatus("Choose a PDF first.");
@@ -4133,7 +4243,29 @@ function App() {
         line_items: { part_name: string | null; quantity: number | null; unit_price: number | null; line_total: number | null }[];
       };
       const items = extraction.line_items.length > 0 ? extraction.line_items : [{ part_name: null, quantity: null, unit_price: null, line_total: null }];
+      let materialMatchedCount = 0;
+      let routeMatchedCount = 0;
       for (const item of items) {
+        const cost = item.part_name ? erpOfferMaterialUnitCost[normalizePartName(item.part_name)] : undefined;
+        const materialUnitCostEur = cost !== undefined ? cost : null;
+        if (materialUnitCostEur != null) materialMatchedCount += 1;
+
+        const matchedPart = item.part_name
+          ? erpParts.find((part) => normalizePartName(part.name) === normalizePartName(item.part_name!))
+          : undefined;
+        let routeHours: MarketEvidenceRouteRow[] | undefined;
+        if (matchedPart && item.quantity != null) {
+          try {
+            const fetchedHours = await routeHoursFromErpPart(matchedPart.id, item.quantity);
+            if (fetchedHours.length > 0) {
+              routeHours = fetchedHours;
+              routeMatchedCount += 1;
+            }
+          } catch {
+            // Non-critical: row falls back to manual route hours entry.
+          }
+        }
+
         addBasketRow({
           source: "pdf_extraction",
           pdfFilename: basketPdfFile.name,
@@ -4143,10 +4275,21 @@ function App() {
           partName: item.part_name ?? "",
           quantity: item.quantity,
           unitPriceEur: item.unit_price,
-          lineTotalEur: item.line_total
+          lineTotalEur: item.line_total,
+          materialUnitCostEur,
+          ...(routeHours ? { routeHours } : {})
         });
       }
-      setBasketStatus(`Extracted ${items.length} line item${items.length === 1 ? "" : "s"} from ${basketPdfFile.name}. Review and fill in material estimate + route hours before solving.`);
+      const materialNote = materialMatchedCount > 0
+        ? ` Material sell auto-filled for ${materialMatchedCount} of ${items.length} row${items.length === 1 ? "" : "s"}.`
+        : "";
+      const routeNote = routeMatchedCount > 0
+        ? ` Route hours pulled from our own operations for ${routeMatchedCount} of ${items.length} row${items.length === 1 ? "" : "s"}.`
+        : "";
+      const reviewNote = routeMatchedCount === items.length && materialMatchedCount === items.length
+        ? " Ready to solve."
+        : " Review any remaining rows before solving.";
+      setBasketStatus(`Extracted ${items.length} line item${items.length === 1 ? "" : "s"} from ${basketPdfFile.name}.${materialNote}${routeNote}${reviewNote}`);
       setBasketPdfFile(null);
     } catch (error) {
       setBasketStatus(error instanceof Error ? error.message : "Quote extraction failed");
@@ -4156,14 +4299,27 @@ function App() {
   }
 
   function solveBasket() {
-    const result = solveBasketRates(basketRows);
-    if (!result) {
-      setBasketStatus("Not enough solvable rows yet. Each row needs quantity, sell price, material estimate, and route hours; you need more solvable rows than pricing classes used.");
-      setBasketSolveResult(null);
-      return;
-    }
+    if (!assumptions) return;
+    const workCenterIds = assumptions.machine_classes.map((machine) => machine.id);
+    const rates = marketRateById(marketRateCardEntries(assumptions));
+    const result = solveBasketByWorkCenter(
+      basketRows,
+      assumedMaterialMarkupPercent,
+      workCenterIds,
+      (id) => machineById.get(id)?.name ?? id,
+      (id) => {
+        const machine = machineById.get(id);
+        if (!machine) return null;
+        return rates.get(machineMarketRateClassId(machine))?.rateEurPerHour ?? null;
+      }
+    );
     setBasketSolveResult(result);
-    setBasketStatus(`Solved across ${basketRows.filter(basketRowIsSolvable).length} rows.`);
+    const foundCount = result.workCenters.filter((wc) => wc.status !== "unknown").length;
+    setBasketStatus(
+      foundCount > 0
+        ? `Found evidence for ${foundCount} of ${result.workCenters.length} work centers.`
+        : "No work center had a clean, single-machine-dominant quote yet -- add more rows or check route hours."
+    );
   }
 
   function applyBasketRatesToCard() {
@@ -4172,20 +4328,34 @@ function App() {
       return;
     }
     const today = new Date().toISOString().slice(0, 10);
+    // Several work centers can share one pricing-class card row (e.g. lathe + mill + press
+    // brake all under "CNC machining"); average the found/provisional medians of whichever
+    // work centers in that class actually have evidence, skip classes with none.
+    const ratesByClassId = new Map<string, number[]>();
+    for (const wc of basketSolveResult.workCenters) {
+      if (wc.status === "unknown" || wc.medianRate == null) continue;
+      const machine = machineById.get(wc.workCenterId);
+      if (!machine) continue;
+      const classId = machineMarketRateClassId(machine);
+      const list = ratesByClassId.get(classId) ?? [];
+      list.push(wc.medianRate);
+      ratesByClassId.set(classId, list);
+    }
     const entries = marketRateCardEntries(assumptions).map((entry) => {
-      const solvedRate = basketSolveResult.ratesByClassId[entry.id];
-      if (solvedRate === undefined || !Number.isFinite(solvedRate) || solvedRate <= 0) return entry;
+      const rates = ratesByClassId.get(entry.id);
+      if (!rates || rates.length === 0) return entry;
+      const averaged = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+      if (!Number.isFinite(averaged) || averaged <= 0) return entry;
       return {
         ...entry,
-        rateEurPerHour: roundMoney(solvedRate),
+        rateEurPerHour: roundMoney(averaged),
         source: "competitor_backsolve" as MarketRateSource,
         confidence: nextMarketConfidence(entry, "competitor_backsolve"),
         lastUpdated: today
       };
     });
     updateAssumptions({ ...assumptions, market_rate_card: entries });
-    const appliedCount = Object.values(basketSolveResult.ratesByClassId).filter((rate) => Number.isFinite(rate) && rate > 0).length;
-    setAssumptionStatus(`Applied solved rates to ${appliedCount} pricing class${appliedCount === 1 ? "" : "es"} from basket evidence. Save Rate Card to persist.`);
+    setAssumptionStatus(`Applied solved rates to ${ratesByClassId.size} pricing class${ratesByClassId.size === 1 ? "" : "es"} from basket evidence. Save Rate Card to persist.`);
   }
 
   function bindMarketRateCardToLoadedProfile() {
@@ -4532,6 +4702,9 @@ function App() {
       return;
     }
     try {
+      const materialSellEur = displayTargetResult.material_cost_eur + displayTargetResult.material_markup_eur;
+      const materialUnitSellEur = quantity > 0 ? materialSellEur / quantity : null;
+      const materialUnitCostEur = quantity > 0 ? displayTargetResult.material_cost_eur / quantity : null;
       const response = await fetch("/api/erp/customer-offer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4545,6 +4718,9 @@ function App() {
           target_unit_sell_price_eur: displayTargetResult.unit_sell_price_eur,
           accounting_sell_price_eur: displayAccountingResult?.sell_price_eur ?? null,
           accounting_unit_sell_price_eur: displayAccountingResult?.unit_sell_price_eur ?? null,
+          material_sell_eur: materialSellEur,
+          material_unit_sell_eur: materialUnitSellEur,
+          material_unit_cost_eur: materialUnitCostEur,
           validity_date: validityDate,
           delivery_estimate: deliveryEstimate,
           payment_terms: paymentTerms,
@@ -4563,6 +4739,10 @@ function App() {
       }
       const saved = (await response.json()) as ErpOfferPayload;
       setLastErpOffer(saved);
+      if (materialUnitCostEur != null) {
+        const key = normalizePartName(partName);
+        if (key) setErpOfferMaterialUnitCost((current) => ({ ...current, [key]: materialUnitCostEur }));
+      }
       setErpStatus(`Customer Offer data prepared for ERP as ${saved.id}`);
     } catch (error) {
       setErpStatus(error instanceof Error ? error.message : "ERP offer handoff failed");
@@ -6648,8 +6828,11 @@ function App() {
                     <div className="sectionHeader wide">
                       <div>
                         <h2>{t("Basket Evidence Solver")}</h2>
-                        <p className="sectionHelp">{t("The single-quote backsolve above assumes every other pricing class's card rate is already correct -- it can't bootstrap a card from zero, and it can't separate a fixed per-order charge from an hourly rate from just one order. This panel fits one shared batch/engineering charge plus one market EUR/h per pricing class across every row at once, by least squares. Add rows from real competitor quotes (upload a PDF to extract line items, or enter by hand), fill in your own material-sell estimate and route hours per row, then solve once you have more solvable rows than pricing classes in use.")}</p>
-                        <p className="sectionHelp">{t("Enter totals for each row's full sold quantity, not per-piece values -- same convention as the backsolve panel above. Material/bought-out sell amount is always your own estimate from your routings/BOM; the competitor's quote will not break this out reliably.")}</p>
+                        <p className="sectionHelp">{t("The single-quote check above assumes every other rate on your card is already correct -- it can't build a card from nothing. This panel works differently: upload a competitor's quote for a part you already produce, and the tool reads the real hours from your own operations, broken down by work center (the actual machine that did the work). That matters because your card's shared \"CNC\" label can hide a lathe, a mill, and a press brake charging very different rates.")}</p>
+                        <p className="sectionHelp">{t("A quote only counts as evidence for a work center when that work center did most of the job -- at least")} {Math.round(BASKET_DOMINANCE_CUTOFF * 100)}%{t(" of the hours. When it does, the math is simple: what the competitor charged, minus your material cost, divided by that work center's hours. Nothing is solved or guessed: a work center with no quote clearly dominated by it is marked as having no evidence yet, not given a made-up number.")}</p>
+                        <p className="marketBasketLimitations">
+                          {t("Worth knowing before you rely on this:")} {t("one quote is a hint, not proof -- wait for a second one to agree before trusting a rate. Quotes where no single work center clearly did most of the job don't tell you anything and are simply left out; that's normal, not a bug. And the material cost used here is always your own estimate, marked up by the percentage below -- not what the competitor actually paid -- so adjust it if you think they buy material differently than you do.")}
+                        </p>
                       </div>
                     </div>
                     <div className="fieldGrid">
@@ -6666,13 +6849,23 @@ function App() {
                     {basketStatus ? <p className="statusText">{basketStatus}</p> : null}
                     <div className="resourceTable marketBasketTable">
                       <div className="tableHead marketBasketHead">
-                        <span>{t("Part")}</span><span>{t("Qty")}</span><span>{t("Sell price (total)")}</span><span>{t("Material sell (total)")}</span><span>{t("Route hours")}</span><span>{t("Solvable")}</span><span></span>
+                        <span>{t("Part")}</span><span>{t("Qty")}</span><span>{t("Sell price (total)")}</span>
+                        <span className="marketBasketMarkupHead">
+                          <span>{t("Material sell (total)")}</span>
+                          <span className="marketBasketMarkupStepper">
+                            <span className="marketBasketMarkupLabel">{t("Assumed competitor material markup")}</span>
+                            <span className="stepperControl">
+                              <button type="button" className="iconButton" disabled={assumedMaterialMarkupPercent <= 0} onClick={() => setAssumedMaterialMarkupPercent((value) => Math.max(0, value - 5))}>−</button>
+                              <span className="stepperValue">{assumedMaterialMarkupPercent}%</span>
+                              <button type="button" className="iconButton" disabled={assumedMaterialMarkupPercent >= 25} onClick={() => setAssumedMaterialMarkupPercent((value) => Math.min(25, value + 5))}>+</button>
+                            </span>
+                          </span>
+                        </span>
+                        <span>{t("Route hours (by work center)")}</span><span>{t("Solvable")}</span><span></span>
                       </div>
                       {basketRows.map((row, rowIndex) => {
-                        const solvable = basketRowIsSolvable(row);
-                        const residual = basketSolveResult?.residualsByRowId[row.id];
-                        const total = basketRowTotalSellEur(row);
-                        const offModel = residual !== undefined && total !== null && total > 0 && Math.abs(residual) / total > 0.15;
+                        const solvable = basketRowIsSolvable(row, assumedMaterialMarkupPercent);
+                        const materialSellEur = basketRowMaterialSellEur(row, assumedMaterialMarkupPercent);
                         return (
                           <div className="tableRow marketBasketRow" key={row.id}>
                             <div className="marketBasketRowMain">
@@ -6681,24 +6874,29 @@ function App() {
                             </div>
                             <input type="number" min="0" placeholder={t("Qty")} value={row.quantity ?? ""} onChange={(event) => updateBasketRow(rowIndex, "quantity", numericValue(event.target.value))} />
                             <input type="number" min="0" placeholder={t("Sell EUR")} value={row.lineTotalEur ?? (row.unitPriceEur != null && row.quantity != null ? row.unitPriceEur * row.quantity : "")} onChange={(event) => updateBasketRow(rowIndex, "lineTotalEur", numericValue(event.target.value))} />
-                            <input type="number" min="0" placeholder={t("Material EUR")} value={row.materialSellEur ?? ""} onChange={(event) => updateBasketRow(rowIndex, "materialSellEur", numericValue(event.target.value))} />
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder={t("Material EUR")}
+                              value={materialSellEur ?? ""}
+                              onChange={(event) => updateBasketRow(rowIndex, "materialSellEur", numericValue(event.target.value))}
+                            />
                             <div className="marketBasketHoursCell">
                               {row.routeHours.map((hourEntry, hourIndex) => (
                                 <div className="marketBasketHourRow" key={hourEntry.id}>
                                   <select value={hourEntry.marketRateClassId} onChange={(event) => updateBasketRowHourEntry(rowIndex, hourIndex, "marketRateClassId", event.target.value)}>
-                                    {entries.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+                                    {assumptions.machine_classes.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
                                   </select>
                                   <input type="number" min="0" value={hourEntry.hours} onChange={(event) => updateBasketRowHourEntry(rowIndex, hourIndex, "hours", numericValue(event.target.value))} />
                                   <button className="iconButton" onClick={() => removeBasketRowHourEntry(rowIndex, hourIndex)}><Trash2 size={14} /></button>
                                 </div>
                               ))}
-                              <button className="secondaryButton" onClick={() => addBasketRowHourEntry(rowIndex)}>+ {t("class")}</button>
+                              <button className="secondaryButton" onClick={() => addBasketRowHourEntry(rowIndex)}>+ {t("work center")}</button>
                             </div>
-                            <span className={solvable ? "decisionGood" : undefined}>
+                            <span className={`marketBasketSolvable ${solvable ? "decisionGood" : "decisionBad"}`}>
                               {solvable ? t("Yes") : t("Incomplete")}
-                              {offModel ? <em className="decisionFormula decisionBad"> {t("off-model")} ({money.format(residual!)})</em> : null}
                             </span>
-                            <div className="buttonRow">
+                            <div className="buttonRow marketBasketRowActions">
                               <button className="secondaryButton" onClick={() => saveBasketRow(rowIndex)}>{t("Save")}</button>
                               <button className="iconButton" onClick={() => deleteBasketRow(rowIndex)}><Trash2 size={16} /></button>
                             </div>
@@ -6711,16 +6909,75 @@ function App() {
                       <button className="primaryButton" disabled={!basketSolveResult} onClick={applyBasketRatesToCard}>{t("Apply Solved Rates to Card")}</button>
                     </div>
                     {basketSolveResult ? (
-                      <div className="marketFormulaGrid">
-                        <div><span>{t("Solved batch/engineering charge")}</span><strong>{money.format(basketSolveResult.batchChargeEur)}</strong><em>{t("Shared fixed charge per order, separated from hourly rates by the regression")}</em></div>
-                        {entries.filter((entry) => basketSolveResult.ratesByClassId[entry.id] !== undefined).map((entry) => (
-                          <div key={entry.id}>
-                            <span>{entry.name} {t("solved EUR/h")}</span>
-                            <strong>{money.format(basketSolveResult.ratesByClassId[entry.id])}/h</strong>
-                            <em>{t("Card currently:")} {money.format(entry.rateEurPerHour)}/h</em>
+                      <>
+                        <div className="marketBasketEvidenceGrid">
+                          {basketSolveResult.workCenters.map((wc) => (
+                            <div key={wc.workCenterId} className={`marketBasketEvidenceCard ${wc.status}`}>
+                              <span className="wc">{wc.workCenterName}</span>
+                              {wc.status === "unknown" ? (
+                                <span className="value">{t("Not enough evidence yet")}</span>
+                              ) : (
+                                <>
+                                  <span className="value">{money.format(wc.medianRate!)}/h</span>
+                                  {wc.status === "provisional" ? (
+                                    <span className="range">{t("Only 1 quote isolates it -- treat as provisional")}</span>
+                                  ) : (
+                                    <span className="range">{t("Range across quotes:")} {money.format(wc.minRate!)} - {money.format(wc.maxRate!)}/h</span>
+                                  )}
+                                  {wc.cardRateEurPerHour != null ? <span className="cardVs">{t("Card currently:")} {money.format(wc.cardRateEurPerHour)}/h</span> : null}
+                                </>
+                              )}
+                              <span className="evidenceCount">
+                                {wc.evidenceCount === 0
+                                  ? t("0 quotes isolate this work center")
+                                  : `${wc.evidenceCount} ${wc.evidenceCount === 1 ? t("competitor quote isolates this work center") : t("competitor quotes isolate this work center")}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="resourceTable marketBasketTraceTable">
+                          <div className="tableHead marketBasketTraceHead">
+                            <span>{t("Competitor quote line")}</span>
+                            <span className="numCol">{t("Qty")}</span>
+                            <span className="numCol">{t("Price/part")}</span>
+                            <span>{t("Dominant work center")}</span>
+                            <span className="shareCol numCol">{t("Share of hours")}</span>
+                            <span className="numCol">{t("Sell − material")}</span>
+                            <span className="numCol">{t("Hours")}</span>
+                            <span className="numCol">{t("Implied €/h")}</span>
                           </div>
-                        ))}
-                      </div>
+                          {basketSolveResult.rowTraces.map((trace) => {
+                            const row = basketRows.find((candidate) => candidate.id === trace.rowId);
+                            if (!row) return null;
+                            const qty = row.quantity;
+                            const total = basketRowTotalSellEur(row);
+                            const pricePerPart = total != null && qty ? total / qty : null;
+                            const workCenterName = trace.dominantWorkCenterId ? (machineById.get(trace.dominantWorkCenterId)?.name ?? trace.dominantWorkCenterId) : null;
+                            return (
+                              <div className="tableRow marketBasketTraceRow" key={trace.rowId}>
+                                <span>{row.partName || t("(unnamed row)")}</span>
+                                <span className="numCol">{qty ?? "—"}</span>
+                                <span className="numCol">{pricePerPart != null ? money.format(pricePerPart) : "—"}</span>
+                                <span>{workCenterName ?? "—"}</span>
+                                <span className="shareCol numCol">{trace.dominantShare != null ? `${Math.round(trace.dominantShare * 100)}%` : "—"}</span>
+                                {trace.excludedReason ? (
+                                  <span className="marketBasketExcludedReason" style={{ gridColumn: "span 3" }}>
+                                    {trace.excludedReason === "not_solvable" ? t("row incomplete -- missing quantity, sell price, material estimate, or route hours") : null}
+                                    {trace.excludedReason === "no_route_hours" ? t("no route hours entered for this row") : null}
+                                    {trace.excludedReason === "below_cutoff" ? t("too mixed -- no work center reaches the cutoff") : null}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="numCol">{trace.totalSellEur != null && trace.materialSellEur != null ? money.format(trace.totalSellEur - trace.materialSellEur) : "—"}</span>
+                                    <span className="numCol">{trace.dominantHours != null ? `${trace.dominantHours.toFixed(2)} h` : "—"}</span>
+                                    <span className="numCol">{trace.impliedRate != null ? `${money.format(trace.impliedRate)}/h` : "—"}</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     ) : null}
                   </section>
 

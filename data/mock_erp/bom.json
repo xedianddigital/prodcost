@@ -38,5 +38,21 @@
     "stock_id": "stock_s355_round_45",
     "stock_pieces_required": 2,
     "scrap_recovery_eur": 5
+  },
+  {
+    "part_id": "part_al6082_cnc_end_cap",
+    "line": 10,
+    "material_id": "mat_al6082",
+    "stock_id": "stock_al6082_bar_80x20",
+    "stock_pieces_required": 2,
+    "scrap_recovery_eur": 6
+  },
+  {
+    "part_id": "part_s355_stepped_shaft",
+    "line": 10,
+    "material_id": "mat_s355",
+    "stock_id": "stock_s355_round_45",
+    "stock_pieces_required": 3,
+    "scrap_recovery_eur": 7
   }
 ]

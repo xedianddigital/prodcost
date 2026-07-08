@@ -2714,15 +2714,48 @@ input[readonly] {
     minmax(130px, 0.55fr)
     minmax(130px, 0.55fr)
     minmax(220px, 1fr)
-    minmax(140px, 0.6fr)
-    minmax(120px, 0.5fr);
-  min-width: 1050px;
+    minmax(170px, 0.65fr)
+    minmax(150px, 0.55fr);
+  min-width: 1110px;
 }
 
 .marketBasketRow {
   align-items: start;
   padding-top: 10px;
   padding-bottom: 10px;
+}
+
+.marketBasketSolvable {
+  display: block;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.3;
+}
+
+.marketBasketSolvable.decisionGood {
+  color: #1c7d3f;
+  font-weight: 700;
+}
+
+.marketBasketSolvable.decisionBad {
+  color: #8a6d1a;
+  font-weight: 700;
+}
+
+.marketBasketRow .decisionFormula {
+  display: block;
+  margin: 4px 0 0;
+  overflow-wrap: break-word;
+}
+
+.marketBasketRowActions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.marketBasketRowActions .iconButton {
+  align-self: flex-start;
 }
 
 .marketBasketRowMain {
@@ -2733,13 +2766,193 @@ input[readonly] {
 .marketBasketHoursCell {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .marketBasketHourRow {
   display: grid;
-  grid-template-columns: 1fr 80px 28px;
+  grid-template-columns: minmax(0, 1fr) 80px 38px;
   gap: 6px;
   align-items: center;
+  min-width: 0;
+}
+
+.marketBasketHourRow select,
+.marketBasketHourRow input {
+  min-width: 0;
+  width: 100%;
+}
+
+.marketBasketHourRow .iconButton {
+  width: 100%;
+  min-width: 0;
+}
+
+.marketBasketHead {
+  align-items: start;
+  min-height: auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.marketBasketMarkupHead {
+  display: grid;
+  gap: 8px;
+}
+
+.marketBasketMarkupStepper {
+  display: grid;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.marketBasketMarkupLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #4e5963;
+}
+
+.stepperControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepperControl .iconButton {
+  width: 26px;
+  height: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.stepperValue {
+  min-width: 34px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #20252b;
+}
+
+.marketBasketEvidenceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.marketBasketEvidenceCard {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.marketBasketEvidenceCard.found {
+  background: #d7ead9;
+  border: 1px solid #3f8f52;
+}
+
+.marketBasketEvidenceCard.provisional {
+  background: #f5d7a3;
+  border: 1px solid #b45309;
+}
+
+.marketBasketEvidenceCard.unknown {
+  background: #e3e7eb;
+  border: 1px dashed #b7c0c9;
+}
+
+.marketBasketEvidenceCard .wc {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #3b4650;
+}
+
+.marketBasketEvidenceCard.found .wc { color: #1c5c2c; }
+.marketBasketEvidenceCard.provisional .wc { color: #5f3212; }
+.marketBasketEvidenceCard.unknown .wc { color: #5c6a75; }
+
+.marketBasketEvidenceCard .value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #20252b;
+}
+
+.marketBasketEvidenceCard.unknown .value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #5c6a75;
+}
+
+.marketBasketEvidenceCard .range,
+.marketBasketEvidenceCard .cardVs,
+.marketBasketEvidenceCard .evidenceCount {
+  font-size: 12px;
+  color: #4e5963;
+}
+
+.marketBasketEvidenceCard .cardVs {
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  padding-top: 6px;
+}
+
+.marketBasketEvidenceCard .evidenceCount {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.marketBasketTraceTable {
+  margin-top: 16px;
+}
+
+.marketBasketTraceHead,
+.marketBasketTraceRow {
+  display: grid;
+  grid-template-columns:
+    minmax(170px, 1.3fr)
+    minmax(50px, 0.3fr)
+    minmax(85px, 0.5fr)
+    minmax(150px, 0.9fr)
+    minmax(56px, 0.28fr)
+    minmax(105px, 0.55fr)
+    minmax(75px, 0.4fr)
+    minmax(100px, 0.55fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.marketBasketTraceHead {
+  background: #b8c1ca;
+  color: #333b43;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.marketBasketTraceRow {
+  border-top: 1px solid #b8c1ca;
+  background: #d6dbe1;
+  font-size: 13px;
+}
+
+.marketBasketTraceTable .numCol {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.marketBasketTraceTable .shareCol {
+  font-size: 12px;
+}
+
+.marketBasketExcludedReason {
+  font-size: 12px;
+  font-style: italic;
+  color: #5c6a75;
 }
 
 .marketRateCardRow,
@@ -2792,6 +3005,20 @@ input[readonly] {
   font-size: 12px;
   font-style: normal;
   line-height: 1.35;
+}
+
+.marketFormulaGrid div.decisionBad {
+  background: #f3c9c9;
+  border-color: #b45309;
+}
+
+.marketFormulaGrid div.decisionBad strong {
+  color: #7a1f1f;
+}
+
+.marketFormulaGrid div.decisionBad em.decisionBad {
+  color: #7a1f1f;
+  font-weight: 700;
 }
 
 .marketActionRow {
@@ -3131,6 +3358,18 @@ input[readonly] {
   color: #5f3212;
   font-size: 13px;
   font-weight: 700;
+}
+
+.marketBasketLimitations {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #b45309;
+  border-radius: 8px;
+  background: #f5d7a3;
+  color: #5f3212;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .rateGood {

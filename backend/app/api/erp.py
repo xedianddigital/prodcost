@@ -26,6 +26,9 @@ class ErpCustomerOfferInput(BaseModel):
     target_unit_sell_price_eur: float = Field(ge=0)
     accounting_sell_price_eur: float | None = Field(default=None, ge=0)
     accounting_unit_sell_price_eur: float | None = Field(default=None, ge=0)
+    material_sell_eur: float | None = Field(default=None, ge=0)
+    material_unit_sell_eur: float | None = Field(default=None, ge=0)
+    material_unit_cost_eur: float | None = Field(default=None, ge=0)
     currency: str = "EUR"
     validity_date: str | None = None
     delivery_estimate: str | None = None

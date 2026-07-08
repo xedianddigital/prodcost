@@ -79,5 +79,45 @@
     "programming_minutes": 30,
     "proveout_minutes": 15,
     "delivery_estimate": "12 working days after order confirmation"
+  },
+  {
+    "id": "part_al6082_cnc_end_cap",
+    "part_number": "CNC-AL-140",
+    "revision": "A",
+    "name": "6082 CNC end cap",
+    "customer_id": "cust_baltic_robotics",
+    "rfq_reference": "RFQ-SIA-AL-140",
+    "default_quantity": 60,
+    "quantity_breaks": [
+      15,
+      30,
+      60,
+      120
+    ],
+    "is_new_part": false,
+    "cam_complexity": "medium",
+    "programming_minutes": 45,
+    "proveout_minutes": 15,
+    "delivery_estimate": "12 working days after order confirmation"
+  },
+  {
+    "id": "part_s355_stepped_shaft",
+    "part_number": "TRN-S355-090",
+    "revision": "A",
+    "name": "S355 stepped shaft",
+    "customer_id": "cust_baltic_robotics",
+    "rfq_reference": "RFQ-SIA-TRN-090",
+    "default_quantity": 40,
+    "quantity_breaks": [
+      10,
+      20,
+      40,
+      80
+    ],
+    "is_new_part": true,
+    "cam_complexity": "medium",
+    "programming_minutes": 40,
+    "proveout_minutes": 20,
+    "delivery_estimate": "15 working days after order confirmation"
   }
 ]
