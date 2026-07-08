@@ -29,6 +29,8 @@ Requires **Python 3.11+** and **Node.js 18+**. No database or external services 
 
 Then open `http://localhost:8001` and click **Load Demo RFQ** on the Quote tab for a filled-in example. See [`runbook.md`](runbook.md) for manual start steps, running tests, and troubleshooting.
 
+Everything works out of the box with no API keys. The one exception is the **competitor-PDF extraction** button on the Market Rates page (Basket Evidence Solver), which reads a competitor quote PDF via an LLM call and needs an `OPENROUTER_API_KEY` in `backend/.env` (a free-tier OpenRouter key works). Without one, that single button shows a clear message and does nothing else — every other feature, including entering competitor quote rows by hand, is unaffected.
+
 ## Repository layout
 
 ```text

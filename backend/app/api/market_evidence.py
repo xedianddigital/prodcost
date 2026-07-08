@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from app.api.market_evidence_llm import QuoteExtraction, extract_quote
+from app.api.market_evidence_llm import QuoteExtraction, extract_quote, has_api_key
 from app.persistence import atomic_write_json, locked_store
 
 router = APIRouter(tags=["market evidence"])
@@ -118,6 +118,15 @@ def delete_basket_row(row_id: str) -> dict[str, str]:
 async def extract_quote_pdf(file: UploadFile = File(...)) -> QuoteExtraction:
     if file.content_type not in ("application/pdf", "application/octet-stream", None):
         raise HTTPException(status_code=400, detail="Uploaded file must be a PDF")
+    if not has_api_key():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "PDF extraction is not configured on this server: no OPENROUTER_API_KEY "
+                "in backend/.env (see README.md). This feature is optional -- you can still "
+                "add competitor quote rows manually below."
+            ),
+        )
     pdf_bytes = await file.read()
     try:
         return extract_quote(pdf_bytes)

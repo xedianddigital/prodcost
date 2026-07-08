@@ -4233,7 +4233,8 @@ function App() {
       formData.append("file", basketPdfFile);
       const response = await fetch("/api/market-evidence/extract-quote", { method: "POST", body: formData });
       if (!response.ok) {
-        throw new Error(`Quote extraction returned ${response.status}`);
+        const detail = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(detail?.detail ?? `Quote extraction returned ${response.status}`);
       }
       const extraction = await response.json() as {
         supplier: string | null;

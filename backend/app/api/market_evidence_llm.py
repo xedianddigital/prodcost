@@ -91,6 +91,11 @@ def _strip_json_fence(text: str) -> str:
     return match.group(1) if match else text
 
 
+def has_api_key() -> bool:
+    _load_env()
+    return bool(os.environ.get("OPENROUTER_API_KEY"))
+
+
 def call_openrouter(prompt: str) -> str:
     """Calls OpenRouter's chat completions endpoint, retrying on 429s. Returns raw content string."""
     _load_env()
