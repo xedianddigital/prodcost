@@ -1,90 +1,58 @@
 # ProdCost
 
-Production cost calculator for CNC-focused metalworking manufacturers quoting external customer work.
+A production cost calculator and quoting tool for CNC-focused metalworking manufacturers. It turns a customer RFQ into a defensible sell price by building the price up from real machine, labor, material, and overhead cost, then showing every step of that chain rather than a single opaque number.
 
-The project starts from a practical constraint: early quotes often have incomplete data. The cost model therefore supports progressive precision levels, from a fast estimate to operation-level costing and later actuals feedback.
+The tool was built around a concrete business question: why can a shop's quoted prices be several times higher than competitors even though its machines and people aren't unusually expensive? The answer is rarely one thing — it's a mix of idle machine capacity, uncounted overhead, optimistic route assumptions, missing tooling, material waste, and one-time engineering effort — so the tool is built to make each of those contributions visible and adjustable on its own, instead of collapsing them into one estimate.
 
+## What it does
 
-## Pinned Objective
+- **Quote Builder** — builds a quote from RFQ metadata, a material/stock selection (with a cutoff calculator for real buy-quantity from fixed stock lengths), a CAM/engineering step for new vs. repeat parts, an editable operation route, and a tool-inventory check that prices in any missing tooling. Every quote is priced twice — at a realistic **Target** rate and today's **Accounting** rate — so the cost of under-loaded capacity is visible on every quote, not just in aggregate.
+- **Company Profile** — a plain-language builder for a company's production assets, employees, and facility overhead, which feeds every other calculation from one source of truth.
+- **Resources** — the assumptions warehouse: commercial policy, labor and machine rate drivers, material library, tool inventory, operation templates, and overhead allocation, each with a plain-language explanation of what it means and why the default is what it is.
+- **Market Rates** — builds an external market EUR/h rate per work center from real evidence: your own quote history, and competitor quotes uploaded as PDFs, matched to your own parts and broken down by the work center (machine) that actually did the job — not a blended, unreliable regression.
+- **Scenarios** — decomposes the gap between today's price and a properly-loaded price into Utilization, Availability, and overhead, runs a sensitivity table across the main cost drivers, and answers "what would it take to match a competitor's price" for margin, rate, or utilization alone.
+- **Profitability** — an independent "can this business be profitable at all" model: fixed cost, overhead, and a stress-testable shop utilization scenario, with a real break-even utilization figure.
+- **Client Portal** — a self-serve RFQ intake for external customers: STEP upload, requirement fields, and a preliminary price range, with a one-click bridge into a full internal quote once someone needs to confirm it.
+- **Print** — a browser-printable Customer Offer (customer-safe) and Internal Cost Sheet (full cost breakdown), and a mock ERP adapter for importing part/route/BOM data and sending calculated offers back out.
+- **EN / LV** — the whole UI is available in English and Latvian, switchable at any time.
 
-Build a web-based production cost calculator for Latvian/CEE metalworking manufacturers with CNC milling and turning capacity, focused on external-client quoting. The original business problem is that the target company has years of negative net profit and low machine OEE, yet quoted prices are reportedly 3-4x higher than competitors. The tool must help expose whether that gap comes from costing logic, idle-capacity burden, weak assumptions, missing data, routing/material/tooling reality, or genuinely expensive production.
+See [`guidebook.md`](guidebook.md) for a full tab-by-tab walkthrough, and [`demo-script.md`](demo-script.md) for a ready-to-use presentation script.
 
-The calculator must support layered precision: fast estimates when data is incomplete, operation-based costing when route data exists, resource-accurate costing when machine/labor/material data is available, and actuals feedback for calibration. It must use editable assumptions first, then show a credible path to ERP-sourced data, STEP-file-driven new-part workflows, tool inventory checks, and ERP customer-offer handoff.
+## Quick start
 
-## Current Scope
+Requires **Python 3.11+** and **Node.js 18+**. No database or external services — everything is stored in `data/*.json`.
 
-- Single-company quote calculator.
-- Manual quote inputs.
-- Configurable Latvian starter assumptions, editable through the web UI.
-- Operation-based costing for common metalworking flows, with operations added from editable resource templates.
-- Explicit separation of production cost, margin, and quoted selling price.
-- Scenario-ready quote builder comparing accounting full-cost rates against target competitive rates.
-- Mock ERP adapter for importing BOM/material/route/customer data and sending Customer Offer payloads back to ERP.
-- Editable tool inventory with quote-side missing-tool checks and cost treatment.
-- Client RFQ portal demo for multi-part STEP uploads and preliminary pricing before manual confirmation. Prices at the Target rate for the client, with an internal-only Accounting cross-check, a real Tool Inventory check (including a real tapping/tap-tool check when threads are requested), a Cutoff Calculator for material waste from fixed stock dimensions, and a "Send to Quote Builder" bridge into a real quote draft.
-- Principles Guide tab explaining pricing logic, tab purpose, role-specific meaning, and data-quality assumptions.
-- Machine rates driven by two separate gauges: Availability (uptime when a machine has work loaded) and Utilization (whether it has work loaded at all). Idleness (1 - Utilization) is the empty-order gap; it is never derived from Availability or OEE. OEE (availability x performance x quality) is still tracked as a diagnostic gauge, but only Availability scales EUR/h -- performance losses live in cycle/setup times and quality losses in scrap allowance, so folding full OEE into the rate would double-charge both. Target Utilization defaults to 95%.
-- Backend `app/costing/rates.py` mirrors the frontend rate math with full pytest coverage; operations can send `rate_drivers` alongside a resolved rate, and the backend warns if the label and the drivers disagree by more than 1%.
-- Overhead Allocation in Resources: one editable total monthly overhead (admin, sales, quality management, facility), spread per machine hour into every machine's EUR/h. (A mathematically equivalent percent-of-conversion-cost method remains in the engine for compatibility but is no longer offered in the UI.)
-- Machine Rate Calculator can derive `Fixed cost EUR/month` from equipment purchase price, useful life, salvage %, and other known fixed costs.
-- Profitability Calculator tab: a standalone "can we be profitable" estimate from department expenses, a stress-testable shop Utilization scenario, and commercial policy, independent of any single quote. Revenue (sold hours x a fixed target sell rate) and cost (full fixed cost + variable + overhead) move independently, so it can show a real loss, and it displays the break-even Utilization.
-- Scenarios tab: a gap waterfall decomposing accounting-vs-target price by Utilization/Availability/overhead basis, a +-10%/+-25% sensitivity table across five drivers, and a competitor-price input with closed-form single-driver what-ifs.
-- Cost formula (`costing.v0.3`): scrap allowance applies only to run cost and per-part variable cost, not setup or outsourced-batch cost; cumulative yield across the route inflates upstream started quantity to cover downstream scrap; quantity breaks recompute material stock pieces per break instead of freezing the main quantity; a Commercial multiplier (sell price / subtotal) is shown in Quote Summary; missing-tool cost is tracked separately from real outsourced-batch cost in quote math and exports. New in v0.3: profit margin and risk apply only to the shop's own conversion work — material and bought-out cost passes through with a smaller editable handling markup (seed 10%); salary-based labor rates divide payroll over billable hours (editable billable share, seed 85%), not paid hours.
-- Profitability tab reports a monthly **operating profit/loss** (before interest and income tax), with an even-load caveat on break-even Utilization, a fixed-level sensitivity table (50-100%), an optional material-margin revenue line, and a warning when a labor class also appears in the overhead list (payroll double-count guard).
-- Methods tab: plain-language reference comparing full costing at normal capacity (the method this tool uses) against contribution costing, TDABC, throughput accounting, target costing, and standard costing — what each is good at and when to use it.
-- Calibration loop (Actuals Feedback) applies a running weighted mean per operation type, capped sample count, with an old-to-new confirmation review for large deviations.
-- `data/*.json` stores (quote drafts, assumptions, ERP offer payloads) use atomic writes with per-store file locking to survive concurrent saves.
+```bash
+./setup.sh   # once, after cloning: creates the backend virtualenv, installs frontend deps
+./start.sh   # every time: starts backend (8002) + frontend (8001), opens the browser
+```
 
-## Repository Layout
+Then open `http://localhost:8001` and click **Load Demo RFQ** on the Quote tab for a filled-in example. See [`runbook.md`](runbook.md) for manual start steps, running tests, and troubleshooting.
+
+## Repository layout
 
 ```text
-backend/       FastAPI API and deterministic costing engine
-frontend/      React + TypeScript UI scaffold
-data/          Editable baseline assumptions and seed data
-docs/          Architecture, costing model, assumptions, roadmap
+backend/       FastAPI API and the deterministic costing engine
+frontend/      React + TypeScript UI
+data/          Editable baseline assumptions and seed/demo data
+docs/          Architecture, costing model, and assumptions reference
 ```
 
-## Demo Flow
+## Documentation map
 
-Use `Load Demo RFQ` on the Quote screen for an approval-ready walkthrough. The demo fills customer/RFQ metadata, material, CNC route, quantity breaks, actuals, and calibration notes. Use the `Case` page for the approval narrative.
+| File | What it's for |
+|---|---|
+| [`runbook.md`](runbook.md) | Manual start steps, running tests, troubleshooting |
+| [`guidebook.md`](guidebook.md) | Full tab-by-tab walkthrough of every feature |
+| [`demo-script.md`](demo-script.md) | A ready-to-use presentation script |
+| [`docs/architecture.md`](docs/architecture.md) | Core concepts and product boundary |
+| [`docs/costing-model.md`](docs/costing-model.md) | The cost formula in detail |
+| [`docs/assumptions.md`](docs/assumptions.md) | Where the starter assumption values come from |
+| [`docs/market-rates-page-guide.md`](docs/market-rates-page-guide.md) | What the Market Rates page answers and how |
 
-## First Development Milestones
+## Baseline assumptions
 
-1. Stabilize the cost formula contract with unit tests.
-2. Build the quote builder UI against sample data.
-3. Persist quotes, assumptions, resources, and calculation snapshots.
-4. Add quote versioning and accounting-vs-target rate scenarios.
-5. Add PDF/Excel export once the calculation model is trusted.
-
-## Local Development
-
-Backend:
-
-```bash
-cd backend
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8001
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend development server proxies `/api` requests to `http://localhost:8001`.
-
-Open `Resources` in the UI to edit the baseline assumptions stored in `data/baseline_assumptions.lv.json`. Structured fields cover the most common commercial, CAM, labor, machine-rate, material-library, and operation-template timing values; the full JSON editor exposes every remaining seed value. The Resources explanations tab defines the terminology, documents Latvian gross salary conversion, and explains how actuals can calibrate operation templates.
-
-Quote drafts are saved through the UI to `data/quote_drafts.json`. Each draft stores the editable quote state, operation route, quantity breaks, actuals feedback, target/accounting calculation results, and an assumptions snapshot. Saved drafts can be exported as JSON or CSV from the Quote screen, including quantity break results. The Print view provides a browser-printable quote summary that can be saved as PDF. It supports customer/RFQ/quote metadata and two formal document modes: Customer Offer and Internal Cost Sheet, both with quantity pricing.
-
-## Baseline Assumptions
-
-Starter assumptions are intentionally not treated as truth. They live in `data/baseline_assumptions.lv.json` and should be replaced as soon as company-specific data is available.
+Starter assumptions are intentionally not treated as truth. They live in `data/baseline_assumptions.lv.json`, are editable through the Resources tab, and should be replaced with company-specific data as soon as it's available.
 
 Primary public references currently used for calibration:
 
@@ -92,4 +60,3 @@ Primary public references currently used for calibration:
 - Latvia Official Statistics Portal, 2025 wages press release: https://stat.gov.lv/en/statistics-themes/labour-market/wages-and-salaries/press-releases/26599-wages-and-salaries-4th?themeCode=DS
 - Latvia Official Statistics Portal, Q1 2026 wages press release: https://stat.gov.lv/en/statistics-themes/labour-market/wages-and-salaries/press-releases/27579-wages-and-salaries-1st?themeCode=DS
 - Eurostat non-household electricity prices dataset: https://ec.europa.eu/eurostat/databrowser/view/nrg_pc_205/default/table?lang=en
-

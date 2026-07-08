@@ -2,6 +2,8 @@
 
 Two services make up the app: a FastAPI backend (the costing engine and JSON stores) and a Vite/React frontend (the UI). Start the backend first, then the frontend, then open the browser.
 
+The easiest way to run both at once is `./setup.sh` (first time only) followed by `./start.sh` from the repository root — see the README's Quick Start. This file covers the manual, per-service steps, useful for development or troubleshooting.
+
 ## Prerequisites
 
 - Python 3.12+ (`python3 --version`)
@@ -57,7 +59,7 @@ Open the printed URL, normally `http://localhost:8001` (the port is set in `fron
 
 1. Open `http://localhost:8001`.
 2. Use **Load Demo RFQ** on the Quote page for a filled-in walkthrough quote.
-3. Suggested demo order for a first-time viewer: **Profile → Resources → Quote → Scenarios → Market Rates → Profitability → Case → Guide → Methods**.
+3. Suggested tour order for a first-time viewer: **Profile → Resources → Quote → Scenarios → Market Rates → Profitability → Case → Guide → Methods**. See [`guidebook.md`](guidebook.md) for a detailed walkthrough of every tab.
 
 ## Running the tests
 
