@@ -7503,7 +7503,11 @@ function App() {
 
             <section className="panel caseHero">
               <h2>{t("The Three Numbers Every Quote Decision Needs")}</h2>
-              <p>{t("The methods above collapse into three practical reference points for any order.")} <strong>{t("1) The cash floor")}</strong> {t("(contribution view): below the variable cost of running the order, the company pays to work — never quote below it knowingly.")} <strong>{t("2) The survival floor")}</strong> {t("(full-cost view): the price at a normally busy load that covers machines, people, overhead, and margin — the Target price on the Quote page.")} <strong>{t("3) The market price")}</strong> {t("(target-costing view): what customers actually pay — the Market Rates evidence. A healthy business quotes near number 3, keeps it above number 2 on average, and drops to the space between 1 and 2 only deliberately, to fill idle hours, never as a habit.")}</p>
+              <p>{t("The methods above collapse into three practical reference points for any order.")}</p>
+              <p><strong>{t("1) The cash floor")}</strong> {t("(contribution view): below the variable cost of running the order, the company pays to work — never quote below it knowingly.")}</p>
+              <p><strong>{t("2) The survival floor")}</strong> {t("(full-cost view): the price at a normally busy load that covers machines, people, overhead, and margin — the Target price on the Quote page.")}</p>
+              <p><strong>{t("3) The market price")}</strong> {t("(target-costing view): what customers actually pay — the Market Rates evidence.")}</p>
+              <p>{t("A healthy business quotes near number 3, keeps it above number 2 on average, and drops to the space between 1 and 2 only deliberately, to fill idle hours, never as a habit.")}</p>
             </section>
           </section>
         ) : null}
