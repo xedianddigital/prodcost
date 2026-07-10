@@ -287,6 +287,15 @@ textarea:focus {
   color: #27313a;
 }
 
+.geometryAdvisory {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid #7f8b96;
+  border-radius: 6px;
+}
+
 .checkRow {
   display: flex;
   align-items: center;
@@ -3660,4 +3669,416 @@ input[readonly] {
   text-transform: uppercase;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+/* Instant Quote (client page, RapidDirect-style flow) */
+.instantHero {
+  display: grid;
+  gap: 14px;
+}
+
+.instantDropzone {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px 18px;
+  border: 2px dashed #8d99a6;
+  border-radius: 8px;
+  background: #cdd3da;
+  text-align: center;
+  color: #39424c;
+}
+
+.instantDropzone.active {
+  border-color: #2f6b8f;
+  background: #c2d5e0;
+}
+
+.instantDropzone small {
+  color: #5a6570;
+  max-width: 520px;
+}
+
+.instantBrowseButton {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.instantBrowseButton input[type="file"] {
+  display: none;
+}
+
+.instantPartCard {
+  display: grid;
+  gap: 14px;
+}
+
+.instantPartHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.instantPartName {
+  font-weight: 700;
+  font-size: 16px;
+  min-width: 240px;
+}
+
+.instantPartHeader .rateHint {
+  flex: 1;
+}
+
+.instantPartGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(200px, 0.6fr) minmax(320px, 1.5fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* Grid children must be allowed to shrink below their content's intrinsic width,
+   otherwise a wide select or badge overflows into the neighboring column. */
+.instantPartGrid > * {
+  min-width: 0;
+}
+
+.instantConfigColumn input,
+.instantConfigColumn select {
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .instantPartGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.instantPreviewColumn {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.meshPreviewCanvas {
+  width: 260px;
+  height: 200px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #e6e9ed;
+  cursor: grab;
+  touch-action: none;
+}
+
+.meshPreviewCanvas:active {
+  cursor: grabbing;
+}
+
+.meshPreviewPlaceholder {
+  width: 260px;
+  height: 200px;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #e6e9ed;
+  color: #5a6570;
+  font-size: 13px;
+  text-align: center;
+}
+
+.instantGeoStats {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.instantGeoStats div {
+  display: flex;
+  gap: 8px;
+}
+
+.instantGeoStats dt {
+  color: #5a6570;
+  min-width: 64px;
+}
+
+.instantGeoStats dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.instantDfmBox {
+  border: 1px solid #aeb7c1;
+  border-left: 4px solid #8f6b2f;
+  border-radius: 6px;
+  background: #d9d4c4;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.instantDfmBox ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.instantConfigColumn {
+  display: grid;
+  gap: 10px;
+}
+
+.instantConfigColumn > label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.instantConfigColumn input,
+.instantConfigColumn select {
+  min-height: 34px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: #eef1f4;
+}
+
+.instantConfigColumn .checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instantProcessGroup {
+  display: flex;
+  width: 100%;
+}
+
+.instantProcessGroup .mode {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.instantPriceColumn {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #aeb7c1;
+  border-radius: 8px;
+  background: #c4cbd3;
+  padding: 14px;
+  align-content: start;
+}
+
+.instantPriceMain {
+  display: grid;
+  gap: 4px;
+}
+
+.instantPriceMain > span {
+  color: #4c5660;
+  font-size: 13px;
+}
+
+.instantPriceMain > strong {
+  font-size: 26px;
+}
+
+.instantLeadOptions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.instantLeadOption {
+  display: grid;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #d3d8de;
+  cursor: pointer;
+  text-align: center;
+  font-size: 12px;
+}
+
+.instantLeadOption.active {
+  border-color: #2f6b8f;
+  background: #c2d5e0;
+  box-shadow: inset 0 0 0 1px #2f6b8f;
+}
+
+.instantLeadOption em {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.instantContactInput {
+  min-height: 32px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: #eef1f4;
+}
+
+.instantRouteBox {
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #d3d8de;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+  width: 100%;
+}
+
+.instantRouteBox ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.instantRouteBox li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.instantRouteBox li small {
+  color: #5a6570;
+}
+
+.instantRouteBox li em {
+  font-style: normal;
+  color: #39424c;
+  white-space: nowrap;
+}
+
+.stockBadge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.stockBadge.stockIn {
+  background: #c8d8c4;
+  border: 1px solid #7a9a72;
+  color: #2f4d29;
+}
+
+.stockBadge.stockOut {
+  background: #e0cdc2;
+  border: 1px solid #b07d54;
+  color: #6e3f1b;
+  font-weight: 500;
+}
+
+.instantBasisBox {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #aeb7c1;
+  border-radius: 6px;
+  background: #d3d8de;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.instantBasisBox > div {
+  display: grid;
+  gap: 1px;
+}
+
+.instantBasisBox span {
+  color: #5a6570;
+  font-weight: 600;
+}
+
+.instantBasisBox em {
+  font-style: normal;
+}
+
+.instantBasisBox small {
+  color: #5a6570;
+}
+
+.materialInstantHead,
+.materialInstantRow {
+  grid-template-columns:
+    minmax(200px, 1.4fr)
+    minmax(100px, 0.5fr)
+    minmax(100px, 0.5fr)
+    minmax(110px, 0.5fr)
+    minmax(90px, 0.4fr)
+    56px
+    56px
+    72px;
+  min-width: 820px;
+}
+
+.materialInstantRow input[type="checkbox"] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+}
+
+.instantFinishHead,
+.instantFinishRow {
+  grid-template-columns: minmax(240px, 1.6fr) minmax(90px, 0.5fr) minmax(90px, 0.5fr) 56px 56px 48px;
+  min-width: 640px;
+}
+
+.instantFinishRow input[type="checkbox"] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+}
+
+.instantToleranceHead,
+.instantToleranceRow {
+  grid-template-columns: minmax(280px, 2fr) minmax(110px, 0.5fr) minmax(110px, 0.5fr) 48px;
+  min-width: 580px;
+}
+
+.instantLeadHead,
+.instantLeadRow {
+  grid-template-columns: minmax(240px, 2fr) minmax(110px, 0.5fr) minmax(110px, 0.5fr) 48px;
+  min-width: 540px;
+}
+
+.instantBasisTitle {
+  font-size: 13px;
+}
+
+.resourcesSaveBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.resourcesSaveBar > div {
+  display: grid;
+  gap: 2px;
+}
+
+.resourcesSaveBar .statusText {
+  margin: 0;
+}
+
+.instantProcessGroup .mode:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

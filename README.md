@@ -12,7 +12,7 @@ The tool was built around a concrete business question: why can a shop's quoted 
 - **Market Rates** — builds an external market EUR/h rate per work center from real evidence: your own quote history, and competitor quotes uploaded as PDFs, matched to your own parts and broken down by the work center (machine) that actually did the job — not a blended, unreliable regression.
 - **Scenarios** — decomposes the gap between today's price and a properly-loaded price into Utilization, Availability, and overhead, runs a sensitivity table across the main cost drivers, and answers "what would it take to match a competitor's price" for margin, rate, or utilization alone.
 - **Profitability** — an independent "can this business be profitable at all" model: fixed cost, overhead, and a stress-testable shop utilization scenario, with a real break-even utilization figure.
-- **Client Portal** — a self-serve RFQ intake for external customers: STEP upload, requirement fields, and a preliminary price range, with a one-click bridge into a full internal quote once someone needs to confirm it.
+- **Instant Quote (Client page)** — a RapidDirect-style self-serve estimator for external customers, no registration required: drag-and-drop STEP upload, 3D preview, and a geometry-driven configurator (CNC machining or sheet metal fabrication, material, surface finish, tolerance, quantity, lead-time options) that reprices instantly on every change, plus a one-click bridge into a full internal quote for the formal offer.
 - **Print** — a browser-printable Customer Offer (customer-safe) and Internal Cost Sheet (full cost breakdown), and a mock ERP adapter for importing part/route/BOM data and sending calculated offers back out.
 - **EN / LV** — the whole UI is available in English and Latvian, switchable at any time.
 
@@ -29,7 +29,7 @@ Requires **Python 3.11+** and **Node.js 18+**. No database or external services 
 
 Then open `http://localhost:8001` and click **Load Demo RFQ** on the Quote tab for a filled-in example. See [`runbook.md`](runbook.md) for manual start steps, running tests, and troubleshooting.
 
-Everything works out of the box with no API keys. The one exception is the **competitor-PDF extraction** button on the Market Rates page (Basket Evidence Solver), which reads a competitor quote PDF via an LLM call and needs an `OPENROUTER_API_KEY` in `backend/.env` (a free-tier OpenRouter key works). Without one, that single button shows a clear message and does nothing else — every other feature, including entering competitor quote rows by hand, is unaffected.
+Everything works out of the box with no API keys. The one exception is the **competitor-PDF extraction** button on the Market Rates page (Basket Evidence Solver), which reads a competitor quote PDF via an LLM call and needs an `OPENROUTER_API_KEY` in `backend/.env` (a free-tier OpenRouter key works). Without one, that single button shows a clear message and does nothing else — every other feature, including entering competitor quote rows by hand, is unaffected. Similarly, the **STEP geometry analysis** behind the Instant Quote page needs the optional `geometry` extra (`pip install -e ".[geometry]"` in `backend/`, pulls in `cadquery`); without it, uploads still get a price from a conservative placeholder geometry, clearly flagged as low-confidence, and no 3D preview is shown.
 
 ## Repository layout
 

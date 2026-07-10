@@ -326,6 +326,182 @@ export const LV: Record<string, string> = {
   "Review-ready": "Gatavs izskatīšanai",
   "Final CO requires engineering and material confirmation.": "Galīgajam apstiprinājumam nepieciešams tehnologa un materiālu apstiprinājums.",
 
+  // Instant Quote (client page)
+  "Instant Quote": "Tūlītējs piedāvājums",
+  "Upload your 3D model, pick a process, material, and finish, and get a manufacturing price immediately -- no account or registration needed. CNC machining and sheet metal fabrication.":
+    "Augšupielādē 3D modeli, izvēlies procesu, materiālu un apdari — un uzreiz saņem ražošanas cenu. Bez konta un reģistrācijas. CNC apstrāde un lokšņu metāla apstrāde.",
+  "Drag and drop STEP files here": "Ievelc STEP failus šeit",
+  "or": "vai",
+  "Browse files": "Izvēlēties failus",
+  "Supported: .step / .stp. Your file is analyzed to extract size, volume, and features; the price updates instantly as you configure.":
+    "Atbalstīts: .step / .stp. Fails tiek analizēts, nolasot izmērus, tilpumu un elementus; cena atjaunojas uzreiz pēc katras izmaiņas.",
+  "Only .step / .stp files are supported right now. Export STEP from your CAD system and try again.":
+    "Pašlaik atbalstīti tikai .step / .stp faili. Eksportē STEP no savas CAD sistēmas un mēģini vēlreiz.",
+  "No 3D preview available for this file.": "Šim failam 3D priekšskatījums nav pieejams.",
+  "Size": "Izmēri",
+  "Volume": "Tilpums",
+  "Weight": "Svars",
+  "Holes": "Urbumi",
+  "Manufacturing feedback": "Ražojamības piezīmes",
+  "CNC machining": "CNC apstrāde",
+  "Sheet metal": "Lokšņu metāls",
+  "Surface finish": "Virsmas apdare",
+  "Threaded holes": "Vītņotie urbumi",
+  "Number of bends": "Locījumu skaits",
+  "Price per part": "Cena par detaļu",
+  "Order total": "Pasūtījuma summa",
+  "Economy": "Ekonomiskais",
+  "Standard": "Standarta",
+  "Expedited": "Paātrinātais",
+  "working days": "darba dienas",
+  "Instant price from parsed geometry and shop rates. Binding offer follows engineering review of the drawing, tolerances, and capacity.":
+    "Tūlītēja cena no nolasītās ģeometrijas un ceha likmēm. Saistošs piedāvājums seko pēc tehnologa pārbaudes — rasējums, pielaides, jauda.",
+  "Request formal quote": "Pieprasīt oficiālu piedāvājumu",
+  "Calculating price...": "Aprēķina cenu...",
+  "Each part is priced independently.": "Katra detaļa tiek cenota atsevišķi.",
+  "Order total, EUR": "Pasūtījuma summa, EUR",
+  "At the selected lead time per part.": "Pēc katrai detaļai izvēlētā termiņa.",
+  "Contact for the formal offer (optional)": "Kontakts oficiālajam piedāvājumam (nav obligāts)",
+  "email or company name": "e-pasts vai uzņēmuma nosaukums",
+  "Only needed if you request a formal quote -- browsing prices requires nothing.":
+    "Nepieciešams tikai oficiālam piedāvājumam — cenu apskatei nekas nav jānorāda.",
+  "As machined / mill finish": "Pēc apstrādes / bez apdares",
+  "Bead blasted": "Smilšu strūklots",
+  "Brushed": "Slīpēts (brushed)",
+  "Anodized, clear (aluminum only)": "Anodēts, caurspīdīgs (tikai alumīnijam)",
+  "Anodized, black (aluminum only)": "Anodēts, melns (tikai alumīnijam)",
+  "Powder coated": "Pulverkrāsots",
+  "Zinc plated": "Cinkots",
+  "ISO 2768-m (standard)": "ISO 2768-m (standarta)",
+  "ISO 2768-f (fine)": "ISO 2768-f (smalkā)",
+  "Tight, down to ±0.02 mm (per drawing)": "Stingra, līdz ±0,02 mm (pēc rasējuma)",
+  "Operations come from the ERP part BOM and route; edit them in the Operations table below.":
+    "Operācijas nāk no ERP detaļas BOM un maršruta; rediģē tās Operāciju tabulā zemāk.",
+  "Every number is priced from this company's own data: the applied company profile's machine and labor rates, the Material Library, and the Instant Quote pricing tables on Resources.":
+    "Katrs skaitlis balstās šī uzņēmuma paša datos: piemērotā uzņēmuma profila iekārtu un darba likmēs, Materiālu bibliotēkā un Resursu lapas tūlītējā piedāvājuma cenu tabulās.",
+  "Cost basis:": "Izmaksu bāze:",
+  "Instant Quote pricing data is missing from Resources, so uploaded parts cannot be priced. Open Resources and fill the Instant Quote Pricing section.":
+    "Resursos trūkst tūlītējā piedāvājuma cenu datu, tāpēc augšupielādētās detaļas nevar nocenot. Atver Resursus un aizpildi sadaļu 'Tūlītējā piedāvājuma cenas'.",
+  "Production route": "Ražošanas maršruts",
+  "CAM programming": "CAM programmēšana",
+  "min/pc": "min/gab.",
+  "Select material": "Izvēlies materiālu",
+  "No materials with instant-quote data in the Material Library": "Materiālu bibliotēkā nav materiālu ar tūlītējā piedāvājuma datiem",
+  "not in stock": "nav noliktavā",
+  "Not in stock -- price stands, delivery confirmed with material lead time at review.":
+    "Nav noliktavā — cena paliek spēkā, piegādes termiņu apstiprina kopā ar materiāla piegādi izskatīšanas laikā.",
+  "In stock": "Noliktavā",
+  "Hide pricing basis": "Slēpt cenas pamatojumu",
+  "Show pricing basis": "Rādīt cenas pamatojumu",
+  "Cost basis profile": "Izmaksu bāzes profils",
+  "incl. purchase waste factor": "ieskaitot iepirkuma zudumu koeficientu",
+  "machine": "iekārta",
+  "complexity": "sarežģītība",
+  "Commercial policy": "Komercpolitika",
+  "material markup": "materiāla uzcenojums",
+  "min. admin": "min. administrēšana",
+  "time factor": "laika koeficients",
+  "scrap adder": "brāķa piemaksa",
+  "per batch": "par partiju",
+  "All values are editable on the Resources page (Instant Quote Pricing, Material Library, machine/labor rates, Commercial Policy) and change with the applied company profile.":
+    "Visas vērtības ir rediģējamas Resursu lapā (Tūlītējā piedāvājuma cenas, Materiālu bibliotēka, iekārtu/darba likmes, Komercpolitika) un mainās līdz ar piemēroto uzņēmuma profilu.",
+  "No price is shown without readable geometry.": "Bez nolasāmas ģeometrijas cena netiek rādīta.",
+  "Select a material with instant-quote data to get a price.": "Izvēlies materiālu ar tūlītējā piedāvājuma datiem, lai saņemtu cenu.",
+  "Instant Quote pricing data is missing from Resources.": "Resursos trūkst tūlītējā piedāvājuma cenu datu.",
+
+  // Resources: instant quote data
+  "Instant quote data.": "Tūlītējā piedāvājuma dati.",
+  "Rows with a density and a price per kg become selectable on the client Instant Quote page. Removal rate and cut speed convert parsed geometry into machine minutes; the In stock flag drives the availability indicator the client sees.":
+    "Rindas ar blīvumu un cenu par kg kļūst izvēlamas klienta tūlītējā piedāvājuma lapā. Noņemšanas ātrums un griešanas ātrums pārvērš nolasīto ģeometriju iekārtas minūtēs; pazīme 'Noliktavā' nosaka klientam redzamo pieejamības indikatoru.",
+  "Density kg/dm³": "Blīvums kg/dm³",
+  "Price EUR/kg": "Cena EUR/kg",
+  "Removal cm³/min": "Noņemšana cm³/min",
+  "Cut speed ×": "Griešanas ātrums ×",
+  "Sheet": "Loksne",
+  "Instant Quote Pricing": "Tūlītējā piedāvājuma cenas",
+  "Every assumed variable behind the client Instant Quote page, in one editable place: machining parameters that turn geometry into minutes, surface finishes, tolerance classes, and lead-time options. Machine and labor rates come from the classes above; material physics and stock status from the Material Library; margin, risk, and markup from Commercial Policy.":
+    "Visi pieņēmumi aiz klienta tūlītējā piedāvājuma lapas vienā rediģējamā vietā: apstrādes parametri, kas ģeometriju pārvērš minūtēs, virsmas apdares, pielaižu klases un termiņu opcijas. Iekārtu un darba likmes nāk no klasēm augstāk; materiālu dati un noliktavas statuss — no Materiālu bibliotēkas; marža, risks un uzcenojums — no Komercpolitikas.",
+  "Machining parameters": "Apstrādes parametri",
+  "Blank allowance, mm": "Sagataves uzlaide, mm",
+  "Finishing rate, cm²/min": "Apdares ātrums, cm²/min",
+  "Base cut speed, mm/min": "Bāzes griešanas ātrums, mm/min",
+  "Drill min/hole": "Urbšana min/urbums",
+  "Tap min/hole": "Vītņošana min/urbums",
+  "Bend min/bend": "Locīšana min/locījums",
+  "Milling setup, min": "Frēzēšanas iestatīšana, min",
+  "Cutting setup, min": "Griešanas iestatīšana, min",
+  "Cutoff setup, min": "Sagarināšanas iestatīšana, min",
+  "Cutoff min/pc": "Sagarināšana min/gab.",
+  "Tapping setup, min": "Vītņošanas iestatīšana, min",
+  "Bending setup, min": "Locīšanas iestatīšana, min",
+  "Sheet nesting waste ×": "Lokšņu izvietojuma zudumi ×",
+  "Stock purchase waste ×": "Iepirkuma zudumi ×",
+  "Min. material charge, EUR": "Min. materiāla maksa, EUR",
+  "CNC run labor share": "CNC darba laika daļa",
+  "Cutting run labor share": "Griešanas darba laika daļa",
+  "Base scrap %": "Bāzes brāķis %",
+  "Sheet CAM factor": "Lokšņu CAM koeficients",
+  "Production hours/day": "Ražošanas stundas/dienā",
+  "Surface finishes": "Virsmas apdares",
+  "EUR/pc": "EUR/gab.",
+  "EUR/batch": "EUR/partija",
+  "Add Finish": "Pievienot apdari",
+  "Tolerance classes": "Pielaižu klases",
+  "Time factor ×": "Laika koeficients ×",
+  "Scrap adder %": "Brāķa piemaksa %",
+  "Add Tolerance Class": "Pievienot pielaižu klasi",
+  "Lead time options": "Termiņu opcijas",
+  "Price factor ×": "Cenas koeficients ×",
+  "Extra days": "Papildu dienas",
+  "Add Lead Time": "Pievienot termiņu",
+  "This assumptions set has no instant_quote section. Reload the baseline assumptions or add the section in the JSON editor below.":
+    "Šajā pieņēmumu komplektā nav instant_quote sadaļas. Pārlādē bāzes pieņēmumus vai pievieno sadaļu JSON redaktorā zemāk.",
+
+  // Rate-basis clarity (2026-07-10)
+  "Save Resources": "Saglabāt resursus",
+  "Market check": "Tirgus pārbaude",
+  "needs": "nepieciešams",
+  "market pays": "tirgus maksā",
+  "Price breakdown": "Cenas sadalījums",
+  "One-time engineering & programming": "Vienreizēja inženierija un programmēšana",
+  "Material & handling": "Materiāls un apstrāde",
+  "Production, finishing & inspection": "Ražošana, apdare un kontrole",
+  "One-time engineering is charged once per new part -- larger quantities reduce the unit price.":
+    "Vienreizējo inženieriju rēķina vienu reizi par jaunu detaļu — lielāks daudzums samazina vienības cenu.",
+  "one-time": "vienreizēji",
+  "Order administration": "Pasūtījuma administrēšana",
+  "This part reads as a solid body for milling/turning -- sheet metal fabrication is not applicable.":
+    "Šī detaļa nolasās kā masīvs ķermenis frēzēšanai/virpošanai — lokšņu metāla apstrāde nav piemērojama.",
+  "Price quotes at saved Market sell EUR/h instead of target cost-plus rates":
+    "Rēķināt piedāvājumus pēc saglabātajām tirgus EUR/h likmēm, nevis mērķa izmaksu+ likmēm",
+  "Back-solved through risk and margin, so a station's quoted hour sells at exactly its Market sell EUR/h. Use when the market will not pay the target cost-plus rates. Stations without a saved market rate keep cost-plus.":
+    "Atpakaļaprēķināts caur risku un maržu, lai stacijas stunda tiktu pārdota tieši par tās tirgus EUR/h. Lieto, ja tirgus nemaksā mērķa izmaksu+ likmes. Stacijas bez saglabātas tirgus likmes patur izmaksu+.",
+  "Saved market sell rates (stations without one use target cost rates)":
+    "Saglabātās tirgus pārdošanas likmes (stacijas bez tās izmanto mērķa izmaksu likmes)",
+  "machine cost rate (incl. overhead),": "iekārtas likme (ar pieskaitāmajām),",
+  "machine, incl. overhead": "iekārta ar pieskaitāmajām",
+  "Pricing basis": "Cenas pamatojums",
+  "Planned hours × actual Availability × actual Utilization.":
+    "Plānotās stundas × faktiskā pieejamība × faktiskais noslogojums.",
+  "Direct machine cost only (fixed + variable) at actual load -- before overhead and labor. Quotes use the Target rate incl. overhead instead.":
+    "Tikai tiešās iekārtas izmaksas (fiksētās + mainīgās) pie faktiskās slodzes — bez pieskaitāmajām un darba. Piedāvājumi izmanto mērķa likmi ar pieskaitāmajām.",
+  "Assigned operator payroll spread over this station's actual loaded hours. Quotes charge labor per attended minute at payroll / billable hours instead.":
+    "Piesaistītā operatora alga, izdalīta ar stacijas faktiski noslogotajām stundām. Piedāvājumi darbu rēķina par apkalpotajām minūtēm pēc algas / apmaksājamajām stundām.",
+  "This station's share of overhead, support assets, and support payroll per actual loaded hour.":
+    "Stacijas daļa no pieskaitāmajām, atbalsta iekārtām un atbalsta algām uz faktiski noslogotu stundu.",
+  "Machine + payroll + shared recovery: full cost per hour before risk and margin.":
+    "Iekārta + alga + kopīgā sega: pilnās izmaksas stundā pirms riska un maržas.",
+  "Cost-plus sell floor at actual load: Base × (1 + risk) / (1 - margin). Includes margin -- a price floor, not a cost rate.":
+    "Izmaksu+ pārdošanas grīda pie faktiskās slodzes: bāze × (1 + risks) / (1 − marža). Ietver maržu — cenas grīda, nevis izmaksu likme.",
+  "The same cost-plus sell floor at this station's target Availability/Utilization.":
+    "Tā pati izmaksu+ pārdošanas grīda pie stacijas mērķa pieejamības/noslogojuma.",
+  "Direct cost + shared overhead at actual Availability/Utilization.":
+    "Tiešās izmaksas + kopīgās pieskaitāmās pie faktiskās pieejamības/noslogojuma.",
+  "Direct cost + shared overhead at target Availability/Utilization. This is the machine rate quotes and the Instant Quote page price with.":
+    "Tiešās izmaksas + kopīgās pieskaitāmās pie mērķa pieejamības/noslogojuma. Ar šo iekārtas likmi rēķina piedāvājumus un tūlītējo piedāvājumu.",
+  "Target rate + operator payroll / this machine's target loaded hours. Quotes charge labor separately per attended minute at payroll / billable hours, so their machine+labor sum is slightly lower than this capacity view.":
+    "Mērķa likme + operatora alga / iekārtas mērķa noslogotās stundas. Piedāvājumi darbu rēķina atsevišķi par apkalpotajām minūtēm pēc algas / apmaksājamajām stundām, tāpēc to iekārtas+darba summa ir nedaudz zemāka par šo jaudas skatu.",
+
   // Profile view
   "Build Company Cost Profile": "Uzņēmuma izmaksu profils",
   "Assemble the company-level cost base that feeds real quotes: production assets, low-value inventory reserve, process-specific employees, indirect payroll, facility, utilities, insurance, and other overhead. Indirect payroll is calculated from employee rows marked Overhead; low-value inventory is entered below as total value plus replacement cycle. Applying this profile updates the same assumptions used by Quote, Scenarios, Resources, and Profitability.":
@@ -466,7 +642,7 @@ export const LV: Record<string, string> = {
     "Netiešās izmaksas, EUR/h (vidējā likme; iekārtu likmēs iestrādāta svērtā daļa)",
   "Labor Classes": "Darba kategorijas",
   "What one hour of each person really costs the company. Enter labor as direct hourly cost or calculate it from gross monthly salary plus Latvian employer VSAOI. \"Billable share %\" is the share of paid hours that actually ends up on customer work -- the rest is waiting, training, and internal jobs. Salary is divided only over billable hours, otherwise every quote silently under-prices labor by the idle share.":
-    "Cik uzņēmumam izmaksā viena darbinieka stunda. Ievadi tiešo stundas likmi vai aprēķini no bruto algas un VSAOI. \"Apmaksājamā daļa %\" ir daļa no stundām, ko sedz klientu darbs — pārējais ir dīkstāve un iekšējie darbi.",
+    "Cik uzņēmumam izmaksā viena darbinieka stunda. Ievadi tiešo stundas likmi vai aprēķini no bruto algas un VSAOI. \"Apmaksājamā daļa %\" ir daļa no stundām, ko sedz klientu darbs — pārējais ir gaidstāve un iekšējie darbi.",
   "Method": "Metode",
   "Direct EUR/h": "Tiešā likme, EUR/h",
   "Gross/month": "Bruto mēnesī",
@@ -477,7 +653,7 @@ export const LV: Record<string, string> = {
   "Gross salary": "Bruto alga",
   "Machine Rate Calculator": "Iekārtu likmju kalkulators",
   "Availability is the share of scheduled time the machine is actually up and running; Utilization is how much of available time actually gets loaded with orders at all. Idleness (1 - Utilization) is the empty-order gap. Formula: fixed cost / (planned hours x Utilization x Availability) + variable cost + overhead EUR/h. \"Variable EUR/h\" is what one running hour adds on top of the fixed cost: machine electricity (from Power kW x price), coolant, compressed air, and routine wear items -- it belongs here and not in the overhead bills, because it should be paid only by the parts that actually run on this machine; building electricity (lights, heating, offices) stays in Overhead Allocation. Market sell EUR/h is user-entered and feeds Profitability revenue. Never compare it against the machine-only rate: a sold hour also pays the operator, so the honest comparison column is \"Target + labour EUR/h\" -- the target rate plus this machine's share of its assigned labour payroll. Which labour class belongs to which asset is set in Profile > Production Assets (\"Payroll role\" column); the share per machine hour then follows from that class's headcount and how many machines share the role (one operator tending three machines costs each machine a third). OEE stays in the data model as a shop-floor diagnostic (see the Guide tab) but is not shown here: only Availability scales the rate -- performance losses already live in cycle minutes and quality losses in scrap, so charging full OEE would count them twice.":
-    "Pieejamība ir laiks, kad iekārta faktiski darbojas; Noslogojums — cik no pieejamā laika sedz pasūtījumi. Dīkstāve = 1 − Noslogojums. Formula: fiksētās izmaksas / (plānotās stundas × Noslogojums × Pieejamība) + mainīgās izmaksas + netiešās izmaksas EUR/h. Mainīgās izmaksas EUR/h ir elektrība, dzesēšanas šķidrums, saspiestais gaiss un dilstošās detaļas — tikai tās, ko rada šī iekārta; ēkas elektrība paliek pie netiešajām izmaksām. Tirgus pārdošanas likme tiek ievadīta manuāli un izmantota rentabilitātes aprēķinā — nesalīdzini to ar iekārtas likmi vien, jo pārdotā stunda sedz arī operatoru; salīdzini ar \"Mērķis + darba laiks EUR/h\". Darba kategoriju katrai iekārtai nosaka Profilā (aile \"Algu loma\"). OEE paliek diagnostikai (skat. Ceļvedi), bet likmi koriģē tikai Pieejamība — veiktspējas zudumi jau ir cikla laikā, kvalitātes zudumi — brāķī.",
+    "Pieejamība ir laiks, kad iekārta faktiski darbojas; Noslogojums — cik no pieejamā laika sedz pasūtījumi. Gaidstāve = 1 − Noslogojums. Formula: fiksētās izmaksas / (plānotās stundas × Noslogojums × Pieejamība) + mainīgās izmaksas + netiešās izmaksas EUR/h. Mainīgās izmaksas EUR/h ir elektrība, dzesēšanas šķidrums, saspiestais gaiss un dilstošās detaļas — tikai tās, ko rada šī iekārta; ēkas elektrība paliek pie netiešajām izmaksām. Tirgus pārdošanas likme tiek ievadīta manuāli un izmantota rentabilitātes aprēķinā — nesalīdzini to ar iekārtas likmi vien, jo pārdotā stunda sedz arī operatoru; salīdzini ar \"Mērķis + darba laiks EUR/h\". Darba kategoriju katrai iekārtai nosaka Profilā (aile \"Algu loma\"). OEE paliek diagnostikai (skat. Ceļvedi), bet likmi koriģē tikai Pieejamība — veiktspējas zudumi jau ir cikla laikā, kvalitātes zudumi — brāķī.",
   "Fixed cost EUR/month": "Fiksētās izmaksas, EUR/mēnesī",
   "Planned h/month": "Plānotās stundas/mēnesī",
   "Actual Availability % (machine)": "Faktiskā pieejamība, % (iekārta)",
@@ -489,7 +665,7 @@ export const LV: Record<string, string> = {
   "Target EUR/h": "Mērķa likme, EUR/h",
   "Target + labour EUR/h": "Mērķis + darba laiks, EUR/h",
   "Power kW": "Jauda, kW",
-  "Idle": "Dīkstāve",
+  "Idle": "Gaidstāve",
   "Hide": "Slēpt",
   "Estimate fixed cost from purchase price": "Aprēķināt no iegādes cenas",
   "Purchase price EUR": "Iegādes cena, EUR",
@@ -665,7 +841,7 @@ export const LV: Record<string, string> = {
     "Šī sadaļa atbild uz vienu jautājumu: kurš rādītājs izskaidro, kāpēc cena ir par augstu vai zemu? Ūdenskritums rāda, kā noslogojums, pieejamība un pieskaitāmās izmaksas ietekmē cenu. Jutīguma analīze rāda, cik stipri cena reaģē uz katru mainīgo.",
   "Gap Waterfall and Sensitivity": "Ūdenskritums un jutīguma analīze",
   "Waterfall moves the quote from today's accounting view toward the target pricing view. The first two steps are business actions: fill machines with orders and reduce unplanned downtime. The overhead row is the automatic effect of spreading the same monthly overhead over more productive hours. Sensitivity shows how the target unit price reacts when one driver changes.":
-    "Ūdenskritums pārvieto piedāvājumu no uzskaites cenas uz mērķa cenu. Pirmie divi soļi ir darbības: piepildīt iekārtas ar pasūtījumiem un samazināt dīkstāvi. Pieskaitāmo izmaksu rinda rāda efektu no izmaksu sadales uz vairāk stundām. Jutīguma analīze rāda, kā mērķa cena reaģē uz vienu mainīgo.",
+    "Ūdenskritums pārvieto piedāvājumu no uzskaites cenas uz mērķa cenu. Pirmie divi soļi ir darbības: piepildīt iekārtas ar pasūtījumiem un samazināt gaidstāvi. Pieskaitāmo izmaksu rinda rāda efektu no izmaksu sadales uz vairāk stundām. Jutīguma analīze rāda, kā mērķa cena reaģē uz vienu mainīgo.",
   "Run Gap Waterfall": "Aprēķināt ūdenskritumu",
   "Run Sensitivity Table": "Aprēķināt jutīguma tabulu",
   "Step": "Solis",
@@ -995,7 +1171,7 @@ export const LV: Record<string, string> = {
   "is a separate question: how much of the available planned time actually gets loaded with orders in the first place. A machine can run beautifully (high OEE) and still sit idle most of the month (low Utilization) because there is not enough demand.":
     "ir pilnīgi cits jautājums: cik liela daļa no kopējā plānotā un pieejamā laika vispār tiek nosegta ar reāliem pasūtījumiem. Iekārta darbības laikā var strādāt perfekti (augsts OEE), taču lielāko mēneša daļu stāvēt dīkstāvē (zema noslodze), jo uzņēmumam vienkārši trūkst pasūtījumu.",
   "Availability and Utilization are editable company inputs, not fixed constants. Actual values describe the current business; target values describe the planning scenario management wants to test. Idleness (":
-    "Pieejamība un noslodze ir rediģējami uzņēmuma parametri, nevis nemainīgas konstantes. Faktiskās vērtības raksturo pašreizējo situāciju; mērķa vērtības parāda plānošanas scenāriju, ko vadība vēlas pārbaudīt. Dīkstāve pasūtījumu trūkuma dēļ (",
+    "Pieejamība un noslodze ir rediģējami uzņēmuma parametri, nevis nemainīgas konstantes. Faktiskās vērtības raksturo pašreizējo situāciju; mērķa vērtības parāda plānošanas scenāriju, ko vadība vēlas pārbaudīt. Gaidstāve pasūtījumu trūkuma dēļ (",
   ") is the empty-order gap, and it is tracked separately from OEE throughout this tool. Only Availability (not full OEE) feeds the rate formula below — performance losses already live in cycle/setup minutes and quality losses in the scrap allowance, so folding OEE in here would double-charge both.":
     ") parāda nepietiekama pasūtījumu apjoma radīto robu, un šajā rīkā tā tiek uzskaitīta pilnīgi atsevišķi no OEE. Zemāk redzamajā stundas likmes formulā tiek iekļauta tikai pieejamība (nevis pilns OEE) — veiktspējas zudumi jau ir ierēķināti cikla/iestatīšanas minūtēs, bet kvalitātes zudumi ir iestrādāti brāķa pielaidē. Iekļaujot šeit pilnu OEE, šie zudumi tiktu piedāvājumā ierēķināti dubultā.",
   "Fixed monthly machine cost": "Iekārtas fiksētās izmaksas mēnesī",
@@ -1060,7 +1236,7 @@ export const LV: Record<string, string> = {
   "Is the machine rate believable?": "Vai iekārtas stundas likme ir pamatota?",
   "Resources, Machine Rate Calculator": "Resursi, Iekārtu likmju kalkulators",
   "Fixed monthly cost, planned hours, actual/target Availability, actual/target Utilization, Idleness, variable EUR/h, Accounting EUR/h, Target EUR/h, and Target + labour EUR/h.":
-    "Fiksētās mēneša izmaksas, plānotās stundas, faktiskā/mērķa pieejamība, faktiskā/mērķa noslodze, dīkstāve, mainīgās EUR/h izmaksas, uzskaites EUR/h, mērķa EUR/h un kopējā likme (mērķa likme + darba laiks) EUR/h.",
+    "Fiksētās mēneša izmaksas, plānotās stundas, faktiskā/mērķa pieejamība, faktiskā/mērķa noslodze, gaidstāve, mainīgās EUR/h izmaksas, uzskaites EUR/h, mērķa EUR/h un kopējā likme (mērķa likme + darba laiks) EUR/h.",
   "Is overhead counted?": "Vai pieskaitāmās izmaksas ir ierēķinātas?",
   "Resources, Overhead Allocation": "Resursi, Pieskaitāmo izmaksu sadale",
   "Total monthly overhead and the EUR/h recovery folded into machine rates.":
@@ -1178,6 +1354,15 @@ export const LV: Record<string, string> = {
   "row incomplete -- missing quantity, sell price, material estimate, or route hours": "rinda nepilnīga — trūkst daudzuma, cenas, materiāla aplēses vai maršruta stundu",
   "no route hours entered for this row": "šai rindai nav maršruta stundu",
   "too mixed -- no work center reaches the cutoff": "pārāk sajaukts — neviena darbstacija nesasniedz robežu",
+  "Bounding box": "Ietverošā kaste",
+  "Suggested operations": "Ieteiktās darbības",
+  "none": "nav",
+  "Estimated holes": "Aplēstais urbumu skaits",
+  "Heuristic geometry read, not a real CAM analysis -- always verify against the actual drawing.": "Heiristisks ģeometrijas nolasījums, nevis reāla CAM analīze -- vienmēr pārbaudi pret faktisko rasējumu.",
+  "Add suggested operations": "Pievienot ieteiktās darbības",
+  "Geometry (heuristic)": "Ģeometrija (heiristiska)",
+  "holes": "urbumi",
+  "Analyzing geometry...": "Analizē ģeometriju...",
 };
 
 export function translate(text: string, lang: Language): string {

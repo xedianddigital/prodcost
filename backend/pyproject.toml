@@ -18,6 +18,9 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.6"
 ]
+geometry = [
+  "cadquery>=2.8"
+]
 
 [tool.ruff]
 line-length = 100

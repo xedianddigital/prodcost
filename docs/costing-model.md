@@ -186,17 +186,15 @@ The quote must distinguish:
 - new part: CAM program is required and full programming/prove-out cost is included
 - repeat part: existing CAM program is reused and only a reduced review/prove-out cost is included
 
-Later geometry parsing can improve estimates from the uploaded STEP file by extracting:
-
-- bounding box
-- volume and surface area
-- hole and pocket candidates
-- visible setup orientation candidates
-- toleranced/annotated features if model-based definition is available
-
-Cycle time should still be calibrated against actual production history. Raw STEP geometry
-cannot reliably determine feeds, speeds, fixturing, tool access, tolerance class, surface
-finish, or operator strategy without company-specific rules.
+An optional geometry-analysis feature (`POST /api/step/analyze-geometry`, requires the
+`geometry` extra) extracts bounding box, volume/surface area, and a face-type histogram from
+the uploaded STEP file, and applies a heuristic classifier to suggest which operation types
+(turning / milling / drilling / cutting) the part likely needs. This is advisory only: it is
+a face/volume classification, not a CAM/toolpath system, it never runs automatically against
+price, and the user must explicitly click "Add suggested operations" to add rows to the
+route. Cycle time should still be calibrated against actual production history. Raw STEP
+geometry cannot reliably determine feeds, speeds, fixturing, tool access, tolerance class,
+surface finish, or operator strategy without company-specific rules.
 
 ## Machine Rates
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { LANGUAGE_STORAGE_KEY, Language, translate } from "./i18n";
 import {
@@ -244,6 +244,7 @@ type QuoteResult = {
   operation_cost_eur: number;
   missing_tool_cost_eur: number;
   risk_allowance_eur: number;
+  minimum_order_admin_cost_eur: number;
   conversion_side_cost_eur: number;
   pass_through_cost_eur: number;
   total_cost_eur: number;
@@ -259,38 +260,106 @@ type QuoteResult = {
   warnings: string[];
 };
 
-type PortalPart = {
+type StepAnalysis = {
+  bounding_box_mm: { x: number; y: number; z: number };
+  volume_mm3: number;
+  surface_area_mm2: number;
+  solidity_ratio: number;
+  face_counts: Record<string, number>;
+  cylindrical_radii_mm: number[];
+  suggested_operations: string[];
+  hole_count_estimate: number;
+  notes: string[];
+};
+
+type InstantMesh = {
+  vertices: number[];
+  triangles: number[];
+};
+
+type InstantProcess = "cnc" | "sheet_metal";
+
+type InstantPart = {
   id: string;
   partName: string;
   fileName: string;
   fileSizeBytes: number;
-  drawingFileName: string;
-  drawingSizeBytes: number;
+  analysis: StepAnalysis | null;
+  analysisStatus: string;
+  mesh: InstantMesh | null;
+  process: InstantProcess;
   materialId: string;
-  materialRequirement: string;
-  stockName: string;
-  stockCost: number;
-  cutLengthMm: number;
-  cutWidthMm: number;
+  finishId: string;
+  toleranceId: string;
+  hasThreads: boolean;
+  bendCount: number;
   quantity: number;
-  annualVolume: number;
-  toleranceRequirement: "standard" | "drawing" | "custom";
-  documentationRequirement: "standard" | "dimensional_report" | "full_fai";
-  surfaceFinish: string;
-  deliveryRequirement: "standard" | "expedite" | "date_critical";
-  threadOrInsertRequirement: "none" | "yes" | "unknown";
-  notes: string;
+  leadTimeId: string;
 };
 
-type PortalEstimate = {
+type InstantEstimate = {
   result: QuoteResult;
-  accountingSellPriceEur: number;
-  lowTotalEur: number;
-  highTotalEur: number;
-  lowUnitEur: number;
-  highUnitEur: number;
-  confidence: string;
-  readinessIssues: string[];
+  baseSellPriceEur: number;
+  machineMinutesTotal: number;
+  materialCostPerPartEur: number;
+  dfmNotes: string[];
+};
+
+// The instant-quote page prices exclusively from manually entered data: material physics
+// and per-kg prices live on Material Library rows, and every finish, tolerance, lead time,
+// and machining heuristic lives in assumptions.instant_quote -- all editable on Resources
+// and carried by company profiles. Nothing on the client page is hardcoded here.
+type InstantFinish = {
+  id: string;
+  name: string;
+  cost_per_part_eur: number;
+  batch_cost_eur: number;
+  processes: InstantProcess[];
+};
+
+type InstantTolerance = {
+  id: string;
+  name: string;
+  time_factor: number;
+  scrap_adder_percent: number;
+};
+
+type InstantLeadTime = {
+  id: string;
+  name: string;
+  price_factor: number;
+  extra_days: number;
+};
+
+type InstantMachiningParams = {
+  blank_allowance_mm: number;
+  finishing_rate_cm2_per_min: number;
+  base_cut_speed_mm_per_min: number;
+  drill_minutes_per_hole: number;
+  tap_minutes_per_hole: number;
+  bend_minutes_per_bend: number;
+  milling_setup_minutes: number;
+  cutting_setup_minutes: number;
+  blank_cutoff_setup_minutes: number;
+  blank_cutoff_minutes_per_part: number;
+  tapping_setup_minutes: number;
+  bending_setup_minutes: number;
+  sheet_nesting_waste_factor: number;
+  stock_purchase_waste_factor: number;
+  minimum_material_charge_eur: number;
+  run_labor_share_cnc: number;
+  run_labor_share_cutting: number;
+  base_scrap_percent: number;
+  sheet_cam_factor: number;
+  production_hours_per_day: number;
+  quality?: string;
+};
+
+type InstantQuoteAssumptions = {
+  machining: InstantMachiningParams;
+  finishes: InstantFinish[];
+  tolerances: InstantTolerance[];
+  lead_times: InstantLeadTime[];
 };
 
 type LaborClass = {
@@ -366,6 +435,14 @@ type MaterialExample = {
   stock_length_mm?: number;
   stock_width_mm?: number;
   kerf_mm?: number;
+  // Instant-quote data: rows carrying density and a per-kg price become selectable on
+  // the client instant-quote page; rows without them stay internal-only.
+  density_kg_dm3?: number;
+  price_per_kg_eur?: number;
+  milling_removal_cm3_per_min?: number;
+  cut_speed_factor?: number;
+  instant_processes?: InstantProcess[];
+  in_stock?: boolean;
 };
 
 type ToolInventoryItem = {
@@ -735,6 +812,11 @@ type Assumptions = {
     range_high_factor: number;
     annual_volume_relief_percent: number;
   };
+  instant_quote?: InstantQuoteAssumptions;
+  // Pricing strategy toggle: when true, target-mode pricing charges each station its saved
+  // Market sell EUR/h (back-solved through risk and margin) instead of the cost-plus target
+  // rate; stations without a market rate keep cost-plus.
+  use_market_sell_rates?: boolean;
   [key: string]: unknown;
 };
 
@@ -1276,7 +1358,13 @@ function materialFromProfileRow(row: CompanyProfileMaterial, existing?: Material
     stock_shape: row.stockShape || existing?.stock_shape,
     stock_length_mm: existing?.stock_length_mm ?? 0,
     stock_width_mm: existing?.stock_width_mm ?? 0,
-    kerf_mm: existing?.kerf_mm ?? 0
+    kerf_mm: existing?.kerf_mm ?? 0,
+    density_kg_dm3: existing?.density_kg_dm3,
+    price_per_kg_eur: existing?.price_per_kg_eur,
+    milling_removal_cm3_per_min: existing?.milling_removal_cm3_per_min,
+    cut_speed_factor: existing?.cut_speed_factor,
+    instant_processes: existing?.instant_processes,
+    in_stock: existing?.in_stock
   };
 }
 
@@ -2123,30 +2211,126 @@ function createOperation(template: OperationTemplate): QuoteOperation {
   };
 }
 
-function createPortalPart(file?: File): PortalPart {
-  const cleanName = file?.name.replace(/\.(step|stp)$/i, "") || "New STEP part";
+function createInstantPart(file: File): InstantPart {
+  const cleanName = file.name.replace(/\.(step|stp)$/i, "") || "New part";
   return {
-    id: `portal-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `instant-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     partName: cleanName,
-    fileName: file?.name ?? "",
-    fileSizeBytes: file?.size ?? 0,
-    drawingFileName: "",
-    drawingSizeBytes: 0,
+    fileName: file.name,
+    fileSizeBytes: file.size,
+    analysis: null,
+    analysisStatus: "Analyzing geometry...",
+    mesh: null,
+    process: "cnc",
     materialId: "",
-    materialRequirement: "",
-    stockName: "Unconfirmed material stock",
-    stockCost: 100,
-    cutLengthMm: 100,
-    cutWidthMm: 100,
-    quantity: 10,
-    annualVolume: 0,
-    toleranceRequirement: "drawing",
-    documentationRequirement: "standard",
-    surfaceFinish: "As machined",
-    deliveryRequirement: "standard",
-    threadOrInsertRequirement: "unknown",
-    notes: ""
+    finishId: "as_machined",
+    toleranceId: "iso_2768_m",
+    hasThreads: false,
+    bendCount: 0,
+    quantity: 1,
+    leadTimeId: "standard"
   };
+}
+
+// Dependency-free 3D preview of the tessellated STEP mesh: orthographic projection,
+// painter-sorted flat shading, drag to rotate. Good enough to confirm "yes, that's my
+// part" without shipping a WebGL engine for it.
+function MeshPreview({ mesh }: { mesh: InstantMesh | null }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rotationRef = useRef({ yaw: 0.8, pitch: -0.6 });
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+
+  function draw() {
+    const canvas = canvasRef.current;
+    if (!canvas || !mesh || mesh.vertices.length < 9) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const { width, height } = canvas;
+    context.clearRect(0, 0, width, height);
+
+    const vertexCount = mesh.vertices.length / 3;
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < vertexCount; i++) {
+      const x = mesh.vertices[i * 3], y = mesh.vertices[i * 3 + 1], z = mesh.vertices[i * 3 + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
+    const diagonal = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+    const scale = (Math.min(width, height) * 0.82) / diagonal;
+
+    const { yaw, pitch } = rotationRef.current;
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw), cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+    const projected = new Float64Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i++) {
+      const x = mesh.vertices[i * 3] - centerX;
+      const y = mesh.vertices[i * 3 + 1] - centerY;
+      const z = mesh.vertices[i * 3 + 2] - centerZ;
+      const rotatedX = x * cosYaw + z * sinYaw;
+      const rotatedZ = -x * sinYaw + z * cosYaw;
+      const rotatedY = y * cosPitch - rotatedZ * sinPitch;
+      const depth = y * sinPitch + rotatedZ * cosPitch;
+      projected[i * 3] = width / 2 + rotatedX * scale;
+      projected[i * 3 + 1] = height / 2 - rotatedY * scale;
+      projected[i * 3 + 2] = depth;
+    }
+
+    const triangleCount = mesh.triangles.length / 3;
+    const order: number[] = [];
+    const depths = new Float64Array(triangleCount);
+    for (let i = 0; i < triangleCount; i++) {
+      const a = mesh.triangles[i * 3], b = mesh.triangles[i * 3 + 1], c = mesh.triangles[i * 3 + 2];
+      depths[i] = projected[a * 3 + 2] + projected[b * 3 + 2] + projected[c * 3 + 2];
+      order.push(i);
+    }
+    order.sort((left, right) => depths[left] - depths[right]);
+
+    for (const i of order) {
+      const a = mesh.triangles[i * 3], b = mesh.triangles[i * 3 + 1], c = mesh.triangles[i * 3 + 2];
+      const ax = projected[a * 3], ay = projected[a * 3 + 1];
+      const bx = projected[b * 3], by = projected[b * 3 + 1];
+      const cx = projected[c * 3], cy = projected[c * 3 + 1];
+      // Screen-space normal z decides facing and shade; backfaces still drawn (painter
+      // order hides them) so open shells stay visible.
+      const cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      const area = Math.abs(cross) / 2;
+      if (area < 0.05) continue;
+      const edge1 = Math.hypot(bx - ax, by - ay), edge2 = Math.hypot(cx - ax, cy - ay);
+      const facing = edge1 > 0 && edge2 > 0 ? Math.min(1, Math.abs(cross) / (edge1 * edge2)) : 0;
+      const lightness = 32 + facing * 46;
+      context.fillStyle = `hsl(210, 42%, ${lightness.toFixed(1)}%)`;
+      context.beginPath();
+      context.moveTo(ax, ay);
+      context.lineTo(bx, by);
+      context.lineTo(cx, cy);
+      context.closePath();
+      context.fill();
+    }
+  }
+
+  useEffect(draw, [mesh]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="meshPreviewCanvas"
+      width={260}
+      height={200}
+      onPointerDown={(event) => {
+        dragRef.current = { x: event.clientX, y: event.clientY };
+        (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (!dragRef.current) return;
+        rotationRef.current.yaw += (event.clientX - dragRef.current.x) * 0.012;
+        rotationRef.current.pitch += (event.clientY - dragRef.current.y) * 0.012;
+        dragRef.current = { x: event.clientX, y: event.clientY };
+        draw();
+      }}
+      onPointerUp={() => { dragRef.current = null; }}
+    />
+  );
 }
 
 function UtilizationBar({ utilization }: { utilization: number }) {
@@ -2395,7 +2579,6 @@ function App() {
   const [erpStatus, setErpStatus] = useState("ERP connection demo ready");
   const [erpSource, setErpSource] = useState<ErpSourceState>(null);
   const [lastErpOffer, setLastErpOffer] = useState<ErpOfferPayload | null>(null);
-  const [cadFile, setCadFile] = useState<File | null>(null);
   const [isNewPart, setIsNewPart] = useState(true);
   const [camComplexity, setCamComplexity] = useState("medium");
   const [programmingMinutes, setProgrammingMinutes] = useState(90);
@@ -2413,7 +2596,6 @@ function App() {
   const [companyProfiles, setCompanyProfiles] = useState<CompanyProfile[]>([]);
   const [profileStatus, setProfileStatus] = useState("Loading company profiles...");
   const [expandedFixedCostHelpers, setExpandedFixedCostHelpers] = useState<Record<string, boolean>>({});
-  const [expandedPortalDetails, setExpandedPortalDetails] = useState<Record<string, boolean>>({});
   // Reference-data sections start collapsed so pages read top-to-bottom during a
   // presentation without long scrolls; anything demo-critical stays open by default.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
@@ -2454,11 +2636,11 @@ function App() {
   const [targetResult, setTargetResult] = useState<QuoteResult | null>(null);
   const [accountingResult, setAccountingResult] = useState<QuoteResult | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [portalCustomerName, setPortalCustomerName] = useState("Client A Manufacturing");
-  const [portalContact, setPortalContact] = useState("procurement@example.com");
-  const [portalParts, setPortalParts] = useState<PortalPart[]>([createPortalPart()]);
-  const [portalEstimates, setPortalEstimates] = useState<Record<string, PortalEstimate>>({});
-  const [portalStatus, setPortalStatus] = useState("Upload STEP files and drawings/specifications, then calculate a preliminary customer estimate.");
+  const [instantParts, setInstantParts] = useState<InstantPart[]>([]);
+  const [instantEstimates, setInstantEstimates] = useState<Record<string, InstantEstimate>>({});
+  const [instantStatus, setInstantStatus] = useState("");
+  const [instantContact, setInstantContact] = useState("");
+  const [instantDragActive, setInstantDragActive] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2685,9 +2867,30 @@ function App() {
     if (!machine) {
       return 0;
     }
-    return mode === "accounting_full_cost"
-      ? machine.accounting_full_cost_rate_eur_per_hour
-      : machine.target_competitive_rate_eur_per_hour;
+    if (mode === "accounting_full_cost") {
+      return machine.accounting_full_cost_rate_eur_per_hour;
+    }
+    if (assumptions?.use_market_sell_rates) {
+      const capped = marketCappedTargetRate(machine);
+      if (capped !== null) {
+        return capped;
+      }
+    }
+    return machine.target_competitive_rate_eur_per_hour;
+  }
+
+  // Back-solves the machine EUR/h so the station's cost-plus sell rate lands exactly on the
+  // saved Market sell EUR/h: (machine + labor) × (1 + risk) / (1 − margin) = market rate.
+  // Returns null when no market rate is saved -- that station keeps its cost-plus rate.
+  function marketCappedTargetRate(machine: MachineClass) {
+    const market = marketSellRateValue(machine);
+    if (market <= 0) {
+      return null;
+    }
+    const labor = laborRate(machine.default_labor_class_id ?? null);
+    return Math.max(0, roundMoney(
+      (market * (1 - commercialPolicy.default_margin_percent)) / (1 + commercialPolicy.risk_allowance_percent) - labor
+    ));
   }
 
   // Sends the rate math's own inputs alongside the resolved EUR/h so the backend can
@@ -2699,6 +2902,11 @@ function App() {
     }
     const machine = machineById.get(machineClassId);
     if (!machine) {
+      return null;
+    }
+    // Market-priced stations don't follow the driver formula, so skip the backend's
+    // driver-vs-label cross-check for them.
+    if (mode !== "accounting_full_cost" && assumptions.use_market_sell_rates && marketSellRateValue(machine) > 0) {
       return null;
     }
     const utilizationField: UtilizationField = mode === "accounting_full_cost" ? "actual_utilization_percent" : "target_utilization_percent";
@@ -2870,14 +3078,7 @@ function App() {
       quantity: overrideQuantity,
       precision_level: "operation_based",
       rate_mode: mode,
-      cad_file: cadFile
-        ? {
-            filename: cadFile.name,
-            file_size_bytes: cadFile.size,
-            file_type: cadFile.name.toLowerCase().endsWith(".stp") ? "stp" : "step",
-            geometry_confidence: "not_parsed"
-          }
-        : null,
+      cad_file: null,
       cam_programming: {
         required: true,
         is_new_part: isNewPart,
@@ -2969,14 +3170,7 @@ function App() {
       quantity: overrideQuantity,
       precision_level: "operation_based",
       rate_mode: "target_competitive",
-      cad_file: cadFile
-        ? {
-            filename: cadFile.name,
-            file_size_bytes: cadFile.size,
-            file_type: cadFile.name.toLowerCase().endsWith(".stp") ? "stp" : "step",
-            geometry_confidence: "not_parsed"
-          }
-        : null,
+      cad_file: null,
       cam_programming: {
         required: true,
         is_new_part: isNewPart,
@@ -3216,316 +3410,489 @@ function App() {
     };
   }
 
-  function portalSelectedMaterial(part: PortalPart) {
-    return assumptions?.material_examples.find((item) => item.id === part.materialId);
+  // Everything the instant quote charges for comes from manually entered data: Material
+  // Library rows (density, EUR/kg, removal rates, stock status), assumptions.instant_quote
+  // (finishes, tolerances, lead times, machining parameters), operation templates, machine/
+  // labor rates, and the commercial policy -- all of it editable on Resources and replaced
+  // wholesale when a company profile is applied. If a required piece of data is missing,
+  // the part shows why instead of falling back to an invented number.
+  const instantQuote = assumptions?.instant_quote ?? null;
+
+  function instantCapableMaterials(process: InstantProcess) {
+    return (assumptions?.material_examples ?? []).filter((material) =>
+      (material.density_kg_dm3 ?? 0) > 0
+      && (material.price_per_kg_eur ?? 0) > 0
+      && (material.instant_processes ?? []).includes(process));
   }
 
-  function portalStockPiecesRequired(part: PortalPart) {
-    const material = portalSelectedMaterial(part);
-    const isPlate = material?.stock_shape === "plate";
-    const computed = stockPiecesRequiredForMaterial(material, part.cutLengthMm, isPlate ? part.cutWidthMm : 0, part.quantity);
-    return computed ?? part.quantity;
+  function defaultInstantMaterialId(process: InstantProcess) {
+    const capable = instantCapableMaterials(process);
+    return (capable.find((material) => material.in_stock !== false) ?? capable[0])?.id ?? "";
   }
 
-  function portalReadinessIssues(part: PortalPart) {
-    const issues: string[] = [];
-    if (!part.fileName) issues.push("STEP model missing");
-    if (!part.drawingFileName) issues.push("2D drawing/specification missing");
-    if (!part.materialRequirement.trim()) issues.push("material not specified");
-    if (part.toleranceRequirement === "custom" && !part.drawingFileName) issues.push("custom tolerances need drawing confirmation");
-    if (part.threadOrInsertRequirement === "unknown") issues.push("threads/inserts not confirmed");
-    if (!portalSelectedMaterial(part)) {
-      issues.push("no library stock item selected: cutoff/waste cannot be calculated, conservative 1 stock piece per part assumed");
+  function instantMaterialFor(part: InstantPart) {
+    return instantCapableMaterials(part.process).find((material) => material.id === part.materialId) ?? null;
+  }
+
+  function instantFinishFor(part: InstantPart) {
+    const finishes = instantQuote?.finishes ?? [];
+    return finishes.find((item) => item.id === part.finishId && item.processes.includes(part.process))
+      ?? finishes.find((item) => item.processes.includes(part.process))
+      ?? null;
+  }
+
+  function instantToleranceFor(part: InstantPart) {
+    const tolerances = instantQuote?.tolerances ?? [];
+    return tolerances.find((item) => item.id === part.toleranceId) ?? tolerances[0] ?? null;
+  }
+
+  function instantLeadTimeFor(part: InstantPart) {
+    const leadTimes = instantQuote?.lead_times ?? [];
+    return leadTimes.find((item) => item.id === part.leadTimeId)
+      ?? leadTimes.find((item) => item.price_factor === 1)
+      ?? leadTimes[0]
+      ?? null;
+  }
+
+  // Geometry as parsed from the STEP file -- no fallback: if the file could not be read,
+  // the part is not priced and the card says so.
+  function instantGeometry(part: InstantPart) {
+    const analysis = part.analysis;
+    if (!analysis || analysis.bounding_box_mm.x <= 0 || analysis.bounding_box_mm.y <= 0 || analysis.bounding_box_mm.z <= 0) {
+      return null;
     }
-    return issues;
+    const dims = [analysis.bounding_box_mm.x, analysis.bounding_box_mm.y, analysis.bounding_box_mm.z].sort((a, b) => b - a);
+    const bboxVolume = dims[0] * dims[1] * dims[2];
+    const volume = analysis.volume_mm3 > 0 ? analysis.volume_mm3 : bboxVolume * 0.45;
+    const surface = analysis.surface_area_mm2 > 0
+      ? analysis.surface_area_mm2
+      : 2 * (dims[0] * dims[1] + dims[1] * dims[2] + dims[0] * dims[2]) * 1.2;
+    return {
+      dims,
+      volumeMm3: volume,
+      surfaceMm2: surface,
+      holeCount: analysis.hole_count_estimate,
+      totalFaces: Object.values(analysis.face_counts).reduce((sum, count) => sum + count, 0),
+      suggestsTurning: analysis.suggested_operations.includes("turning"),
+      suggestsSheet: analysis.suggested_operations.includes("saw_cutting")
+    };
   }
 
-  // File-size-in-bytes was dropped as a complexity signal: a STEP file's byte count reflects
-  // export settings and tessellation density, not part complexity, so it was noise rather than
-  // signal. Its removed weight (1.0 of the old 9.0-point scale) is redistributed proportionally
-  // (x1.125) across the remaining signals so the same seed inputs land in the same complexity
-  // class as before wherever the classification didn't depend on file size specifically.
-  function inferredPortalComplexity(part: PortalPart): "simple" | "medium" | "complex" {
-    let score = 0;
-    if (part.drawingFileName) score += 0.56;
-    if (part.toleranceRequirement === "custom") score += 2.25;
-    if (part.toleranceRequirement === "drawing") score += 1.13;
-    if (part.documentationRequirement === "full_fai") score += 1.69;
-    if (part.documentationRequirement === "dimensional_report") score += 0.84;
-    if (part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat")) score += 0.84;
-    if (part.threadOrInsertRequirement === "yes") score += 0.84;
-    if (part.deliveryRequirement !== "standard") score += 0.84;
-    if (score >= 3.25) return "complex";
-    if (score >= 1.25) return "medium";
-    return "simple";
-  }
+  type InstantPlanOperation = {
+    operationType: string;
+    name: string;
+    setupMachineMinutes: number;
+    setupLaborMinutes: number;
+    runMachineMinutesPerPart: number;
+    runLaborMinutesPerPart: number;
+    outsourcedCostPerPartEur: number;
+    outsourcedBatchCostEur: number;
+    scrapAllowancePercent: number;
+  };
 
-  function portalAdjustmentFactors(part: PortalPart) {
-    const complexity = inferredPortalComplexity(part);
-    const complexityFactor = complexity === "complex" ? 1.6 : complexity === "simple" ? 0.75 : 1;
-    const toleranceFactor = part.toleranceRequirement === "custom" ? 1.55 : part.toleranceRequirement === "drawing" ? 1.25 : 1;
-    const qcFactor = part.documentationRequirement === "full_fai" ? 1.45 : part.documentationRequirement === "dimensional_report" ? 1.2 : 1;
-    const deliveryFactor = part.deliveryRequirement === "date_critical" ? 1.2 : part.deliveryRequirement === "expedite" ? 1.12 : 1;
-    return { complexity, complexityFactor, toleranceFactor, qcFactor, deliveryFactor, combined: complexityFactor * toleranceFactor * deliveryFactor };
-  }
+  // Converts parsed STEP geometry plus the visitor's configuration into a concrete route:
+  // operation minutes, per-part material cost, and DFM feedback. Returns null (no price)
+  // when geometry or required Resources data is missing.
+  function instantOperationPlan(part: InstantPart) {
+    if (!instantQuote) return null;
+    const geometry = instantGeometry(part);
+    const material = instantMaterialFor(part);
+    const finish = instantFinishFor(part);
+    const tolerance = instantToleranceFor(part);
+    if (!geometry || !material || !finish || !tolerance) return null;
+    const m = instantQuote.machining;
+    const density = material.density_kg_dm3 ?? 0;
+    const pricePerKg = material.price_per_kg_eur ?? 0;
+    const dfmNotes: string[] = [];
+    const operations: InstantPlanOperation[] = [];
+    const [dimA, dimB, dimC] = geometry.dims;
+    let materialCostPerPartEur = 0;
+    const scrapPercent = Math.min(0.14, m.base_scrap_percent + tolerance.scrap_adder_percent);
 
-  function portalMaterialCost(part: PortalPart) {
-    const reliefFactor = assumptions?.client_portal?.annual_volume_relief_percent ?? 0.92;
-    const annualRelief = part.annualVolume >= part.quantity * 4 && part.quantity > 0 ? reliefFactor : 1;
-    return roundMoney(part.stockCost * annualRelief);
-  }
+    if (part.process === "cnc") {
+      const allowance = m.blank_allowance_mm;
+      const blankVolumeMm3 = (dimA + allowance) * (dimB + allowance) * (dimC + allowance);
+      const blankMassKg = (blankVolumeMm3 / 1e6) * density;
+      materialCostPerPartEur = Math.max(m.minimum_material_charge_eur, roundMoney(blankMassKg * pricePerKg * m.stock_purchase_waste_factor));
+      const removalRate = material.milling_removal_cm3_per_min ?? 0;
+      if (removalRate <= 0) return null;
+      const removalCm3 = Math.max(blankVolumeMm3 - geometry.volumeMm3, blankVolumeMm3 * 0.08) / 1000;
+      const roughingMinutes = removalCm3 / removalRate;
+      const finishingMinutes = geometry.surfaceMm2 / 100 / m.finishing_rate_cm2_per_min;
+      const drillingMinutes = geometry.holeCount * m.drill_minutes_per_hole;
+      const runMinutes = Math.max(1.5, (roughingMinutes + finishingMinutes + drillingMinutes) * tolerance.time_factor);
 
-  // Threads/inserts route through a real tapping operation (with real tap-tool inventory
-  // matching) instead of a flat guessed tooling add-on.
-  function portalRouteOperationTypes(part: PortalPart) {
-    return ["saw_cutting", "milling_3_axis", "drilling", ...(part.threadOrInsertRequirement === "yes" ? ["tapping"] : [])];
-  }
-
-  function portalToolCheckResults(part: PortalPart) {
-    return portalRouteOperationTypes(part).flatMap((operationType) =>
-      defaultToolRequirementsForOperation(operationType).map((requirement) => {
-        const matchedTool = findToolForRequirement(requirement);
-        return {
-          operationType,
-          requirement,
-          status: matchedTool ? ("available" as const) : ("missing" as const),
-          costEur: matchedTool ? 0 : toolRequirementCost(requirement)
-        };
-      })
-    );
-  }
-
-  function portalOperations(part: PortalPart, mode: RateMode) {
-    if (!assumptions) {
-      return [];
-    }
-    const route = portalRouteOperationTypes(part);
-    const factors = portalAdjustmentFactors(part);
-    return route
-      .map((operationType) => assumptions.operation_templates.find((template) => template.operation_type === operationType))
-      .filter((template): template is OperationTemplate => Boolean(template))
-      .map((template) => {
-        const isInspection = template.operation_type === "manual_inspection";
-        const setupFactor = isInspection ? factors.qcFactor : factors.combined;
-        const runFactor = isInspection ? factors.qcFactor : factors.combined;
-        const toolRequirements = defaultToolRequirementsForOperation(template.operation_type);
-        return {
-          operation_type: template.operation_type,
-          name: isInspection ? `QC - ${part.documentationRequirement.replace(/_/g, " ")}` : operationLabel(template.operation_type),
-          machine_hour_rate_eur: machineRate(template.default_machine_class_id, mode),
-          labor_hour_rate_eur: laborRate(template.default_labor_class_id),
-          setup_machine_minutes: roundMoney((template.default_setup_machine_minutes ?? 0) * setupFactor),
-          setup_labor_minutes: attendedLaborMinutes(template.default_machine_class_id, roundMoney((template.default_setup_machine_minutes ?? 0) * setupFactor), roundMoney((template.default_setup_labor_minutes ?? 0) * setupFactor)),
-          run_machine_minutes_per_part: roundMoney((template.default_run_machine_minutes_per_part ?? 0) * runFactor),
-          run_labor_minutes_per_part: attendedLaborMinutes(template.default_machine_class_id, roundMoney((template.default_run_machine_minutes_per_part ?? 0) * runFactor), roundMoney((template.default_run_labor_minutes_per_part ?? 0) * runFactor)),
-          tooling_cost_per_part_eur: template.default_tooling_cost_per_part_eur ?? 0,
-          consumables_cost_per_part_eur: template.default_consumables_cost_per_part_eur ?? 0,
-          outsourced_cost_per_part_eur: 0,
-          outsourced_batch_cost_eur: part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat") ? 45 : 0,
-          missing_tool_batch_cost_eur: missingToolBatchCost(toolRequirements),
-          scrap_allowance_percent: Math.min(0.14, (template.default_scrap_allowance_percent ?? 0) + (part.toleranceRequirement === "custom" ? 0.03 : part.toleranceRequirement === "drawing" ? 0.015 : 0)),
-          assumption_quality: "portal_preliminary"
-        };
+      operations.push({
+        operationType: "saw_cutting",
+        name: "Blank cutoff",
+        setupMachineMinutes: m.blank_cutoff_setup_minutes,
+        setupLaborMinutes: m.blank_cutoff_setup_minutes,
+        runMachineMinutesPerPart: m.blank_cutoff_minutes_per_part,
+        runLaborMinutesPerPart: m.blank_cutoff_minutes_per_part,
+        outsourcedCostPerPartEur: 0,
+        outsourcedBatchCostEur: 0,
+        scrapAllowancePercent: scrapPercent
       });
+      operations.push({
+        operationType: geometry.suggestsTurning ? "turning" : "milling_3_axis",
+        name: geometry.suggestsTurning ? "CNC turning" : "CNC milling",
+        setupMachineMinutes: roundMoney(m.milling_setup_minutes * tolerance.time_factor),
+        setupLaborMinutes: roundMoney(m.milling_setup_minutes * tolerance.time_factor),
+        runMachineMinutesPerPart: roundMoney(runMinutes),
+        runLaborMinutesPerPart: roundMoney(runMinutes * m.run_labor_share_cnc),
+        outsourcedCostPerPartEur: finish.cost_per_part_eur,
+        outsourcedBatchCostEur: finish.batch_cost_eur,
+        scrapAllowancePercent: scrapPercent
+      });
+      if (geometry.suggestsTurning) {
+        dfmNotes.push("The envelope is close to a body of revolution, so it is priced as a turned part.");
+      }
+      if (geometry.suggestsSheet) {
+        dfmNotes.push("This part looks like a flat plate. Switching the process to Sheet metal fabrication may be cheaper.");
+      }
+      const solidity = geometry.volumeMm3 / (dimA * dimB * dimC);
+      if (solidity < 0.25) {
+        dfmNotes.push("Over 75% of the blank is machined away. A casting, a welded build-up, or thinner stock could cut material and machine time.");
+      }
+    } else {
+      const thicknessMm = Math.max(0.5, dimC);
+      const plateAreaMm2 = geometry.volumeMm3 / thicknessMm;
+      const edgeLengthMm = Math.max(2 * (dimA + dimB), (geometry.surfaceMm2 - 2 * plateAreaMm2) / thicknessMm);
+      const blankMassKg = (plateAreaMm2 * thicknessMm * m.sheet_nesting_waste_factor / 1e6) * density;
+      materialCostPerPartEur = Math.max(m.minimum_material_charge_eur, roundMoney(blankMassKg * pricePerKg * m.stock_purchase_waste_factor));
+      const cutFactor = material.cut_speed_factor ?? 0;
+      if (cutFactor <= 0) return null;
+      const cutSpeedMmPerMin = (m.base_cut_speed_mm_per_min * cutFactor) / (1 + thicknessMm / 3);
+      const cutMinutes = Math.max(0.4, (edgeLengthMm / cutSpeedMmPerMin + geometry.holeCount * m.drill_minutes_per_hole * 0.4 + 0.3) * tolerance.time_factor);
+
+      operations.push({
+        operationType: "saw_cutting",
+        name: "Profile cutting",
+        setupMachineMinutes: m.cutting_setup_minutes,
+        setupLaborMinutes: m.cutting_setup_minutes,
+        runMachineMinutesPerPart: roundMoney(cutMinutes),
+        runLaborMinutesPerPart: roundMoney(cutMinutes * m.run_labor_share_cutting),
+        outsourcedCostPerPartEur: finish.cost_per_part_eur,
+        outsourcedBatchCostEur: finish.batch_cost_eur,
+        scrapAllowancePercent: scrapPercent
+      });
+      if (part.bendCount > 0) {
+        operations.push({
+          operationType: "bending",
+          name: `Press brake bending, ${part.bendCount} bend(s)`,
+          setupMachineMinutes: m.bending_setup_minutes,
+          setupLaborMinutes: m.bending_setup_minutes,
+          runMachineMinutesPerPart: roundMoney(Math.max(0.5, part.bendCount * m.bend_minutes_per_bend)),
+          runLaborMinutesPerPart: roundMoney(Math.max(0.5, part.bendCount * m.bend_minutes_per_bend)),
+          outsourcedCostPerPartEur: 0,
+          outsourcedBatchCostEur: 0,
+          scrapAllowancePercent: scrapPercent
+        });
+      }
+      if (thicknessMm > 12) {
+        dfmNotes.push(`Thickness reads as ${thicknessMm.toFixed(1)} mm -- beyond a comfortable sheet metal range. Consider CNC machining instead.`);
+      }
+      if (dimC / dimA > 0.25) {
+        dfmNotes.push("The geometry is not plate-like, so the sheet metal estimate may be misleading. CNC machining likely fits this shape better.");
+      }
+    }
+
+    if (part.hasThreads && geometry.holeCount > 0) {
+      operations.push({
+        operationType: "tapping",
+        name: "Thread tapping",
+        setupMachineMinutes: m.tapping_setup_minutes,
+        setupLaborMinutes: m.tapping_setup_minutes,
+        runMachineMinutesPerPart: roundMoney(Math.max(0.3, geometry.holeCount * m.tap_minutes_per_hole)),
+        runLaborMinutesPerPart: roundMoney(Math.max(0.3, geometry.holeCount * m.tap_minutes_per_hole)),
+        outsourcedCostPerPartEur: 0,
+        outsourcedBatchCostEur: 0,
+        scrapAllowancePercent: scrapPercent
+      });
+    }
+
+    if (material.in_stock === false) {
+      dfmNotes.push("This material is not in stock. The price stands, but delivery is confirmed together with the material lead time at review.");
+    }
+    if (finish.name.toLowerCase().includes("anodized") && !(material.material_grade ?? material.name).toLowerCase().match(/al|6082|7075|aw-/)) {
+      dfmNotes.push("Anodizing only works on aluminum. Pick another finish or an aluminum alloy.");
+    }
+    if (geometry.holeCount > 0) {
+      dfmNotes.push(`${geometry.holeCount} hole feature(s) detected and included in the estimate.`);
+    }
+    if (dimA > 600) {
+      dfmNotes.push(`Longest dimension is ${dimA.toFixed(0)} mm -- large parts may need capacity confirmation before the lead time is binding.`);
+    }
+
+    const complexity: "simple" | "medium" | "complex" = part.process === "sheet_metal"
+      ? (part.bendCount > 4 ? "medium" : "simple")
+      : geometry.totalFaces > 60 || tolerance.time_factor >= 1.35
+        ? "complex"
+        : geometry.totalFaces > 25
+          ? "medium"
+          : "simple";
+
+    return { geometry, material, finish, tolerance, operations, dfmNotes, materialCostPerPartEur, complexity };
   }
 
-  function portalQuotePayload(part: PortalPart, mode: RateMode) {
-    const factors = portalAdjustmentFactors(part);
-    const complexityMinutes = assumptions?.cam_programming_defaults[`${factors.complexity}_programming_minutes` as keyof Assumptions["cam_programming_defaults"]];
-    const missingInfoRisk = portalReadinessIssues(part).length * 0.025;
+  function instantQuotePayload(part: InstantPart, plan: NonNullable<ReturnType<typeof instantOperationPlan>>) {
+    const camMinutesKey = `${plan.complexity}_programming_minutes` as keyof Assumptions["cam_programming_defaults"];
+    const camMinutesRaw = assumptions?.cam_programming_defaults[camMinutesKey];
+    const sheetCamFactor = instantQuote?.machining.sheet_cam_factor ?? 1;
+    const camMinutes = (typeof camMinutesRaw === "number" ? camMinutesRaw : 90) * (part.process === "sheet_metal" ? sheetCamFactor : 1);
     return {
       part_name: part.partName,
       quantity: part.quantity,
       precision_level: "operation_based",
-      rate_mode: mode,
+      rate_mode: "target_competitive",
       cad_file: part.fileName ? {
         filename: part.fileName,
         file_size_bytes: part.fileSizeBytes,
         file_type: part.fileName.toLowerCase().endsWith(".stp") ? "stp" : "step",
-        geometry_confidence: part.drawingFileName ? "step_plus_drawing_metadata" : "step_only_metadata"
+        geometry_confidence: "heuristic_geometry_parsed"
       } : null,
       cam_programming: {
         required: true,
         is_new_part: true,
-        complexity: factors.complexity,
+        complexity: plan.complexity,
         programming_labor_hour_rate_eur: programmingRate,
-        estimated_programming_minutes: roundMoney((typeof complexityMinutes === "number" ? complexityMinutes : 90) * factors.combined),
-        setup_proveout_minutes: roundMoney(proveoutMinutes * (part.toleranceRequirement === "custom" ? 1.4 : part.toleranceRequirement === "drawing" ? 1.2 : 1)),
+        estimated_programming_minutes: roundMoney(camMinutes),
+        setup_proveout_minutes: assumptions?.cam_programming_defaults.default_setup_proveout_minutes ?? 30,
         reusable_program_percent: 0,
         assumption_quality: "portal_preliminary"
       },
       material: {
-        name: part.materialRequirement || part.stockName,
-        stock_piece_cost_eur: portalMaterialCost(part),
-        stock_pieces_required: portalStockPiecesRequired(part),
+        name: plan.material.name,
+        stock_piece_cost_eur: plan.materialCostPerPartEur,
+        stock_pieces_required: part.quantity,
         scrap_recovery_eur: 0,
         assumption_quality: "portal_preliminary"
       },
-      operations: portalOperations(part, mode),
+      operations: plan.operations
+        .map((operation) => {
+          const template = assumptions?.operation_templates.find((item) => item.operation_type === operation.operationType);
+          if (!template) return null;
+          return {
+            operation_type: operation.operationType,
+            name: operation.name,
+            machine_hour_rate_eur: machineRate(template.default_machine_class_id, "target_competitive"),
+            labor_hour_rate_eur: laborRate(template.default_labor_class_id),
+            setup_machine_minutes: operation.setupMachineMinutes,
+            setup_labor_minutes: attendedLaborMinutes(template.default_machine_class_id, operation.setupMachineMinutes, operation.setupLaborMinutes),
+            run_machine_minutes_per_part: operation.runMachineMinutesPerPart,
+            run_labor_minutes_per_part: attendedLaborMinutes(template.default_machine_class_id, operation.runMachineMinutesPerPart, operation.runLaborMinutesPerPart),
+            tooling_cost_per_part_eur: template.default_tooling_cost_per_part_eur ?? 0,
+            consumables_cost_per_part_eur: template.default_consumables_cost_per_part_eur ?? 0,
+            outsourced_cost_per_part_eur: operation.outsourcedCostPerPartEur,
+            outsourced_batch_cost_eur: operation.outsourcedBatchCostEur,
+            missing_tool_batch_cost_eur: 0,
+            scrap_allowance_percent: operation.scrapAllowancePercent,
+            assumption_quality: "portal_preliminary"
+          };
+        })
+        .filter((operation): operation is NonNullable<typeof operation> => operation !== null),
       commercial_policy: {
         margin_percent: commercialPolicy.default_margin_percent,
         overhead_percent: 0, // overhead is folded into machine rates (weighted shared recovery)
-        risk_allowance_percent: commercialPolicy.risk_allowance_percent + missingInfoRisk + (part.documentationRequirement === "full_fai" ? 0.02 : 0),
+        risk_allowance_percent: commercialPolicy.risk_allowance_percent,
         minimum_order_admin_cost_eur: commercialPolicy.minimum_order_admin_cost_eur,
         material_markup_percent: materialMarkupPercent
       }
     };
   }
 
-  // Range is deliberately widened asymmetrically (low factor closer to 1 than high factor is
-  // far from it): pending calibration against actuals, an underquote is cheaper to fix than an
-  // overquote that loses the order, so the client-facing band leans toward showing headroom
-  // upward rather than downward. Both factors are editable assumptions, not hardcoded.
-  function portalEstimateFromResult(part: PortalPart, result: QuoteResult, accountingResult: QuoteResult): PortalEstimate {
-    const issues = portalReadinessIssues(part);
-    const rangeLowFactor = assumptions?.client_portal?.range_low_factor ?? 0.85;
-    const rangeHighFactor = assumptions?.client_portal?.range_high_factor ?? 1.35;
-    const lowTotal = roundMoney(result.sell_price_eur * rangeLowFactor);
-    const highTotal = roundMoney(result.sell_price_eur * rangeHighFactor);
-    return {
-      result,
-      accountingSellPriceEur: accountingResult.sell_price_eur,
-      lowTotalEur: lowTotal,
-      highTotalEur: highTotal,
-      lowUnitEur: roundMoney(lowTotal / part.quantity),
-      highUnitEur: roundMoney(highTotal / part.quantity),
-      confidence: issues.length === 0 ? "Medium - ready for manual review" : "Low - missing RFQ information",
-      readinessIssues: issues
-    };
+  function instantMachineMinutesTotal(plan: NonNullable<ReturnType<typeof instantOperationPlan>>, quantity: number) {
+    return plan.operations.reduce(
+      (sum, operation) => sum + operation.setupMachineMinutes + operation.runMachineMinutesPerPart * quantity,
+      0
+    );
   }
 
-  // Informational only: shows the sales team what a *future* repeat order could cost once CAM
-  // is reused, without changing the price of *this* (necessarily new-part) order.
-  function portalRepeatOrderCamSavingsEur(part: PortalPart) {
-    if (!assumptions || part.annualVolume < part.quantity * 2) {
-      return null;
-    }
-    const factors = portalAdjustmentFactors(part);
-    const complexityMinutes = assumptions.cam_programming_defaults[`${factors.complexity}_programming_minutes` as keyof Assumptions["cam_programming_defaults"]];
-    const grossMinutes = roundMoney((typeof complexityMinutes === "number" ? complexityMinutes : 90) * factors.combined) + proveoutMinutes;
-    const reusePercent = assumptions.cam_programming_defaults.repeat_part_reusable_program_percent ?? 0;
-    return roundMoney((grossMinutes * reusePercent / 60) * programmingRate);
+  // Production days from routed machine minutes at the configured hours/day; the selected
+  // lead-time option then adds its own calendar buffer and price factor.
+  function instantLeadDays(estimate: InstantEstimate, lead: InstantLeadTime) {
+    const hoursPerDay = Math.max(1, instantQuote?.machining.production_hours_per_day ?? 16);
+    const productionDays = Math.ceil(estimate.machineMinutesTotal / 60 / hoursPerDay) + 1;
+    return productionDays + lead.extra_days;
   }
 
-  function updatePortalPart(partId: string, changes: Partial<PortalPart>) {
-    setPortalParts((current) => current.map((part) => part.id === partId ? { ...part, ...changes } : part));
-    setPortalEstimates((current) => {
+  function instantMachineNameFor(operationType: string) {
+    const template = assumptions?.operation_templates.find((item) => item.operation_type === operationType);
+    const machine = template?.default_machine_class_id ? machineById.get(template.default_machine_class_id) : null;
+    return machine?.name ?? operationLabel(operationType);
+  }
+
+  function updateInstantPart(partId: string, changes: Partial<InstantPart>) {
+    setInstantParts((current) => current.map((part) => (part.id === partId ? { ...part, ...changes } : part)));
+  }
+
+  function removeInstantPart(partId: string) {
+    setInstantParts((current) => current.filter((part) => part.id !== partId));
+    setInstantEstimates((current) => {
       const next = { ...current };
       delete next[partId];
       return next;
     });
   }
 
-  function addPortalFiles(files: FileList | null) {
+  function setInstantProcess(part: InstantPart, process: InstantProcess) {
+    const stillCapable = instantCapableMaterials(process).some((material) => material.id === part.materialId);
+    updateInstantPart(part.id, {
+      process,
+      materialId: stillCapable ? part.materialId : defaultInstantMaterialId(process)
+    });
+  }
+
+  async function callQuoteAnalysis(file: File): Promise<{ analysis: StepAnalysis | null; mesh: InstantMesh | null; status: string }> {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/step/quote-analysis", { method: "POST", body: formData });
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => null)) as { detail?: string } | null;
+        return { analysis: null, mesh: null, status: detail?.detail ?? `Geometry analysis returned ${response.status}` };
+      }
+      const body = (await response.json()) as { analysis: StepAnalysis; mesh: InstantMesh | null };
+      return { analysis: body.analysis, mesh: body.mesh, status: "" };
+    } catch {
+      return { analysis: null, mesh: null, status: "Geometry analysis request failed." };
+    }
+  }
+
+  function addInstantFiles(files: FileList | File[] | null) {
     if (!files || files.length === 0) {
       return;
     }
-    setPortalParts((current) => [...current, ...Array.from(files).map(createPortalPart)]);
-    setPortalStatus(`${files.length} STEP file(s) added. Add drawings/specifications for a more reliable estimate.`);
-  }
+    const fileList = Array.from(files).filter((file) => /\.(step|stp)$/i.test(file.name));
+    if (fileList.length === 0) {
+      setInstantStatus("Only .step / .stp files are supported right now. Export STEP from your CAD system and try again.");
+      return;
+    }
+    const newParts = fileList.map((file) => ({ ...createInstantPart(file), materialId: defaultInstantMaterialId("cnc") }));
+    setInstantParts((current) => [...current, ...newParts]);
+    setInstantStatus("");
 
-  function addBlankPortalPart() {
-    setPortalParts((current) => [...current, createPortalPart()]);
-  }
-
-  function removePortalPart(partId: string) {
-    setPortalParts((current) => current.filter((part) => part.id !== partId));
-    setPortalEstimates((current) => {
-      const next = { ...current };
-      delete next[partId];
-      return next;
+    newParts.forEach((part, index) => {
+      callQuoteAnalysis(fileList[index]).then(({ analysis, mesh, status }) => {
+        setInstantParts((current) => current.map((item) => {
+          if (item.id !== part.id) return item;
+          // Thin flat parts start on the sheet metal flow, like they would with a human
+          // estimator; the visitor can switch the process at any time.
+          const suggestsSheet = analysis?.suggested_operations.includes("saw_cutting") ?? false;
+          const process: InstantProcess = suggestsSheet ? "sheet_metal" : item.process;
+          const stillCapable = instantCapableMaterials(process).some((material) => material.id === item.materialId);
+          return {
+            ...item,
+            analysis,
+            mesh,
+            analysisStatus: status,
+            process,
+            materialId: stillCapable ? item.materialId : defaultInstantMaterialId(process)
+          };
+        }));
+      });
     });
   }
 
-  // Bridge from a portal RFQ into a real Quote Builder draft for the manual confirmation
-  // the portal copy promises. Without this, a portal RFQ was a dead end once you left the tab.
-  function sendPortalPartToQuoteBuilder(part: PortalPart) {
+  // Instant repricing: any configuration or geometry change triggers a debounced
+  // recalculation of every uploaded part through the real quote engine, so the visitor
+  // never has to press a "calculate" button.
+  const instantConfigKey = useMemo(
+    () => JSON.stringify(instantParts.map((part) => [
+      part.id, part.process, part.materialId, part.finishId, part.toleranceId,
+      part.hasThreads, part.bendCount, part.quantity, part.analysis !== null, part.analysisStatus
+    ])),
+    [instantParts]
+  );
+
+  useEffect(() => {
+    if (!assumptions || instantParts.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const entries = await Promise.all(instantParts.map(async (part) => {
+          const plan = instantOperationPlan(part);
+          if (!plan) return null;
+          const result = await callCalculate(instantQuotePayload(part, plan));
+          return [part.id, {
+            result,
+            baseSellPriceEur: result.sell_price_eur,
+            machineMinutesTotal: instantMachineMinutesTotal(plan, part.quantity),
+            materialCostPerPartEur: plan.materialCostPerPartEur,
+            dfmNotes: plan.dfmNotes
+          }] as const;
+        }));
+        if (!cancelled) {
+          setInstantEstimates(Object.fromEntries(entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null)));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setInstantStatus(error instanceof Error ? error.message : "Instant estimate failed");
+        }
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instantConfigKey, assumptions]);
+
+  // Bridge from the instant quote into a real Quote Builder draft: the geometry-derived
+  // route becomes editable operations for the manual confirmation pass.
+  function sendInstantPartToQuoteBuilder(part: InstantPart) {
     if (!assumptions) return;
-    const factors = portalAdjustmentFactors(part);
-    const route = portalRouteOperationTypes(part);
-    const operations: QuoteOperation[] = route
-      .map((operationType) => assumptions.operation_templates.find((template) => template.operation_type === operationType))
-      .filter((template): template is OperationTemplate => Boolean(template))
-      .map((template) => {
-        const isInspection = template.operation_type === "manual_inspection";
-        const factor = isInspection ? factors.qcFactor : factors.combined;
+    const plan = instantOperationPlan(part);
+    if (!plan) {
+      setInstantStatus("This part has no priced estimate yet, so there is nothing to send.");
+      return;
+    }
+    const operations: QuoteOperation[] = plan.operations
+      .map((operation) => {
+        const template = assumptions.operation_templates.find((item) => item.operation_type === operation.operationType);
+        if (!template) return null;
         return {
-          id: `${template.operation_type}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          operationType: template.operation_type,
-          name: isInspection ? `QC - ${part.documentationRequirement.replace(/_/g, " ")}` : operationLabel(template.operation_type),
+          id: `${operation.operationType}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          operationType: operation.operationType,
+          name: operation.name,
           machineClassId: template.default_machine_class_id,
           laborClassId: template.default_labor_class_id,
-          setupMachineMinutes: roundMoney((template.default_setup_machine_minutes ?? 0) * factor),
-          setupLaborMinutes: roundMoney((template.default_setup_labor_minutes ?? 0) * factor),
-          runMachineMinutesPerPart: roundMoney((template.default_run_machine_minutes_per_part ?? 0) * factor),
-          runLaborMinutesPerPart: roundMoney((template.default_run_labor_minutes_per_part ?? 0) * factor),
+          setupMachineMinutes: operation.setupMachineMinutes,
+          setupLaborMinutes: operation.setupLaborMinutes,
+          runMachineMinutesPerPart: operation.runMachineMinutesPerPart,
+          runLaborMinutesPerPart: operation.runLaborMinutesPerPart,
           toolingCostPerPart: template.default_tooling_cost_per_part_eur ?? 0,
           consumablesCostPerPart: template.default_consumables_cost_per_part_eur ?? 0,
-          outsourcedCostPerPart: 0,
-          outsourcedBatchCost: part.surfaceFinish.toLowerCase().includes("anod") || part.surfaceFinish.toLowerCase().includes("coat") ? 45 : 0,
-          scrapAllowancePercent: Math.min(0.14, (template.default_scrap_allowance_percent ?? 0) + (part.toleranceRequirement === "custom" ? 0.03 : part.toleranceRequirement === "drawing" ? 0.015 : 0)),
-          toolRequirements: defaultToolRequirementsForOperation(template.operation_type)
+          outsourcedCostPerPart: operation.outsourcedCostPerPartEur,
+          outsourcedBatchCost: operation.outsourcedBatchCostEur,
+          scrapAllowancePercent: operation.scrapAllowancePercent,
+          toolRequirements: defaultToolRequirementsForOperation(operation.operationType)
         };
-      });
-    const complexityMinutes = assumptions.cam_programming_defaults[`${factors.complexity}_programming_minutes` as keyof Assumptions["cam_programming_defaults"]];
+      })
+      .filter((operation): operation is QuoteOperation => operation !== null);
+    const camMinutesKey = `${plan.complexity}_programming_minutes` as keyof Assumptions["cam_programming_defaults"];
+    const camMinutesRaw = assumptions.cam_programming_defaults[camMinutesKey];
+    const sheetCamFactor = instantQuote?.machining.sheet_cam_factor ?? 1;
 
     setDraftId(null);
     setPartName(part.partName);
-    setCustomerName(portalCustomerName);
+    setCustomerName(instantContact || "Instant quote visitor");
     setQuantity(part.quantity);
     setQuantityBreakText(String(part.quantity));
-    setSelectedMaterialId(part.materialId);
-    setStockName(part.materialRequirement || part.stockName);
-    setStockCost(portalMaterialCost(part));
-    setStockPieces(portalStockPiecesRequired(part));
-    setCutLengthMm(part.cutLengthMm);
-    setCutWidthMm(part.cutWidthMm);
+    setSelectedMaterialId("");
+    setStockName(plan.material.name);
+    setStockCost(plan.materialCostPerPartEur);
+    setStockPieces(part.quantity);
     setScrapRecovery(0);
     setIsNewPart(true);
-    setCamComplexity(factors.complexity);
-    setProgrammingMinutes(roundMoney((typeof complexityMinutes === "number" ? complexityMinutes : 90) * factors.combined));
-    setProveoutMinutes(roundMoney(proveoutMinutes * (part.toleranceRequirement === "custom" ? 1.4 : part.toleranceRequirement === "drawing" ? 1.2 : 1)));
+    setCamComplexity(plan.complexity);
+    setProgrammingMinutes(roundMoney((typeof camMinutesRaw === "number" ? camMinutesRaw : 90) * (part.process === "sheet_metal" ? sheetCamFactor : 1)));
     setQuoteOperations(operations);
     setRateMode("target_competitive");
     setActiveView("quote");
-    setPortalStatus(`"${part.partName}" sent to Quote Builder for manual confirmation.`);
-  }
-
-  async function calculatePortalEstimates() {
-    if (!assumptions) {
-      setPortalStatus("Assumptions are still loading");
-      return;
-    }
-    if (portalParts.length === 0) {
-      setPortalStatus("Add at least one part before calculating");
-      return;
-    }
-    try {
-      const entries = await Promise.all(portalParts.map(async (part) => {
-        const [targetResponse, accountingResponse] = await Promise.all([
-          fetch("/api/quotes/calculate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(portalQuotePayload(part, "target_competitive"))
-          }),
-          fetch("/api/quotes/calculate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(portalQuotePayload(part, "accounting_full_cost"))
-          })
-        ]);
-        if (!targetResponse.ok || !accountingResponse.ok) {
-          throw new Error(`Portal calculator returned ${targetResponse.status}/${accountingResponse.status}`);
-        }
-        const result = (await targetResponse.json()) as QuoteResult;
-        const accountingResult = (await accountingResponse.json()) as QuoteResult;
-        return [part.id, portalEstimateFromResult(part, result, accountingResult)] as const;
-      }));
-      setPortalEstimates(Object.fromEntries(entries));
-      setPortalStatus(`Preliminary estimate calculated for ${entries.length} part(s). Final offer still requires drawing, material, tolerance, tooling, and capacity confirmation.`);
-    } catch (error) {
-      setPortalStatus(error instanceof Error ? error.message : "Portal calculation failed");
-    }
+    setInstantStatus(`"${part.partName}" sent to Quote Builder for manual confirmation.`);
   }
 
   function quantityBreaks() {
@@ -3539,7 +3906,6 @@ function App() {
 
   const calculationKey = useMemo(
     () => JSON.stringify({
-      cadFile: cadFile ? { name: cadFile.name, size: cadFile.size } : null,
       camComplexity,
       commercialPolicy,
       isNewPart,
@@ -3564,7 +3930,6 @@ function App() {
       assumptions?.labor_classes,
       assumptions?.machine_classes,
       assumptions?.tool_inventory,
-      cadFile,
       camComplexity,
       commercialPolicy,
       isNewPart,
@@ -4529,6 +4894,33 @@ function App() {
     });
   }
 
+  function updateMaterialInstant(index: number, changes: Partial<MaterialExample>) {
+    if (!assumptions) return;
+    updateAssumptions({
+      ...assumptions,
+      material_examples: replaceArrayItem(assumptions.material_examples, index, {
+        ...assumptions.material_examples[index],
+        ...changes
+      })
+    });
+  }
+
+  function updateInstantQuoteSection(changes: Partial<InstantQuoteAssumptions>) {
+    if (!assumptions?.instant_quote) return;
+    updateAssumptions({ ...assumptions, instant_quote: { ...assumptions.instant_quote, ...changes } });
+  }
+
+  function updateInstantMachining(field: keyof InstantMachiningParams, value: number) {
+    if (!assumptions?.instant_quote) return;
+    updateInstantQuoteSection({ machining: { ...assumptions.instant_quote.machining, [field]: value } });
+  }
+
+  function toggleInstantProcessList(processes: InstantProcess[] | undefined, process: InstantProcess, enabled: boolean): InstantProcess[] {
+    const current = new Set(processes ?? []);
+    if (enabled) current.add(process); else current.delete(process);
+    return Array.from(current);
+  }
+
   function updateTool(index: number, field: keyof ToolInventoryItem, value: string | number | boolean | string[]) {
     if (!assumptions) return;
     updateAssumptions({
@@ -5297,7 +5689,7 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h1>{t(activeView === "resources" ? "Assumptions" : activeView === "profile" ? "Company Profile" : activeView === "market_rates" ? "Market Rates" : activeView === "client_portal" ? "Client Portal" : activeView === "scenarios" ? "Scenarios" : activeView === "print" ? "Printable Quote" : activeView === "business_case" ? "Business Case" : activeView === "guide" ? "Principles Guide" : activeView === "methods" ? "Costing Methods" : activeView === "profitability" ? "Profitability" : "Quote Builder")}</h1>
+            <h1>{t(activeView === "resources" ? "Assumptions" : activeView === "profile" ? "Company Profile" : activeView === "market_rates" ? "Market Rates" : activeView === "client_portal" ? "Instant Quote" : activeView === "scenarios" ? "Scenarios" : activeView === "print" ? "Printable Quote" : activeView === "business_case" ? "Business Case" : activeView === "guide" ? "Principles Guide" : activeView === "methods" ? "Costing Methods" : activeView === "profitability" ? "Profitability" : "Quote Builder")}</h1>
             <p>{t("Operation-based CNC cost estimate with editable Latvian starter assumptions.")}</p>
           </div>
           <div className="modeGroup languageToggle">
@@ -5408,6 +5800,31 @@ function App() {
                   <label>{t("Stock pieces, pcs")}<input type="number" min="0.01" step="0.01" value={stockPieces} onChange={(event) => setStockPieces(Math.max(0.01, numericValue(event.target.value, 1)))} /></label>
                   <label>{t("Scrap recovery, EUR")}<input type="number" min="0" value={scrapRecovery} onChange={(event) => setScrapRecovery(numericValue(event.target.value))} /></label>
                 </div>
+                <label className="checkRow">
+                  <input type="checkbox" checked={isNewPart} onChange={(event) => setIsNewPart(event.target.checked)} />
+                  <span>{t("New part, CAM program required")}</span>
+                </label>
+                <div className="fieldGrid compact">
+                  <label>
+                    {t("Complexity")}
+                    <select value={camComplexity} onChange={(event) => {
+                      const next = event.target.value;
+                      setCamComplexity(next);
+                      if (assumptions) {
+                        const key = `${next}_programming_minutes` as keyof Assumptions["cam_programming_defaults"];
+                        const minutes = assumptions.cam_programming_defaults[key];
+                        if (typeof minutes === "number") setProgrammingMinutes(minutes);
+                      }
+                    }}>
+                      <option value="simple">{t("Simple")}</option>
+                      <option value="medium">{t("Medium")}</option>
+                      <option value="complex">{t("Complex")}</option>
+                    </select>
+                  </label>
+                  <label>{t("CAM rate, EUR/h")}<input type="number" min="0" value={programmingRate} onChange={(event) => setProgrammingRate(numericValue(event.target.value))} /></label>
+                  <label>{t("Programming, min")}<input type="number" min="0" value={programmingMinutes} onChange={(event) => setProgrammingMinutes(numericValue(event.target.value))} /></label>
+                  <label>{t("Prove-out, min")}<input type="number" min="0" value={proveoutMinutes} onChange={(event) => setProveoutMinutes(numericValue(event.target.value))} /></label>
+                </div>
                 {(() => {
                   const selectedMaterial = assumptions?.material_examples.find((material) => material.id === selectedMaterialId);
                   const shape = selectedMaterial?.stock_shape ?? "";
@@ -5496,7 +5913,7 @@ function App() {
                   <div><dt>{t("Material/bought-out pass-through, EUR")}</dt><dd>{selectedResult ? `${money.format(selectedResult.pass_through_cost_eur ?? 0)} + ${money.format(selectedResult.material_markup_eur ?? 0)} handling markup` : "..."}</dd></div>
                   <div><dt>{t("Sell price, EUR")}</dt><dd>{selectedResult ? money.format(selectedResult.sell_price_eur) : "..."}</dd></div>
                   <div><dt>{t("Unit price, EUR/pc")}</dt><dd>{selectedResult ? money.format(selectedResult.unit_sell_price_eur) : "..."}</dd></div>
-                  <div><dt>{t("Machine rate source")}</dt><dd>{rateMode === "accounting_full_cost" ? t("Accounting cost rates from Resources") : t("Target cost rates from Resources")}</dd></div>
+                  <div><dt>{t("Machine rate source")}</dt><dd>{rateMode === "accounting_full_cost" ? t("Accounting cost rates from Resources") : assumptions?.use_market_sell_rates ? t("Saved market sell rates (stations without one use target cost rates)") : t("Target cost rates from Resources")}</dd></div>
                   <div><dt>{t("Commercial multiplier")}</dt><dd>{selectedResult ? `×${selectedResult.commercial_multiplier.toFixed(2)} (sell price / raw cost subtotal)` : "..."}</dd></div>
                 </dl>
                 <div className="scenarioStrip quoteSummaryScenarioStrip">
@@ -5620,47 +6037,10 @@ function App() {
 
             <section className="quoteGrid">
               <div className="panel">
-                <div className="sectionHeader">
-                  <h2>{t("STEP and CAM")}</h2>
-                  <Upload size={18} />
-                </div>
-                <p className="sectionHelp">{t('A new part needs a machining program (CAM) and a prove-out before production can start -- real engineering hours that belong in the price. "Prove-out" is the supervised first run on the machine: verifying the program, offsets, and fixturing, and measuring the first article until a good part comes off. A repeat part reuses most of that work and is cheaper. The 3D file is stored for reference only; its geometry is not parsed automatically.')}</p>
-                <div className="uploadBox">
-                  <input id="cad-file" type="file" accept=".step,.stp" onChange={(event) => setCadFile(event.target.files?.[0] ?? null)} />
-                  <label className="uploadLabel" htmlFor="cad-file">{cadFile ? cadFile.name : t("Select .step or .stp file")}</label>
-                </div>
-                <label className="checkRow">
-                  <input type="checkbox" checked={isNewPart} onChange={(event) => setIsNewPart(event.target.checked)} />
-                  <span>{t("New part, CAM program required")}</span>
-                </label>
-                <div className="fieldGrid compact">
-                  <label>
-                    {t("Complexity")}
-                    <select value={camComplexity} onChange={(event) => {
-                      const next = event.target.value;
-                      setCamComplexity(next);
-                      if (assumptions) {
-                        const key = `${next}_programming_minutes` as keyof Assumptions["cam_programming_defaults"];
-                        const minutes = assumptions.cam_programming_defaults[key];
-                        if (typeof minutes === "number") setProgrammingMinutes(minutes);
-                      }
-                    }}>
-                      <option value="simple">{t("Simple")}</option>
-                      <option value="medium">{t("Medium")}</option>
-                      <option value="complex">{t("Complex")}</option>
-                    </select>
-                  </label>
-                  <label>{t("CAM rate, EUR/h")}<input type="number" min="0" value={programmingRate} onChange={(event) => setProgrammingRate(numericValue(event.target.value))} /></label>
-                  <label>{t("Programming, min")}<input type="number" min="0" value={programmingMinutes} onChange={(event) => setProgrammingMinutes(numericValue(event.target.value))} /></label>
-                  <label>{t("Prove-out, min")}<input type="number" min="0" value={proveoutMinutes} onChange={(event) => setProveoutMinutes(numericValue(event.target.value))} /></label>
-                </div>
-              </div>
-
-              <div className="panel">
                 <div className="sectionHeader"><h2>{t("Assumptions")}</h2></div>
                 <ul className="noteList">
                   <li>{isNewPart ? t("Full CAM cost is included.") : `${t("Existing CAM program reuse reduces CAM cost by")} ${formatPercent(reusableProgramPercent)}%.`}</li>
-                  <li>{t("STEP geometry is stored as metadata; geometry parsing is a later estimator layer.")}</li>
+                  <li>{t("Operations come from the ERP part BOM and route; edit them in the Operations table below.")}</li>
                   <li>{rateMode === "target_competitive" ? t("Target machine rates are used for quote pricing.") : t("Accounting full-cost machine rates are used for quote pricing.")}</li>
                   <li>{missingToolChecks.length > 0 ? `${t("Missing tools add")} ${money.format(totalMissingToolCost)} ${t("as operation batch cost.")}` : t("Required tools are available or no tool requirements are set.")}</li>
                   {selectedResult?.warnings.map((warning) => <li key={warning}>{warning}</li>)}
@@ -5719,7 +6099,7 @@ function App() {
                       <div className="stackedFields">
                         <label>{t("Machine")}<select value={operation.machineClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { machineClassId: event.target.value || null })}><option value="">{t("No machine")}</option>{(assumptions?.machine_classes ?? []).map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
                         <label>{t("Labor")}<select value={operation.laborClassId ?? ""} onChange={(event) => updateQuoteOperation(index, { laborClassId: event.target.value || null })}><option value="">{t("No labor")}</option>{(assumptions?.labor_classes ?? []).map((labor) => <option key={labor.id} value={labor.id}>{labor.name}</option>)}</select></label>
-                        <span className="rateHint">{money.format(selectedMachineRate)}/h {rateMode === "accounting_full_cost" ? t("accounting") : t("target")} {t("machine cost rate,")} {money.format(selectedLaborRate)}/h {t("labor")}</span>
+                        <span className="rateHint">{money.format(selectedMachineRate)}/h {rateMode === "accounting_full_cost" ? t("accounting") : t("target")} {t("machine cost rate (incl. overhead),")} {money.format(selectedLaborRate)}/h {t("labor")}</span>
                       </div>
                       <div className="miniGrid">
                         <label>{t("Machine, min")}<input type="number" min="0" value={operation.setupMachineMinutes} onChange={(event) => updateQuoteOperation(index, { setupMachineMinutes: numericValue(event.target.value) })} /></label>
@@ -5868,192 +6248,281 @@ function App() {
 
         {activeView === "client_portal" ? (
           <section className="clientPortal">
-            <section className="panel portalHeaderPanel">
+            <section className="panel instantHero">
               <div className="sectionHeader wide">
                 <div>
-                  <h2>{t("Client RFQ Intake")}</h2>
-                  <p className="sectionHelp">{t("Customer-facing demo: clients upload STEP models and drawings/specifications, define order requirements, and receive one preliminary estimate before manual confirmation.")}</p>
+                  <h2>{t("Instant Quote")}</h2>
+                  <p className="sectionHelp">{t("Upload your 3D model, pick a process, material, and finish, and get a manufacturing price immediately -- no account or registration needed. CNC machining and sheet metal fabrication.")}</p>
                 </div>
-                <button className="primaryButton" onClick={calculatePortalEstimates}><Calculator size={16} /> {t("Calculate Preliminary Estimate")}</button>
               </div>
-              <div className="portalNotice">
-                <strong>{t("STEP alone is not enough for a reliable manufacturing price.")}</strong>
-                <span>{t("We also need drawing/specification data for tolerances, material, threads, surface finish, heat treatment, inspection reports, and delivery expectations. Missing information widens the estimate range and lowers confidence.")}</span>
+              <div
+                className={`instantDropzone ${instantDragActive ? "active" : ""}`}
+                onDragOver={(event) => { event.preventDefault(); setInstantDragActive(true); }}
+                onDragLeave={() => setInstantDragActive(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setInstantDragActive(false);
+                  addInstantFiles(event.dataTransfer?.files ?? null);
+                }}
+              >
+                <Upload size={28} />
+                <strong>{t("Drag and drop STEP files here")}</strong>
+                <span>{t("or")}</span>
+                <label className="primaryButton instantBrowseButton">
+                  {t("Browse files")}
+                  <input type="file" multiple accept=".step,.stp" onChange={(event) => { addInstantFiles(event.target.files); event.target.value = ""; }} />
+                </label>
+                <small>{t("Supported: .step / .stp. Your file is analyzed to extract size, volume, and features; the price updates instantly as you configure.")}</small>
               </div>
-              <div className="fieldGrid compact">
-                <label>{t("Customer/company")}<input value={portalCustomerName} onChange={(event) => setPortalCustomerName(event.target.value)} /></label>
-                <label>{t("Contact/email")}<input value={portalContact} onChange={(event) => setPortalContact(event.target.value)} /></label>
-                <label>{t("Upload STEP files")}<input type="file" multiple accept=".step,.stp" onChange={(event) => addPortalFiles(event.target.files)} /></label>
-                <label>{t("RFQ status")}<input readOnly value={t("Preliminary estimate, manual confirmation required")} /></label>
-              </div>
-              <div className="buttonRow portalButtons">
-                <button className="secondaryButton" onClick={addBlankPortalPart}><Plus size={16} /> {t("Add Part Manually")}</button>
-              </div>
-              <p className="statusText">{portalStatus}</p>
+              {!instantQuote ? <p className="errorText">{t("Instant Quote pricing data is missing from Resources, so uploaded parts cannot be priced. Open Resources and fill the Instant Quote Pricing section.")}</p> : null}
+              {instantStatus ? <p className="statusText">{instantStatus}</p> : null}
             </section>
 
-            <section className="operations">
-              <div className="sectionHeader wide">
-                <div>
-                  <h2>{t("RFQ Parts")}</h2>
-                  <p className="sectionHelp">{t("The client sees requirements and one preliminary estimate. Internal target/accounting rates, stock-piece quantity, and complexity assumptions stay hidden.")}</p>
-                </div>
-              </div>
-              <div className="portalPartTable">
-                <div className="tableHead portalPartHead"><span>{t("Files and quantity")}</span><span>{t("Manufacturing requirements")}</span><span>{t("Material and finish")}</span><span>{t("Readiness")}</span><span>{t("Preliminary estimate")}</span><span></span></div>
-                {portalParts.map((part) => {
-                  const estimate = portalEstimates[part.id];
-                  const issues = estimate?.readinessIssues ?? portalReadinessIssues(part);
-                  const inferredComplexity = inferredPortalComplexity(part);
-                  return (
-                    <div className="tableRow portalPartRow" key={part.id}>
-                      <div className="stackedFields">
-                        <label>{t("Part name")}<input value={part.partName} onChange={(event) => updatePortalPart(part.id, { partName: event.target.value })} /></label>
-                        <label>{t("STEP model")}<input value={part.fileName || t("Missing STEP model")} readOnly /></label>
-                        <label>{t("Drawing/spec file")}<input type="file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg" onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) updatePortalPart(part.id, { drawingFileName: file.name, drawingSizeBytes: file.size });
-                        }} /></label>
-                        {part.drawingFileName ? <span className="rateHint">{t("Drawing/spec:")} {part.drawingFileName}</span> : <span className="rateHint warningHint">{t("Drawing/spec missing")}</span>}
-                        <div className="miniGrid">
-                          <label>{t("Order qty, pcs")}<input type="number" min="1" value={part.quantity} onChange={(event) => updatePortalPart(part.id, { quantity: Math.max(1, numericValue(event.target.value, 1)) })} /></label>
-                          <label>{t("Annual qty, pcs")}<input type="number" min="0" value={part.annualVolume} onChange={(event) => updatePortalPart(part.id, { annualVolume: Math.max(0, numericValue(event.target.value, 0)) })} /></label>
+            {instantParts.map((part) => {
+              const estimate = instantEstimates[part.id];
+              const plan = instantOperationPlan(part);
+              const material = instantMaterialFor(part);
+              const availableMaterials = instantCapableMaterials(part.process);
+              const availableFinishes = (instantQuote?.finishes ?? []).filter((item) => item.processes.includes(part.process));
+              const lead = instantLeadTimeFor(part);
+              const analysis = part.analysis;
+              const geometryFailed = Boolean(part.analysisStatus) && !analysis;
+              return (
+                <section className="panel instantPartCard" key={part.id}>
+                  <div className="instantPartHeader">
+                    <input className="instantPartName" value={part.partName} onChange={(event) => updateInstantPart(part.id, { partName: event.target.value })} />
+                    <span className="rateHint">{part.fileName}</span>
+                    <button className="iconButton" title={t("Remove part")} onClick={() => removeInstantPart(part.id)}><Trash2 size={18} /></button>
+                  </div>
+                  <div className="instantPartGrid">
+                    <div className="instantPreviewColumn">
+                      {part.mesh ? (
+                        <MeshPreview mesh={part.mesh} />
+                      ) : (
+                        <div className="meshPreviewPlaceholder">{analysis ? t("No 3D preview available for this file.") : (part.analysisStatus || t("Analyzing geometry..."))}</div>
+                      )}
+                      {analysis && analysis.bounding_box_mm.x > 0 ? (
+                        <dl className="instantGeoStats">
+                          <div><dt>{t("Size")}</dt><dd>{analysis.bounding_box_mm.x.toFixed(1)} × {analysis.bounding_box_mm.y.toFixed(1)} × {analysis.bounding_box_mm.z.toFixed(1)} mm</dd></div>
+                          <div><dt>{t("Volume")}</dt><dd>{(analysis.volume_mm3 / 1000).toFixed(1)} cm³</dd></div>
+                          {material?.density_kg_dm3 ? <div><dt>{t("Weight")}</dt><dd>{((analysis.volume_mm3 / 1e6) * material.density_kg_dm3).toFixed(3)} kg</dd></div> : null}
+                          {analysis.hole_count_estimate > 0 ? <div><dt>{t("Holes")}</dt><dd>{analysis.hole_count_estimate}</dd></div> : null}
+                        </dl>
+                      ) : null}
+                      {plan ? (
+                        <div className="instantRouteBox">
+                          <strong>{t("Production route")}</strong>
+                          <ol>
+                            <li>
+                              <span>{t("CAM programming")}</span>
+                              <em>{t("one-time")}</em>
+                            </li>
+                            {plan.operations.map((operation) => (
+                              <li key={`${part.id}-${operation.operationType}-${operation.name}`}>
+                                <span>{operation.name} <small>{instantMachineNameFor(operation.operationType)}</small></span>
+                                <em>{operation.setupMachineMinutes} + {operation.runMachineMinutesPerPart} {t("min/pc")}</em>
+                              </li>
+                            ))}
+                          </ol>
                         </div>
-                      </div>
-                      <div className="stackedFields">
-                        <label>{t("Tolerance requirement")}<select value={part.toleranceRequirement} onChange={(event) => updatePortalPart(part.id, { toleranceRequirement: event.target.value as PortalPart["toleranceRequirement"] })}>
-                          <option value="standard">{t("General standard tolerances")}</option>
-                          <option value="drawing">{t("According to drawing")}</option>
-                          <option value="custom">{t("Custom / tight tolerances")}</option>
-                        </select></label>
-                        <label>{t("Inspection/documentation")}<select value={part.documentationRequirement} onChange={(event) => updatePortalPart(part.id, { documentationRequirement: event.target.value as PortalPart["documentationRequirement"] })}>
-                          <option value="standard">{t("Standard inspection")}</option>
-                          <option value="dimensional_report">{t("Dimensional report")}</option>
-                          <option value="full_fai">{t("Full FAI / first article")}</option>
-                        </select></label>
-                        <label>{t("Threads/inserts")}<select value={part.threadOrInsertRequirement} onChange={(event) => updatePortalPart(part.id, { threadOrInsertRequirement: event.target.value as PortalPart["threadOrInsertRequirement"] })}>
-                          <option value="unknown">{t("Unknown / see drawing")}</option>
-                          <option value="none">{t("No")}</option>
-                          <option value="yes">{t("Yes")}</option>
-                        </select></label>
-                        <label>{t("Delivery need")}<select value={part.deliveryRequirement} onChange={(event) => updatePortalPart(part.id, { deliveryRequirement: event.target.value as PortalPart["deliveryRequirement"] })}>
-                          <option value="standard">{t("Standard lead time")}</option>
-                          <option value="expedite">{t("Expedite if possible")}</option>
-                          <option value="date_critical">{t("Date critical")}</option>
-                        </select></label>
-                      </div>
-                      <div className="stackedFields">
-                        <label>{t("Material")}<select value={part.materialId} onChange={(event) => {
-                          const material = assumptions?.material_examples.find((item) => item.id === event.target.value);
-                          updatePortalPart(part.id, {
-                            materialId: event.target.value,
-                            materialRequirement: material?.material_grade || material?.name || part.materialRequirement,
-                            stockName: material?.stock_description || material?.name || part.stockName,
-                            stockCost: material?.stock_piece_cost_eur ?? part.stockCost
-                          });
-                        }}>
-                          <option value="">{t("Manual material / specified on drawing")}</option>
-                          {(assumptions?.material_examples ?? []).map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
-                        </select></label>
-                        <label>Material note<input value={part.materialRequirement} placeholder={t("e.g. EN AW-6082 T6, S355, AISI 304")} onChange={(event) => updatePortalPart(part.id, { materialId: "", materialRequirement: event.target.value, stockName: event.target.value || part.stockName })} /></label>
-                        <div className="miniGrid">
-                          <label>{t("Cut length, mm")}<input type="number" min="1" value={part.cutLengthMm} onChange={(event) => updatePortalPart(part.id, { cutLengthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
-                          {portalSelectedMaterial(part)?.stock_shape === "plate" ? (
-                            <label>{t("Cut width, mm")}<input type="number" min="1" value={part.cutWidthMm} onChange={(event) => updatePortalPart(part.id, { cutWidthMm: Math.max(1, numericValue(event.target.value, 100)) })} /></label>
-                          ) : null}
+                      ) : null}
+                      {plan && plan.dfmNotes.length > 0 ? (
+                        <div className="instantDfmBox">
+                          <strong>{t("Manufacturing feedback")}</strong>
+                          <ul>{plan.dfmNotes.map((note) => <li key={note}>{note}</li>)}</ul>
                         </div>
-                        <label>{t("Surface finish / treatment")}<input value={part.surfaceFinish} onChange={(event) => updatePortalPart(part.id, { surfaceFinish: event.target.value })} /></label>
-                        <label>{t("Notes")}<textarea value={part.notes} onChange={(event) => updatePortalPart(part.id, { notes: event.target.value })} /></label>
-                      </div>
-                      <div className="portalReadinessBox">
-                        <strong>{issues.length === 0 ? t("Ready for review") : t("Needs information")}</strong>
-                        <span>{t("Internal complexity estimate:")} {operationLabel(inferredComplexity)}</span>
-                        <span>{t("Internal stock pieces required:")} {portalStockPiecesRequired(part)} {t("(from cut length/width vs. stock dimensions)")}</span>
-                        {issues.length > 0 ? (
-                          <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-                        ) : <span>{t("No major RFQ gaps detected.")}</span>}
-                        <button
-                          type="button"
-                          className="linkButton"
-                          onClick={() => setExpandedPortalDetails((current) => ({ ...current, [part.id]: !(current[part.id] ?? false) }))}
-                        >
-                          {expandedPortalDetails[part.id] ? t("Hide internal pricing detail") : t("Show internal pricing detail")}
-                        </button>
-                        {expandedPortalDetails[part.id] ? (() => {
-                          const factors = portalAdjustmentFactors(part);
-                          const toolChecks = portalToolCheckResults(part);
-                          const missingTools = toolChecks.filter((check) => check.status === "missing");
-                          const repeatSavings = portalRepeatOrderCamSavingsEur(part);
-                          const accountingSellPrice = estimate?.accountingSellPriceEur;
-                          const targetSellPrice = estimate?.result.sell_price_eur;
-                          const accountingGapPercent = accountingSellPrice && targetSellPrice && targetSellPrice > 0
-                            ? Math.round(((accountingSellPrice - targetSellPrice) / targetSellPrice) * 100)
-                            : null;
+                      ) : null}
+                    </div>
+
+                    <div className="instantConfigColumn">
+                      <label>
+                        {t("Process")}
+                        {(() => {
+                          // Solid bodies (thick relative to their footprint, no plate signature)
+                          // cannot be sheet-metal fabricated -- block the toggle instead of
+                          // letting a visitor generate a misleading sheet price.
+                          const gateGeometry = instantGeometry(part);
+                          const sheetBlocked = Boolean(gateGeometry && !gateGeometry.suggestsSheet && gateGeometry.dims[2] / gateGeometry.dims[0] > 0.25);
                           return (
-                            <div className="portalInternalDetail">
-                              <div>
-                                <strong>{t("Rate mode: Target (assumes")} {formatPercent(averageTargetUtilization(assumptions))}% {t("shop Utilization scenario)")}</strong>
-                                <span>{t("This preliminary price uses the Target rate, not today's Accounting rate. It is an aspiration, not current capacity.")}</span>
-                              </div>
-                              {accountingSellPrice !== undefined && accountingGapPercent !== null ? (
-                                <div className={accountingGapPercent > 25 ? "warningHint" : ""}>
-                                  <strong>{t("Accounting cross-check:")} {money.format(accountingSellPrice)}</strong>
-                                  <span>{accountingGapPercent}% {t("above the Target price shown to the client, reflecting today's actual Utilization. A large gap means today's real capacity cannot yet support this price without more orders.")}</span>
-                                </div>
-                              ) : null}
-                              <div>
-                                <strong>{t("Adjustment factors applied")}</strong>
-                                <span>{t("Complexity")} ({factors.complexity}) x{factors.complexityFactor.toFixed(2)}, {t("Tolerance")} x{factors.toleranceFactor.toFixed(2)}, {t("QC")} x{factors.qcFactor.toFixed(2)}, {t("Delivery")} x{factors.deliveryFactor.toFixed(2)} -- {t("combined")} x{factors.combined.toFixed(2)} ({t('QC x{qc} applies to inspection operations only, not included in "combined".').replace("{qc}", factors.qcFactor.toFixed(2))}) {t("These are heuristic placeholders, not calibrated against actuals.")}</span>
-                              </div>
-                              <div>
-                                <strong>{t("Tool check:")} {missingTools.length === 0 ? t("all required tools available") : `${missingTools.length} ${t("missing")}`}</strong>
-                                {missingTools.length > 0 ? (
-                                  <ul>{missingTools.map((check) => <li key={check.requirement.id}>{toolRequirementLabel(check.requirement)}: {money.format(check.costEur)}</li>)}</ul>
-                                ) : null}
-                              </div>
-                              {repeatSavings !== null ? (
-                                <div>
-                                  <strong>{t("Repeat-order CAM savings estimate:")} {money.format(repeatSavings)}</strong>
-                                  <span>{t("Informational only, based on declared annual volume -- this order still carries full new-part CAM cost above.")}</span>
-                                </div>
-                              ) : null}
+                            <div className="modeGroup instantProcessGroup">
+                              <button className={`mode ${part.process === "cnc" ? "active" : ""}`} onClick={() => setInstantProcess(part, "cnc")}>{t("CNC machining")}</button>
+                              <button
+                                className={`mode ${part.process === "sheet_metal" ? "active" : ""}`}
+                                disabled={sheetBlocked}
+                                title={sheetBlocked ? t("This part reads as a solid body for milling/turning -- sheet metal fabrication is not applicable.") : undefined}
+                                onClick={() => setInstantProcess(part, "sheet_metal")}
+                              >
+                                {t("Sheet metal")}
+                              </button>
                             </div>
                           );
-                        })() : null}
-                      </div>
-                      <div className="portalResultBox">
-                        <span>{t("Indicative unit price")}</span>
-                        <strong>{estimate ? `${money.format(estimate.lowUnitEur)} - ${money.format(estimate.highUnitEur)}` : "..."}</strong>
-                        <span>{t("Estimated order total")}</span>
-                        <strong>{estimate ? `${money.format(estimate.lowTotalEur)} - ${money.format(estimate.highTotalEur)}` : "..."}</strong>
-                        <small>{estimate ? estimate.confidence : t("Not calculated")}</small>
-                        <small className="portalDisclaimer">{t("Preliminary estimate only, subject to engineering confirmation. The confirmed price may differ materially from this range once drawing, material, tolerance, tooling, and capacity are reviewed.")}</small>
-                        <button type="button" className="secondaryButton" onClick={() => sendPortalPartToQuoteBuilder(part)}>{t("Send to Quote Builder")}</button>
-                      </div>
-                      <button className="iconButton" title={t("Remove part")} onClick={() => removePortalPart(part.id)}><Trash2 size={18} /></button>
+                        })()}
+                      </label>
+                      <label>
+                        {t("Material")}
+                        <select value={part.materialId} onChange={(event) => updateInstantPart(part.id, { materialId: event.target.value })}>
+                          {availableMaterials.length === 0 ? <option value="">{t("No materials with instant-quote data in the Material Library")}</option> : null}
+                          {part.materialId === "" && availableMaterials.length > 0 ? <option value="">{t("Select material")}</option> : null}
+                          {availableMaterials.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}{item.in_stock === false ? ` — ${t("not in stock")}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {material ? (
+                        material.in_stock === false ? (
+                          <span className="stockBadge stockOut">{t("Not in stock -- price stands, delivery confirmed with material lead time at review.")}</span>
+                        ) : (
+                          <span className="stockBadge stockIn">{t("In stock")}</span>
+                        )
+                      ) : null}
+                      <label>
+                        {t("Surface finish")}
+                        <select value={part.finishId} onChange={(event) => updateInstantPart(part.id, { finishId: event.target.value })}>
+                          {availableFinishes.map((item) => <option key={item.id} value={item.id}>{t(item.name)}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        {t("Tolerance")}
+                        <select value={part.toleranceId} onChange={(event) => updateInstantPart(part.id, { toleranceId: event.target.value })}>
+                          {(instantQuote?.tolerances ?? []).map((item) => <option key={item.id} value={item.id}>{t(item.name)}</option>)}
+                        </select>
+                      </label>
+                      <label className="checkRow">
+                        <input type="checkbox" checked={part.hasThreads} onChange={(event) => updateInstantPart(part.id, { hasThreads: event.target.checked })} />
+                        <span>{t("Threaded holes")}</span>
+                      </label>
+                      {part.process === "sheet_metal" ? (
+                        <label>{t("Number of bends")}<input type="number" min="0" value={part.bendCount} onChange={(event) => updateInstantPart(part.id, { bendCount: Math.max(0, Math.round(numericValue(event.target.value, 0))) })} /></label>
+                      ) : null}
+                      <label>{t("Quantity, pcs")}<input type="number" min="1" value={part.quantity} onChange={(event) => updateInstantPart(part.id, { quantity: Math.max(1, Math.round(numericValue(event.target.value, 1))) })} /></label>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
 
-            <section className="scenarioStrip portalTotals">
-              <div>
-                <span className="scenarioLabel">{t("Parts")}</span>
-                <strong>{portalParts.length}</strong>
-                <span className="scenarioHint">{t("Uploaded or manually entered.")}</span>
-              </div>
-              <div>
-                <span className="scenarioLabel">{t("Estimated total, EUR")}</span>
-                <strong>{Object.values(portalEstimates).length > 0 ? `${money.format(Object.values(portalEstimates).reduce((sum, item) => sum + item.lowTotalEur, 0))} - ${money.format(Object.values(portalEstimates).reduce((sum, item) => sum + item.highTotalEur, 0))}` : "..."}</strong>
-                <span className="scenarioHint">{t("Single preliminary range shown to the client.")}</span>
-              </div>
-              <div>
-                <span className="scenarioLabel">{t("Confidence")}</span>
-                <strong>{Object.values(portalEstimates).some((item) => item.readinessIssues.length > 0) ? t("Needs review") : Object.values(portalEstimates).length > 0 ? t("Review-ready") : t("Not calculated")}</strong>
-                <span className="scenarioHint">{t("Final CO requires engineering and material confirmation.")}</span>
-              </div>
-            </section>
+                    <div className="instantPriceColumn">
+                      {estimate && plan && lead ? (
+                        <>
+                          <div className="instantPriceMain">
+                            <span>{t("Price per part")}</span>
+                            <strong>{money.format(roundMoney((estimate.baseSellPriceEur * lead.price_factor) / part.quantity))}</strong>
+                            <span>{t("Order total")}: <strong>{money.format(roundMoney(estimate.baseSellPriceEur * lead.price_factor))}</strong></span>
+                          </div>
+                          <div className="instantLeadOptions">
+                            {(instantQuote?.lead_times ?? []).map((option) => (
+                              <button
+                                key={option.id}
+                                className={`instantLeadOption ${lead.id === option.id ? "active" : ""}`}
+                                onClick={() => updateInstantPart(part.id, { leadTimeId: option.id })}
+                              >
+                                <strong>{t(option.name)}</strong>
+                                <span>{instantLeadDays(estimate, option)} {t("working days")}</span>
+                                <em>{money.format(roundMoney(estimate.baseSellPriceEur * option.price_factor))}</em>
+                              </button>
+                            ))}
+                          </div>
+                          {(() => {
+                            // Client-facing split of the SELL price only -- internal cost
+                            // rates, margins, and market rates never appear here. The sell
+                            // price is allocated over engineering, material, and one row per
+                            // station, so each station's effective SELL rate is visible.
+                            const leadFactor = lead.price_factor;
+                            const materialSell = ((estimate.result.pass_through_cost_eur ?? 0) + (estimate.result.material_markup_eur ?? 0)) * leadFactor;
+                            const conversionSell = Math.max(0, estimate.baseSellPriceEur * leadFactor - materialSell);
+                            const conversionCost = estimate.result.conversion_side_cost_eur ?? 0;
+                            const engineeringSell = conversionCost > 0 ? conversionSell * (estimate.result.engineering_cost_eur / conversionCost) : 0;
+                            // The order admin fee gets its own line: folded into station rows it
+                            // inflates their apparent EUR/h at small quantities.
+                            const adminSell = conversionCost > 0 ? conversionSell * ((estimate.result.minimum_order_admin_cost_eur ?? 0) / conversionCost) : 0;
+                            const productionSell = conversionSell - engineeringSell - adminSell;
+                            const opShares = plan.operations.map((operation) => {
+                              const template = assumptions?.operation_templates.find((item) => item.operation_type === operation.operationType);
+                              const machineHours = (operation.setupMachineMinutes + operation.runMachineMinutesPerPart * part.quantity) / 60;
+                              const laborHours = (
+                                attendedLaborMinutes(template?.default_machine_class_id ?? null, operation.setupMachineMinutes, operation.setupLaborMinutes)
+                                + attendedLaborMinutes(template?.default_machine_class_id ?? null, operation.runMachineMinutesPerPart, operation.runLaborMinutesPerPart) * part.quantity
+                              ) / 60;
+                              const stationCost = machineHours * machineRate(template?.default_machine_class_id ?? null, "target_competitive")
+                                + laborHours * laborRate(template?.default_labor_class_id ?? null);
+                              const finishCost = operation.outsourcedCostPerPartEur * part.quantity + operation.outsourcedBatchCostEur;
+                              return { operation, machineHours, stationCost, finishCost };
+                            });
+                            const finishCostTotal = opShares.reduce((sum, item) => sum + item.finishCost, 0);
+                            const stationCostTotal = opShares.reduce((sum, item) => sum + item.stationCost, 0);
+                            const allocBase = stationCostTotal + finishCostTotal;
+                            const sellOf = (cost: number) => (allocBase > 0 ? productionSell * (cost / allocBase) : 0);
+                            return (
+                              <div className="instantBasisBox">
+                                <strong className="instantBasisTitle">{t("Price breakdown")}</strong>
+                                <div><span>{t("One-time engineering & programming")}</span><em>{money.format(roundMoney(engineeringSell))}</em></div>
+                                <div><span>{t("Material & handling")}</span><em>{money.format(roundMoney(materialSell))}</em></div>
+                                {opShares.map(({ operation, machineHours, stationCost }) => {
+                                  const sell = sellOf(stationCost);
+                                  return (
+                                    <div key={`${part.id}-sell-${operation.operationType}-${operation.name}`}>
+                                      <span>{operation.name} · {instantMachineNameFor(operation.operationType)}</span>
+                                      <em>{machineHours.toFixed(1)} h × {money.format(machineHours > 0 ? roundMoney(sell / machineHours) : 0)}/h = {money.format(roundMoney(sell))}</em>
+                                    </div>
+                                  );
+                                })}
+                                {finishCostTotal > 0 ? (
+                                  <div><span>{t("Surface finish")} · {t(plan.finish.name)}</span><em>{money.format(roundMoney(sellOf(finishCostTotal)))}</em></div>
+                                ) : null}
+                                {adminSell > 0 ? (
+                                  <div><span>{t("Order administration")}</span><em>{money.format(roundMoney(adminSell))}</em></div>
+                                ) : null}
+                                <small>{t("One-time engineering is charged once per new part -- larger quantities reduce the unit price.")}</small>
+                              </div>
+                            );
+                          })()}
+                          <small className="portalDisclaimer">{t("Instant price from parsed geometry and shop rates. Binding offer follows engineering review of the drawing, tolerances, and capacity.")}</small>
+                          <button type="button" className="secondaryButton" onClick={() => sendInstantPartToQuoteBuilder(part)}><Send size={16} /> {t("Request formal quote")}</button>
+                        </>
+                      ) : (
+                        <div className="instantPriceMain">
+                          <span>
+                            {geometryFailed
+                              ? `${part.analysisStatus} ${t("No price is shown without readable geometry.")}`
+                              : !analysis
+                                ? t("Analyzing geometry...")
+                                : !material
+                                  ? t("Select a material with instant-quote data to get a price.")
+                                  : !instantQuote
+                                    ? t("Instant Quote pricing data is missing from Resources.")
+                                    : t("Calculating price...")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
+
+            {instantParts.length > 0 ? (
+              <section className="scenarioStrip portalTotals">
+                <div>
+                  <span className="scenarioLabel">{t("Parts")}</span>
+                  <strong>{instantParts.length}</strong>
+                  <span className="scenarioHint">{t("Each part is priced independently.")}</span>
+                </div>
+                <div>
+                  <span className="scenarioLabel">{t("Order total, EUR")}</span>
+                  <strong>
+                    {money.format(roundMoney(instantParts.reduce((sum, part) => {
+                      const estimate = instantEstimates[part.id];
+                      const lead = instantLeadTimeFor(part);
+                      return sum + (estimate && lead ? estimate.baseSellPriceEur * lead.price_factor : 0);
+                    }, 0)))}
+                  </strong>
+                  <span className="scenarioHint">{t("At the selected lead time per part.")}</span>
+                </div>
+                <div>
+                  <span className="scenarioLabel">{t("Contact for the formal offer (optional)")}</span>
+                  <input className="instantContactInput" placeholder={t("email or company name")} value={instantContact} onChange={(event) => setInstantContact(event.target.value)} />
+                  <span className="scenarioHint">{t("Only needed if you request a formal quote -- browsing prices requires nothing.")}</span>
+                </div>
+              </section>
+            ) : null}
           </section>
         ) : null}
 
@@ -6084,6 +6553,14 @@ function App() {
                       <button className="secondaryButton" onClick={applyCompanyProfileToAssumptions}>{t("Apply to Costing")}</button>
                       <button className="iconButton" title={t("Delete selected profile")} onClick={deleteCompanyProfile}><Trash2 size={18} /></button>
                     </div>
+                    <label className="checkRow" title={t("Back-solved through risk and margin, so a station's quoted hour sells at exactly its Market sell EUR/h. Use when the market will not pay the target cost-plus rates. Stations without a saved market rate keep cost-plus.")}>
+                      <input
+                        type="checkbox"
+                        checked={assumptions?.use_market_sell_rates ?? false}
+                        onChange={(event) => { if (assumptions) updateAssumptions({ ...assumptions, use_market_sell_rates: event.target.checked }); }}
+                      />
+                      <span>{t("Price quotes at saved Market sell EUR/h instead of target cost-plus rates")}</span>
+                    </label>
                     <p className="statusText">{profileStatus}</p>
                   </section>
 
@@ -6324,6 +6801,13 @@ function App() {
 
         {activeView === "resources" && assumptions ? (
           <div className="resourcesPage">
+            <section className="panel resourcesSaveBar">
+              <div>
+                <strong>{t("Cost basis:")} {assumptions.name}</strong>
+                <span className="statusText">{assumptionStatus}</span>
+              </div>
+              <button className="primaryButton" onClick={saveAssumptions}><Save size={16} /> {t("Save Resources")}</button>
+            </section>
             <section className="resourceIntroGrid">
               <div className="panel">
                 <div className="sectionHeader"><h2>{t("Commercial Policy")}</h2></div>
@@ -6432,7 +6916,7 @@ function App() {
                   <span>{t("Actual Availability % (machine)")}</span><span>{t("Target Availability % (machine)")}</span>
                   <span>{t("Actual Utilization % (machine)")}</span><span>{t("Target Utilization % (machine)")}</span>
                   <span>{t("Variable EUR/h")}</span><span>{t("Target discount %")}</span>
-                  <span>{t("Accounting EUR/h")}</span><span>{t("Target EUR/h")}</span><span>{t("Target + labour EUR/h")}</span><span>{t("Market sell EUR/h")}</span><span>{t("Power kW")}</span>
+                  <span title={t("Direct cost + shared overhead at actual Availability/Utilization.")}>{t("Accounting EUR/h")}</span><span title={t("Direct cost + shared overhead at target Availability/Utilization. This is the machine rate quotes and the Instant Quote page price with.")}>{t("Target EUR/h")}</span><span title={t("Target rate + operator payroll / this machine's target loaded hours. Quotes charge labor separately per attended minute at payroll / billable hours, so their machine+labor sum is slightly lower than this capacity view.")}>{t("Target + labour EUR/h")}</span><span>{t("Market sell EUR/h")}</span><span>{t("Power kW")}</span>
                 </div>
                 {assumptions.machine_classes.map((machine, index) => {
                   const actualUtilization = machine.actual_utilization_percent ?? 1;
@@ -6539,6 +7023,109 @@ function App() {
                   </div>
                 ))}
               </div>
+              ) : null}
+              {isSectionOpen("material_library") ? (
+                <>
+                  <p className="sectionHelp"><strong>{t("Instant quote data.")}</strong> {t("Rows with a density and a price per kg become selectable on the client Instant Quote page. Removal rate and cut speed convert parsed geometry into machine minutes; the In stock flag drives the availability indicator the client sees.")}</p>
+                  <div className="resourceTable materialInstantTable">
+                    <div className="tableHead materialInstantHead"><span>{t("Name")}</span><span>{t("Density kg/dm³")}</span><span>{t("Price EUR/kg")}</span><span>{t("Removal cm³/min")}</span><span>{t("Cut speed ×")}</span><span>{t("CNC")}</span><span>{t("Sheet")}</span><span>{t("In stock")}</span></div>
+                    {assumptions.material_examples.map((material, index) => (
+                      <div className="tableRow materialInstantRow" key={`${material.id}-instant`}>
+                        <span className="profileAssetNameCell">{material.name}</span>
+                        <input type="number" min="0" step="0.01" value={material.density_kg_dm3 ?? 0} onChange={(event) => updateMaterialInstant(index, { density_kg_dm3: numericValue(event.target.value) })} />
+                        <input type="number" min="0" step="0.01" value={material.price_per_kg_eur ?? 0} onChange={(event) => updateMaterialInstant(index, { price_per_kg_eur: numericValue(event.target.value) })} />
+                        <input type="number" min="0" step="0.1" value={material.milling_removal_cm3_per_min ?? 0} onChange={(event) => updateMaterialInstant(index, { milling_removal_cm3_per_min: numericValue(event.target.value) })} />
+                        <input type="number" min="0" step="0.05" value={material.cut_speed_factor ?? 0} onChange={(event) => updateMaterialInstant(index, { cut_speed_factor: numericValue(event.target.value) })} />
+                        <input type="checkbox" checked={(material.instant_processes ?? []).includes("cnc")} onChange={(event) => updateMaterialInstant(index, { instant_processes: toggleInstantProcessList(material.instant_processes, "cnc", event.target.checked) })} />
+                        <input type="checkbox" checked={(material.instant_processes ?? []).includes("sheet_metal")} onChange={(event) => updateMaterialInstant(index, { instant_processes: toggleInstantProcessList(material.instant_processes, "sheet_metal", event.target.checked) })} />
+                        <input type="checkbox" checked={material.in_stock !== false} onChange={(event) => updateMaterialInstant(index, { in_stock: event.target.checked })} />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </section>
+
+            <section className="operations">
+              <div className="sectionHeader wide">
+                <div>
+                  <h2>{t("Instant Quote Pricing")}</h2>
+                  <p className="sectionHelp">{t("Every assumed variable behind the client Instant Quote page, in one editable place: machining parameters that turn geometry into minutes, surface finishes, tolerance classes, and lead-time options. Machine and labor rates come from the classes above; material physics and stock status from the Material Library; margin, risk, and markup from Commercial Policy.")}</p>
+                </div>
+                <div className="buttonRow">{sectionToggle("instant_quote_pricing")}</div>
+              </div>
+              {isSectionOpen("instant_quote_pricing") && assumptions.instant_quote ? (
+                <>
+                  <h3>{t("Machining parameters")}</h3>
+                  <div className="fieldGrid">
+                    <label>{t("Blank allowance, mm")}<input type="number" min="0" value={assumptions.instant_quote.machining.blank_allowance_mm} onChange={(event) => updateInstantMachining("blank_allowance_mm", numericValue(event.target.value))} /></label>
+                    <label>{t("Finishing rate, cm²/min")}<input type="number" min="0.1" value={assumptions.instant_quote.machining.finishing_rate_cm2_per_min} onChange={(event) => updateInstantMachining("finishing_rate_cm2_per_min", Math.max(0.1, numericValue(event.target.value, 45)))} /></label>
+                    <label>{t("Base cut speed, mm/min")}<input type="number" min="1" value={assumptions.instant_quote.machining.base_cut_speed_mm_per_min} onChange={(event) => updateInstantMachining("base_cut_speed_mm_per_min", Math.max(1, numericValue(event.target.value, 900)))} /></label>
+                    <label>{t("Drill min/hole")}<input type="number" min="0" step="0.05" value={assumptions.instant_quote.machining.drill_minutes_per_hole} onChange={(event) => updateInstantMachining("drill_minutes_per_hole", numericValue(event.target.value))} /></label>
+                    <label>{t("Tap min/hole")}<input type="number" min="0" step="0.05" value={assumptions.instant_quote.machining.tap_minutes_per_hole} onChange={(event) => updateInstantMachining("tap_minutes_per_hole", numericValue(event.target.value))} /></label>
+                    <label>{t("Bend min/bend")}<input type="number" min="0" step="0.05" value={assumptions.instant_quote.machining.bend_minutes_per_bend} onChange={(event) => updateInstantMachining("bend_minutes_per_bend", numericValue(event.target.value))} /></label>
+                    <label>{t("Milling setup, min")}<input type="number" min="0" value={assumptions.instant_quote.machining.milling_setup_minutes} onChange={(event) => updateInstantMachining("milling_setup_minutes", numericValue(event.target.value))} /></label>
+                    <label>{t("Cutting setup, min")}<input type="number" min="0" value={assumptions.instant_quote.machining.cutting_setup_minutes} onChange={(event) => updateInstantMachining("cutting_setup_minutes", numericValue(event.target.value))} /></label>
+                    <label>{t("Cutoff setup, min")}<input type="number" min="0" value={assumptions.instant_quote.machining.blank_cutoff_setup_minutes} onChange={(event) => updateInstantMachining("blank_cutoff_setup_minutes", numericValue(event.target.value))} /></label>
+                    <label>{t("Cutoff min/pc")}<input type="number" min="0" step="0.1" value={assumptions.instant_quote.machining.blank_cutoff_minutes_per_part} onChange={(event) => updateInstantMachining("blank_cutoff_minutes_per_part", numericValue(event.target.value))} /></label>
+                    <label>{t("Tapping setup, min")}<input type="number" min="0" value={assumptions.instant_quote.machining.tapping_setup_minutes} onChange={(event) => updateInstantMachining("tapping_setup_minutes", numericValue(event.target.value))} /></label>
+                    <label>{t("Bending setup, min")}<input type="number" min="0" value={assumptions.instant_quote.machining.bending_setup_minutes} onChange={(event) => updateInstantMachining("bending_setup_minutes", numericValue(event.target.value))} /></label>
+                    <label>{t("Sheet nesting waste ×")}<input type="number" min="1" step="0.01" value={assumptions.instant_quote.machining.sheet_nesting_waste_factor} onChange={(event) => updateInstantMachining("sheet_nesting_waste_factor", Math.max(1, numericValue(event.target.value, 1.3)))} /></label>
+                    <label>{t("Stock purchase waste ×")}<input type="number" min="1" step="0.01" value={assumptions.instant_quote.machining.stock_purchase_waste_factor} onChange={(event) => updateInstantMachining("stock_purchase_waste_factor", Math.max(1, numericValue(event.target.value, 1.08)))} /></label>
+                    <label>{t("Min. material charge, EUR")}<input type="number" min="0" step="0.1" value={assumptions.instant_quote.machining.minimum_material_charge_eur} onChange={(event) => updateInstantMachining("minimum_material_charge_eur", numericValue(event.target.value))} /></label>
+                    <label>{t("CNC run labor share")}<input type="number" min="0" max="1" step="0.05" value={assumptions.instant_quote.machining.run_labor_share_cnc} onChange={(event) => updateInstantMachining("run_labor_share_cnc", Math.min(1, Math.max(0, numericValue(event.target.value))))} /></label>
+                    <label>{t("Cutting run labor share")}<input type="number" min="0" max="1" step="0.05" value={assumptions.instant_quote.machining.run_labor_share_cutting} onChange={(event) => updateInstantMachining("run_labor_share_cutting", Math.min(1, Math.max(0, numericValue(event.target.value))))} /></label>
+                    <label>{t("Base scrap %")}<input type="number" min="0" max="100" value={formatPercent(assumptions.instant_quote.machining.base_scrap_percent)} onChange={(event) => updateInstantMachining("base_scrap_percent", numericValue(event.target.value) / 100)} /></label>
+                    <label>{t("Sheet CAM factor")}<input type="number" min="0" max="1" step="0.05" value={assumptions.instant_quote.machining.sheet_cam_factor} onChange={(event) => updateInstantMachining("sheet_cam_factor", Math.min(1, Math.max(0, numericValue(event.target.value, 0.35))))} /></label>
+                    <label>{t("Production hours/day")}<input type="number" min="1" max="24" value={assumptions.instant_quote.machining.production_hours_per_day} onChange={(event) => updateInstantMachining("production_hours_per_day", Math.min(24, Math.max(1, numericValue(event.target.value, 16))))} /></label>
+                  </div>
+
+                  <h3>{t("Surface finishes")}</h3>
+                  <div className="resourceTable instantFinishTable">
+                    <div className="tableHead instantFinishHead"><span>{t("Name")}</span><span>{t("EUR/pc")}</span><span>{t("EUR/batch")}</span><span>{t("CNC")}</span><span>{t("Sheet")}</span><span></span></div>
+                    {assumptions.instant_quote.finishes.map((finish, index) => (
+                      <div className="tableRow instantFinishRow" key={finish.id}>
+                        <input value={finish.name} onChange={(event) => updateInstantQuoteSection({ finishes: replaceArrayItem(assumptions.instant_quote!.finishes, index, { ...finish, name: event.target.value }) })} />
+                        <input type="number" min="0" step="0.1" value={finish.cost_per_part_eur} onChange={(event) => updateInstantQuoteSection({ finishes: replaceArrayItem(assumptions.instant_quote!.finishes, index, { ...finish, cost_per_part_eur: numericValue(event.target.value) }) })} />
+                        <input type="number" min="0" step="0.5" value={finish.batch_cost_eur} onChange={(event) => updateInstantQuoteSection({ finishes: replaceArrayItem(assumptions.instant_quote!.finishes, index, { ...finish, batch_cost_eur: numericValue(event.target.value) }) })} />
+                        <input type="checkbox" checked={finish.processes.includes("cnc")} onChange={(event) => updateInstantQuoteSection({ finishes: replaceArrayItem(assumptions.instant_quote!.finishes, index, { ...finish, processes: toggleInstantProcessList(finish.processes, "cnc", event.target.checked) }) })} />
+                        <input type="checkbox" checked={finish.processes.includes("sheet_metal")} onChange={(event) => updateInstantQuoteSection({ finishes: replaceArrayItem(assumptions.instant_quote!.finishes, index, { ...finish, processes: toggleInstantProcessList(finish.processes, "sheet_metal", event.target.checked) }) })} />
+                        <button className="iconButton" onClick={() => updateInstantQuoteSection({ finishes: assumptions.instant_quote!.finishes.filter((item) => item.id !== finish.id) })}><Trash2 size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="secondaryButton" onClick={() => updateInstantQuoteSection({ finishes: [...assumptions.instant_quote!.finishes, { id: `finish_${Date.now()}`, name: "New finish", cost_per_part_eur: 0, batch_cost_eur: 0, processes: ["cnc", "sheet_metal"] }] })}><Plus size={16} /> {t("Add Finish")}</button>
+
+                  <h3>{t("Tolerance classes")}</h3>
+                  <div className="resourceTable instantToleranceTable">
+                    <div className="tableHead instantToleranceHead"><span>{t("Name")}</span><span>{t("Time factor ×")}</span><span>{t("Scrap adder %")}</span><span></span></div>
+                    {assumptions.instant_quote.tolerances.map((tolerance, index) => (
+                      <div className="tableRow instantToleranceRow" key={tolerance.id}>
+                        <input value={tolerance.name} onChange={(event) => updateInstantQuoteSection({ tolerances: replaceArrayItem(assumptions.instant_quote!.tolerances, index, { ...tolerance, name: event.target.value }) })} />
+                        <input type="number" min="0.5" step="0.05" value={tolerance.time_factor} onChange={(event) => updateInstantQuoteSection({ tolerances: replaceArrayItem(assumptions.instant_quote!.tolerances, index, { ...tolerance, time_factor: Math.max(0.5, numericValue(event.target.value, 1)) }) })} />
+                        <input type="number" min="0" max="100" value={formatPercent(tolerance.scrap_adder_percent)} onChange={(event) => updateInstantQuoteSection({ tolerances: replaceArrayItem(assumptions.instant_quote!.tolerances, index, { ...tolerance, scrap_adder_percent: numericValue(event.target.value) / 100 }) })} />
+                        <button className="iconButton" onClick={() => updateInstantQuoteSection({ tolerances: assumptions.instant_quote!.tolerances.filter((item) => item.id !== tolerance.id) })}><Trash2 size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="secondaryButton" onClick={() => updateInstantQuoteSection({ tolerances: [...assumptions.instant_quote!.tolerances, { id: `tolerance_${Date.now()}`, name: "New tolerance class", time_factor: 1, scrap_adder_percent: 0 }] })}><Plus size={16} /> {t("Add Tolerance Class")}</button>
+
+                  <h3>{t("Lead time options")}</h3>
+                  <div className="resourceTable instantLeadTable">
+                    <div className="tableHead instantLeadHead"><span>{t("Name")}</span><span>{t("Price factor ×")}</span><span>{t("Extra days")}</span><span></span></div>
+                    {assumptions.instant_quote.lead_times.map((leadTime, index) => (
+                      <div className="tableRow instantLeadRow" key={leadTime.id}>
+                        <input value={leadTime.name} onChange={(event) => updateInstantQuoteSection({ lead_times: replaceArrayItem(assumptions.instant_quote!.lead_times, index, { ...leadTime, name: event.target.value }) })} />
+                        <input type="number" min="0.1" step="0.01" value={leadTime.price_factor} onChange={(event) => updateInstantQuoteSection({ lead_times: replaceArrayItem(assumptions.instant_quote!.lead_times, index, { ...leadTime, price_factor: Math.max(0.1, numericValue(event.target.value, 1)) }) })} />
+                        <input type="number" min="0" value={leadTime.extra_days} onChange={(event) => updateInstantQuoteSection({ lead_times: replaceArrayItem(assumptions.instant_quote!.lead_times, index, { ...leadTime, extra_days: Math.max(0, Math.round(numericValue(event.target.value))) }) })} />
+                        <button className="iconButton" onClick={() => updateInstantQuoteSection({ lead_times: assumptions.instant_quote!.lead_times.filter((item) => item.id !== leadTime.id) })}><Trash2 size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="secondaryButton" onClick={() => updateInstantQuoteSection({ lead_times: [...assumptions.instant_quote!.lead_times, { id: `lead_${Date.now()}`, name: "New lead time", price_factor: 1, extra_days: 0 }] })}><Plus size={16} /> {t("Add Lead Time")}</button>
+                </>
+              ) : isSectionOpen("instant_quote_pricing") ? (
+                <p className="errorText">{t("This assumptions set has no instant_quote section. Reload the baseline assumptions or add the section in the JSON editor below.")}</p>
               ) : null}
             </section>
 
@@ -7332,7 +7919,7 @@ function App() {
                     <h3>{t("Revenue capacity build-up")}</h3>
                     <p className="sectionHelp">{t("This table is the first bridge column as a sum of sellable-capacity asset rows only. Actual EUR/h is today's cost-plus floor: machine cost, assigned payroll, shared recovery, risk, and margin at each asset's actual Availability/Utilization -- it can run high while a station sits under-loaded. Target EUR/h is the same formula at each asset's own target Availability/Utilization from Resources -- the floor once that station reaches its designed load, and the number to compare against Market. Shared recovery/h is allocated in proportion to each station's own machine EUR/h + payroll EUR/h, so an expensive CNC hour carries more of the shared pool than a cheap manual bench hour; the pool total recovered is unchanged. Market sell EUR/h is the explicit rate used for revenue.")}</p>
                     <div className={`diagnosticTable profitabilityRevenueTable ${profitabilityCompareScenario ? "hasCompareScenario" : ""}`}>
-                      <div className="tableHead profitabilityRevenueHead"><span>{t("Asset")}</span><span>{t("Actual h/mo")}</span><span>{t("Machine EUR/h")}</span><span>{t("Payroll EUR/h")}</span><span>{t("Shared recovery/h")}</span><span>{t("Base EUR/h")}</span><span>{t("Actual EUR/h")}</span><span>{t("Target EUR/h")}</span>{profitabilityCompareScenario ? <span>{t("Scenario EUR/h")}</span> : null}<span>{t("Market sell EUR/h")}</span><span>{t("Revenue/mo")}</span></div>
+                      <div className="tableHead profitabilityRevenueHead"><span>{t("Asset")}</span><span title={t("Planned hours × actual Availability × actual Utilization.")}>{t("Actual h/mo")}</span><span title={t("Direct machine cost only (fixed + variable) at actual load -- before overhead and labor. Quotes use the Target rate incl. overhead instead.")}>{t("Machine EUR/h")}</span><span title={t("Assigned operator payroll spread over this station's actual loaded hours. Quotes charge labor per attended minute at payroll / billable hours instead.")}>{t("Payroll EUR/h")}</span><span title={t("This station's share of overhead, support assets, and support payroll per actual loaded hour.")}>{t("Shared recovery/h")}</span><span title={t("Machine + payroll + shared recovery: full cost per hour before risk and margin.")}>{t("Base EUR/h")}</span><span title={t("Cost-plus sell floor at actual load: Base × (1 + risk) / (1 - margin). Includes margin -- a price floor, not a cost rate.")}>{t("Actual EUR/h")}</span><span title={t("The same cost-plus sell floor at this station's target Availability/Utilization.")}>{t("Target EUR/h")}</span>{profitabilityCompareScenario ? <span>{t("Scenario EUR/h")}</span> : null}<span>{t("Market sell EUR/h")}</span><span>{t("Revenue/mo")}</span></div>
                       {revenueRows.map((row) => {
                         const marketRateClass = !row.hasMarketSellRate
                           ? "rateMissing"
@@ -7685,7 +8272,7 @@ function App() {
                 <div><span>{t("Is the production route realistic?")}</span><span>{t("Operations and Actuals Feedback")}</span><span>{t("Setup time, cycle time, labor time, scrap, plan/fact deviations.")}</span></div>
                 <div><span>{t("Can the part actually be produced?")}</span><span>{t("Tool Check and Materials")}</span><span>{t("Required tools, missing tool cost, stock piece availability and cost.")}</span></div>
                 <div><span>{t("Can this connect to existing company systems?")}</span><span>{t("ERP Connection Demo")}</span><span>{t("BOM, route, stock, customer, and offer-data handoff path.")}</span></div>
-                <div><span>{t("Can external clients self-serve early estimates?")}</span><span>{t("Client Portal")}</span><span>{t("Multi-part STEP plus drawing/spec RFQ intake with one preliminary estimate range and manual confirmation.")}</span></div>
+                <div><span>{t("Can external clients self-serve early estimates?")}</span><span>{t("Instant Quote")}</span><span>{t("STEP upload with geometry-driven configurator (process, material, finish, tolerance, lead time) and an immediate price without registration.")}</span></div>
               </div>
             </section>
           </section>
